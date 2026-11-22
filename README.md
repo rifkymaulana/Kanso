@@ -23,7 +23,7 @@ $env:JAVA_HOME = "C:\Program Files\Java\jdk-21.0.10"
 ## Downloading the Release APK & In-App Auto-Updates
 
 1. Open the repository's **Releases** page on GitHub to install the initial `Kanso-vX.Y.Z-release.apk`.
-2. For future updates directly inside the app, open **Settings & Backup → App Updates**, tap **GitHub Access Token (Private Repo)**, and paste a read-only Fine-Grained Personal Access Token scoped solely to `rifkymaulana/Kanso` (`Contents: Read-only`). Kanso stores it encrypted via Android Keystore, checks GitHub Releases automatically, verifies the `.sha256` checksum, and launches the Android installer.
+2. Because `rifkymaulana/Kanso` is public, future updates work automatically inside the app without a token — Kanso checks GitHub Releases automatically, verifies the `.sha256` checksum, and launches the Android installer. You can also configure an optional read-only Fine-Grained Personal Access Token under **Settings & Backup → App Updates → GitHub Access Token (Optional)** (stored encrypted via Android Keystore) if you hit unauthenticated GitHub API rate limits or fork into a private repository.
 
 ## Cutting a New Signed Release (CI/CD)
 

@@ -584,7 +584,7 @@ private fun AppUpdatesCard(
                     Text(
                         text = prefs.lastUpdateCheckMillis?.let {
                             "Last checked: ${KansoDateFormatters.formatFullDateTime(it)}"
-                        } ?: "Checks every 6h when GitHub token is configured",
+                        } ?: "Checks GitHub Releases automatically every 6 hours",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -609,14 +609,14 @@ private fun AppUpdatesCard(
                     verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
                     Text(
-                        text = "GitHub Access Token (Private Repo)",
+                        text = "GitHub Access Token (Optional)",
                         style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium)
                     )
                     Text(
                         text = if (uiState.hasGithubToken) {
                             "Configured (Android Keystore encrypted) — tap to update"
                         } else {
-                            "Not set — tap to add a read-only token for rifkymaulana/Kanso"
+                            "Not set — optional for public repo (raises GitHub API rate limit)"
                         },
                         style = MaterialTheme.typography.labelMedium,
                         color = if (uiState.hasGithubToken) {
@@ -815,7 +815,7 @@ private fun GithubTokenDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
-                    text = "Because rifkymaulana/Kanso is private, create a Fine-Grained Personal Access Token on GitHub scoped only to Repository: Kanso with Contents: Read-only. It is stored locally encrypted with Android Keystore and never included in backups.",
+                    text = "rifkymaulana/Kanso is public, so in-app updates work automatically without a token. Only add an optional read-only Fine-Grained Personal Access Token if you hit GitHub's unauthenticated API rate limit or make the repository private again. Stored locally encrypted with Android Keystore and never included in backups.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

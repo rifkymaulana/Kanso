@@ -15,8 +15,8 @@ android {
         applicationId = "com.kanso.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = System.getenv("KANSO_VERSION_CODE")?.toIntOrNull() ?: 4
-        versionName = System.getenv("KANSO_VERSION_NAME")?.takeIf { it.isNotBlank() } ?: "1.1.0"
+        versionCode = System.getenv("KANSO_VERSION_CODE")?.toIntOrNull() ?: 5
+        versionName = System.getenv("KANSO_VERSION_NAME")?.takeIf { it.isNotBlank() } ?: "1.1.1"
     }
 
     signingConfigs {

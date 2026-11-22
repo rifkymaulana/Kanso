@@ -74,7 +74,7 @@ class AppUpdateManager @Inject constructor(
         val now = System.currentTimeMillis()
 
         if (isAutomatic) {
-            if (!prefs.autoCheckUpdates || token.isNullOrBlank()) return@withContext
+            if (!prefs.autoCheckUpdates) return@withContext
             val lastCheck = prefs.lastUpdateCheckMillis
             if (lastCheck != null && (now - lastCheck) < AUTO_CHECK_INTERVAL_MILLIS) {
                 return@withContext
@@ -118,11 +118,29 @@ class AppUpdateManager @Inject constructor(
                         }
                     }
 
-                    401, 403, 404 -> {
+                    401 -> {
                         if (!isAutomatic) {
                             _state.value = AppUpdateState.Error(
-                                message = "Cannot access $REPO_OWNER/$REPO_NAME releases (HTTP $code). Add a read-only GitHub token below for private repo updates.",
+                                message = "Saved GitHub token was rejected (HTTP 401). Clear or update the token below.",
                                 needsToken = true
+                            )
+                        }
+                    }
+
+                    403 -> {
+                        if (!isAutomatic) {
+                            _state.value = AppUpdateState.Error(
+                                message = "GitHub API rate limit reached (HTTP 403). Try again later or add an optional GitHub token below.",
+                                needsToken = true
+                            )
+                        }
+                    }
+
+                    404 -> {
+                        if (!isAutomatic) {
+                            _state.value = AppUpdateState.Error(
+                                message = "No published releases found for $REPO_OWNER/$REPO_NAME (HTTP 404).",
+                                needsToken = false
                             )
                         }
                     }
@@ -309,10 +327,12 @@ class AppUpdateManager @Inject constructor(
             readTimeout = 20_000
             instanceFollowRedirects = false
             setRequestProperty("Accept", acceptHeader)
-            setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
             setRequestProperty("User-Agent", "Kanso-Android/${BuildConfig.VERSION_NAME}")
-            if (!token.isNullOrBlank() && isGitHubHost(urlString)) {
-                setRequestProperty("Authorization", "Bearer $token")
+            if (isGitHubHost(urlString)) {
+                setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
+                if (!token.isNullOrBlank()) {
+                    setRequestProperty("Authorization", "Bearer $token")
+                }
             }
         }
         return conn
