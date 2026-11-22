@@ -13,7 +13,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -36,8 +35,10 @@ import com.kanso.core.model.MaintenanceCategory
 import com.kanso.core.model.MaintenanceLog
 import com.kanso.core.model.VaultCategory
 import com.kanso.core.model.VaultItem
+import com.kanso.core.ui.components.KansoButtonSize
 import com.kanso.core.ui.components.KansoDateFormatters
 import com.kanso.core.ui.components.KansoDatePickerDialog
+import com.kanso.core.ui.components.KansoOutlinedButton
 import java.time.LocalDate
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -116,9 +117,11 @@ fun ExpiryEditorDialog(
                             style = MaterialTheme.typography.bodyLarge
                         )
                     }
-                    OutlinedButton(onClick = { showDatePicker = true }) {
-                        Text("Change Date")
-                    }
+                    KansoOutlinedButton(
+                        text = "Change Date",
+                        size = KansoButtonSize.COMPACT,
+                        onClick = { showDatePicker = true }
+                    )
                 }
                 Text("Remind days before", style = MaterialTheme.typography.labelLarge)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -271,9 +274,11 @@ fun MaintenanceEditorDialog(
                         Text("Service date", style = MaterialTheme.typography.labelLarge)
                         Text(KansoDateFormatters.formatFullDate(serviceEpochDay))
                     }
-                    OutlinedButton(onClick = { showServiceDatePicker = true }) {
-                        Text("Pick")
-                    }
+                    KansoOutlinedButton(
+                        text = "Pick",
+                        size = KansoButtonSize.COMPACT,
+                        onClick = { showServiceDatePicker = true }
+                    )
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
@@ -308,7 +313,11 @@ fun MaintenanceEditorDialog(
                         if (nextDueEpochDay != null) {
                             TextButton(onClick = { nextDueEpochDay = null }) { Text("Clear") }
                         }
-                        OutlinedButton(onClick = { showNextDueDatePicker = true }) { Text("Set") }
+                        KansoOutlinedButton(
+                            text = "Set",
+                            size = KansoButtonSize.COMPACT,
+                            onClick = { showNextDueDatePicker = true }
+                        )
                     }
                 }
                 OutlinedTextField(

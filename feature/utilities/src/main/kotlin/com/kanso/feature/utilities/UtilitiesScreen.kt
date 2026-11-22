@@ -39,15 +39,12 @@ import androidx.compose.material.icons.outlined.OpenInBrowser
 import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material.icons.outlined.Wifi
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -89,13 +86,18 @@ import com.kanso.core.model.OfflineCurrencyConverter
 import com.kanso.core.model.UnitConverter
 import com.kanso.core.model.UnitDomain
 import com.kanso.core.ui.components.KansoBentoCard
+import com.kanso.core.ui.components.KansoButtonSize
 import com.kanso.core.ui.components.KansoDateFormatters
 import com.kanso.core.ui.components.KansoDatePickerDialog
 import com.kanso.core.ui.components.KansoEmptyState
 import com.kanso.core.ui.components.KansoHeroCard
+import com.kanso.core.ui.components.KansoOutlinedButton
 import com.kanso.core.ui.components.KansoPillBadge
+import com.kanso.core.ui.components.KansoPrimaryButton
 import com.kanso.core.ui.components.KansoProgressRing
 import com.kanso.core.ui.components.KansoSegmentedRow
+import com.kanso.core.ui.components.KansoSmallIconButton
+import com.kanso.core.ui.components.KansoTonalButton
 import com.kanso.core.ui.theme.KansoTheme
 import com.kanso.core.ui.theme.kansoColors
 import java.text.DecimalFormat
@@ -302,21 +304,22 @@ private fun QrTabContent(
             }
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { showWifiDialog = true }, shape = RoundedCornerShape(50)) {
-                        Icon(Icons.Outlined.Wifi, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Text(" Wi-Fi QR")
-                    }
+                    KansoOutlinedButton(
+                        text = "Wi-Fi QR",
+                        leadingIcon = Icons.Outlined.Wifi,
+                        size = KansoButtonSize.COMPACT,
+                        onClick = { showWifiDialog = true }
+                    )
                     if (qrInput.isNotBlank()) {
-                        OutlinedButton(
+                        KansoOutlinedButton(
+                            text = "Copy Text",
+                            leadingIcon = Icons.Outlined.ContentCopy,
+                            size = KansoButtonSize.COMPACT,
                             onClick = {
                                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 onCopyText(qrInput, "QR text")
-                            },
-                            shape = RoundedCornerShape(50)
-                        ) {
-                            Icon(Icons.Outlined.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Text(" Copy Text")
-                        }
+                            }
+                        )
                     }
                 }
             }
@@ -362,34 +365,40 @@ private fun QrTabContent(
                         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             Text("Scanned Result", style = MaterialTheme.typography.titleMedium)
                             Text(result, style = MaterialTheme.typography.bodyLarge)
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Button(
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                KansoPrimaryButton(
+                                    text = "Copy",
+                                    leadingIcon = Icons.Outlined.ContentCopy,
+                                    size = KansoButtonSize.COMPACT,
                                     onClick = {
                                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                         onCopyText(result, "scanned QR")
-                                    },
-                                    shape = RoundedCornerShape(50)
-                                ) {
-                                    Icon(Icons.Outlined.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
-                                    Text(" Copy")
-                                }
+                                    }
+                                )
                                 if (result.startsWith("http://", ignoreCase = true) ||
                                     result.startsWith("https://", ignoreCase = true)
                                 ) {
-                                    OutlinedButton(
+                                    KansoOutlinedButton(
+                                        text = "Open",
+                                        leadingIcon = Icons.Outlined.OpenInBrowser,
+                                        size = KansoButtonSize.COMPACT,
                                         onClick = {
                                             runCatching {
                                                 context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(result)))
                                             }
-                                        },
-                                        shape = RoundedCornerShape(50)
-                                    ) {
-                                        Icon(Icons.Outlined.OpenInBrowser, contentDescription = null, modifier = Modifier.size(18.dp))
-                                        Text(" Open")
-                                    }
+                                        }
+                                    )
                                 }
-                                TextButton(onClick = { scannedResult = null }) {
-                                    Text("Scan Again")
+                                TextButton(
+                                    onClick = { scannedResult = null },
+                                    modifier = Modifier.height(KansoButtonSize.COMPACT.height),
+                                    shape = RoundedCornerShape(KansoButtonSize.COMPACT.cornerRadius),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)
+                                ) {
+                                    Text("Scan Again", maxLines = 1, softWrap = false)
                                 }
                             }
                         }
@@ -489,14 +498,16 @@ private fun ConverterTabContent(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text("To", style = MaterialTheme.typography.labelLarge)
-                            IconButton(onClick = {
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                val prevFrom = fromUnit.id
-                                fromUnitId = toUnit.id
-                                toUnitId = prevFrom
-                            }) {
-                                Icon(Icons.Outlined.SwapHoriz, contentDescription = "Swap")
-                            }
+                            KansoSmallIconButton(
+                                icon = Icons.Outlined.SwapHoriz,
+                                contentDescription = "Swap",
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    val prevFrom = fromUnit.id
+                                    fromUnitId = toUnit.id
+                                    toUnitId = prevFrom
+                                }
+                            )
                         }
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             items(domainUnits, key = { "to-${it.id}" }) { unit ->
@@ -588,14 +599,16 @@ private fun ConverterTabContent(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text("To", style = MaterialTheme.typography.labelLarge)
-                            IconButton(onClick = {
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                val prev = fromCurrency
-                                fromCurrency = toCurrency
-                                toCurrency = prev
-                            }) {
-                                Icon(Icons.Outlined.SwapHoriz, contentDescription = "Swap")
-                            }
+                            KansoSmallIconButton(
+                                icon = Icons.Outlined.SwapHoriz,
+                                contentDescription = "Swap",
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    val prev = fromCurrency
+                                    fromCurrency = toCurrency
+                                    toCurrency = prev
+                                }
+                            )
                         }
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             items(AppCurrency.entries, key = { "tc-${it.code}" }) { c ->
@@ -738,37 +751,28 @@ private fun FocusTabContent(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Button(
+                        KansoPrimaryButton(
+                            text = if (pomodoro.isRunning) "Pause" else "Start",
+                            size = KansoButtonSize.LARGE,
+                            containerColor = ringColor,
+                            contentColor = Color(0xFF042F2E),
+                            modifier = Modifier.weight(1f),
                             onClick = {
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 onToggle()
-                            },
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(48.dp),
-                            shape = RoundedCornerShape(14.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = ringColor,
-                                contentColor = Color(0xFF042F2E)
-                            )
-                        ) {
-                            Text(
-                                text = if (pomodoro.isRunning) "Pause" else "Start",
-                                style = MaterialTheme.typography.titleSmall
-                            )
-                        }
-                        OutlinedButton(
+                            }
+                        )
+                        KansoOutlinedButton(
+                            text = "Reset",
+                            size = KansoButtonSize.LARGE,
+                            contentColor = kansoColors.heroOnSurface,
+                            borderColor = Color.White.copy(alpha = 0.35f),
+                            modifier = Modifier.weight(1f),
                             onClick = {
                                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 onReset()
-                            },
-                            modifier = Modifier
-                                .weight(0.75f)
-                                .height(48.dp),
-                            shape = RoundedCornerShape(14.dp)
-                        ) {
-                            Text("Reset", color = kansoColors.heroOnSurface)
-                        }
+                            }
+                        )
                     }
                 }
             }
@@ -797,14 +801,12 @@ private fun CountdownsTabContent(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text("Date Countdowns", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
-                FilledTonalButton(
-                    onClick = onAddCountdown,
-                    shape = RoundedCornerShape(50),
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
-                ) {
-                    Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(17.dp))
-                    Text(" Add")
-                }
+                KansoTonalButton(
+                    text = "Add",
+                    leadingIcon = Icons.Outlined.Add,
+                    size = KansoButtonSize.COMPACT,
+                    onClick = onAddCountdown
+                )
             }
         }
 
@@ -1016,7 +1018,11 @@ private fun CountdownEditorDialog(
                         Text("Date", style = MaterialTheme.typography.labelLarge)
                         Text(KansoDateFormatters.formatFullDate(targetEpochDay))
                     }
-                    OutlinedButton(onClick = { showPicker = true }) { Text("Pick Date") }
+                    KansoOutlinedButton(
+                        text = "Pick Date",
+                        size = KansoButtonSize.COMPACT,
+                        onClick = { showPicker = true }
+                    )
                 }
                 OutlinedTextField(
                     value = note,

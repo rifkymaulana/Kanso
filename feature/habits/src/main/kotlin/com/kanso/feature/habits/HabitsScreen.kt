@@ -40,14 +40,10 @@ import androidx.compose.material.icons.outlined.SentimentSatisfied
 import androidx.compose.material.icons.outlined.SentimentVeryDissatisfied
 import androidx.compose.material.icons.outlined.SentimentVerySatisfied
 import androidx.compose.material.icons.outlined.WaterDrop
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -79,12 +75,17 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.kanso.core.model.DailyHealthLog
 import com.kanso.core.model.HabitItem
 import com.kanso.core.ui.components.KansoBentoCard
+import com.kanso.core.ui.components.KansoButtonSize
 import com.kanso.core.ui.components.KansoCheckCircle
 import com.kanso.core.ui.components.KansoDateFormatters
 import com.kanso.core.ui.components.KansoEmptyState
+import com.kanso.core.ui.components.KansoOutlinedButton
 import com.kanso.core.ui.components.KansoPillBadge
+import com.kanso.core.ui.components.KansoPrimaryButton
 import com.kanso.core.ui.components.KansoProgressRing
 import com.kanso.core.ui.components.KansoSegmentedRow
+import com.kanso.core.ui.components.KansoSmallIconButton
+import com.kanso.core.ui.components.KansoTonalButton
 import com.kanso.core.ui.components.warningSemanticColor
 import com.kanso.core.ui.theme.KansoTheme
 import com.kanso.core.ui.theme.kansoColors
@@ -280,14 +281,12 @@ private fun HabitsTabContent(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    FilledTonalButton(
-                        onClick = onAddHabit,
-                        shape = RoundedCornerShape(50),
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
-                    ) {
-                        Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(17.dp))
-                        Text(" Add")
-                    }
+                    KansoTonalButton(
+                        text = "Add",
+                        leadingIcon = Icons.Outlined.Add,
+                        size = KansoButtonSize.COMPACT,
+                        onClick = onAddHabit
+                    )
                 }
             }
         }
@@ -350,9 +349,11 @@ private fun HabitsTabContent(
                                 }
                             }
                         }
-                        IconButton(onClick = { onEditHabit(row.habit) }) {
-                            Icon(Icons.Outlined.Edit, contentDescription = "Edit Habit")
-                        }
+                        KansoSmallIconButton(
+                            icon = Icons.Outlined.Edit,
+                            contentDescription = "Edit Habit",
+                            onClick = { onEditHabit(row.habit) }
+                        )
                     }
                 }
             }
@@ -510,41 +511,41 @@ private fun HealthTabContent(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        OutlinedButton(
+                        KansoOutlinedButton(
+                            text = "-250 ml",
+                            size = KansoButtonSize.COMPACT,
+                            modifier = Modifier.weight(1f),
+                            enabled = waterMl >= 250,
+                            contentPadding = PaddingValues(horizontal = 8.dp),
                             onClick = {
                                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 onAdjustWater(-250)
-                            },
+                            }
+                        )
+                        KansoTonalButton(
+                            text = "+250 ml",
+                            size = KansoButtonSize.COMPACT,
                             modifier = Modifier.weight(1f),
-                            enabled = waterMl >= 250,
-                            shape = RoundedCornerShape(14.dp)
-                        ) {
-                            Text("-250 ml")
-                        }
-                        FilledTonalButton(
+                            containerColor = hydrationAccent.copy(alpha = 0.14f),
+                            contentColor = hydrationAccent,
+                            contentPadding = PaddingValues(horizontal = 8.dp),
                             onClick = {
                                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 onAdjustWater(250)
-                            },
+                            }
+                        )
+                        KansoPrimaryButton(
+                            text = "+500 ml",
+                            size = KansoButtonSize.COMPACT,
                             modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(14.dp)
-                        ) {
-                            Text("+250 ml")
-                        }
-                        Button(
+                            containerColor = hydrationAccent,
+                            contentColor = Color.White,
+                            contentPadding = PaddingValues(horizontal = 8.dp),
                             onClick = {
                                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 onAdjustWater(500)
-                            },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(14.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = hydrationAccent,
-                                contentColor = Color.White
-                            )
-                        ) {
-                            Text("+500 ml")
-                        }
+                            }
+                        )
                     }
                 }
             }
@@ -634,7 +635,10 @@ private fun HealthTabContent(
                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences)
                     )
 
-                    Button(
+                    KansoPrimaryButton(
+                        text = "Save Daily Check-In",
+                        size = KansoButtonSize.LARGE,
+                        modifier = Modifier.fillMaxWidth(),
                         onClick = {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             onSaveHealthDetails(
@@ -643,14 +647,8 @@ private fun HealthTabContent(
                                 selectedMood,
                                 workoutNote
                             )
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp),
-                        shape = RoundedCornerShape(14.dp)
-                    ) {
-                        Text("Save Daily Check-In")
-                    }
+                        }
+                    )
                 }
             }
         }

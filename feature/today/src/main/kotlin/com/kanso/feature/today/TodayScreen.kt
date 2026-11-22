@@ -32,7 +32,6 @@ import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.TaskAlt
 import androidx.compose.material.icons.outlined.WaterDrop
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -72,12 +71,14 @@ import com.kanso.core.model.WalletType
 import com.kanso.core.ui.components.KansoAccentIconBadge
 import com.kanso.core.ui.components.KansoAnimatedProgressBar
 import com.kanso.core.ui.components.KansoBentoCard
+import com.kanso.core.ui.components.KansoButtonSize
 import com.kanso.core.ui.components.KansoCheckCircle
 import com.kanso.core.ui.components.KansoCompactEmptyHint
 import com.kanso.core.ui.components.KansoDateFormatters
 import com.kanso.core.ui.components.KansoHeroCard
 import com.kanso.core.ui.components.KansoPillBadge
 import com.kanso.core.ui.components.KansoProgressRing
+import com.kanso.core.ui.components.KansoTonalButton
 import com.kanso.core.ui.components.SectionHeader
 import com.kanso.core.ui.components.expenseSemanticColor
 import com.kanso.core.ui.components.warningSemanticColor
@@ -667,23 +668,14 @@ private fun BentoPulseRow(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable(onClick = onAddWater250),
-                    shape = RoundedCornerShape(12.dp),
-                    color = kansoColors.hydrationAccent.copy(alpha = 0.14f)
-                ) {
-                    Text(
-                        text = "+250 ml",
-                        modifier = Modifier.padding(vertical = 8.dp),
-                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
-                        color = kansoColors.hydrationAccent,
-                        maxLines = 1,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                    )
-                }
+                KansoTonalButton(
+                    text = "+250 ml",
+                    size = KansoButtonSize.COMPACT,
+                    modifier = Modifier.fillMaxWidth(),
+                    containerColor = kansoColors.hydrationAccent.copy(alpha = 0.14f),
+                    contentColor = kansoColors.hydrationAccent,
+                    onClick = onAddWater250
+                )
             }
         }
 
@@ -749,21 +741,14 @@ private fun BentoPulseRow(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = kansoColors.habitsAccent.copy(alpha = 0.14f)
-                ) {
-                    Text(
-                        text = if (habitTotal == 0) "Create habit →" else "Open tracker →",
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 8.dp),
-                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
-                        color = kansoColors.habitsAccent,
-                        maxLines = 1,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                    )
-                }
+                KansoTonalButton(
+                    text = if (habitTotal == 0) "Create habit →" else "Open tracker →",
+                    size = KansoButtonSize.COMPACT,
+                    modifier = Modifier.fillMaxWidth(),
+                    containerColor = kansoColors.habitsAccent.copy(alpha = 0.14f),
+                    contentColor = kansoColors.habitsAccent,
+                    onClick = onOpenHabits
+                )
             }
         }
     }
@@ -831,13 +816,11 @@ private fun AttentionBentoCard(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    FilledTonalButton(
-                        onClick = { onPayBill(bill) },
-                        shape = RoundedCornerShape(50),
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
-                    ) {
-                        Text("Pay")
-                    }
+                    KansoTonalButton(
+                        text = "Pay",
+                        size = KansoButtonSize.COMPACT,
+                        onClick = { onPayBill(bill) }
+                    )
                 }
             }
 

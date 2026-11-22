@@ -31,14 +31,11 @@ import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.EventAvailable
 import androidx.compose.material3.AssistChip
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -633,9 +630,11 @@ fun QuickCaptureSheet(
                             onClick = { expiryEpochDay = LocalDate.now().plusYears(1).toEpochDay() },
                             label = { Text("+1 yr") }
                         )
-                        OutlinedButton(onClick = { showExpiryDatePicker = true }) {
-                            Text("Pick Date")
-                        }
+                        KansoOutlinedButton(
+                            text = "Pick Date",
+                            size = KansoButtonSize.COMPACT,
+                            onClick = { showExpiryDatePicker = true }
+                        )
                     }
                     Text("Remind before", style = MaterialTheme.typography.labelLarge)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -664,7 +663,12 @@ fun QuickCaptureSheet(
                 QuickCaptureMode.EXPENSE, QuickCaptureMode.INCOME -> mode.accentColor()
                 else -> MaterialTheme.colorScheme.primary
             }
-            Button(
+            KansoPrimaryButton(
+                text = "Save ${mode.label}",
+                size = KansoButtonSize.LARGE,
+                containerColor = buttonColor,
+                contentColor = Color.White,
+                modifier = Modifier.fillMaxWidth(),
                 onClick = {
                     when (mode) {
                         QuickCaptureMode.EXPENSE, QuickCaptureMode.INCOME -> {
@@ -747,21 +751,8 @@ fun QuickCaptureSheet(
                             }
                         }
                     }
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp),
-                shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = buttonColor,
-                    contentColor = Color.White
-                )
-            ) {
-                Text(
-                    text = "Save ${mode.label}",
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold)
-                )
-            }
+                }
+            )
         }
     }
 

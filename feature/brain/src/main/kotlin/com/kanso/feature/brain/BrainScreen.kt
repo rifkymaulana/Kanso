@@ -36,7 +36,6 @@ import androidx.compose.material.icons.outlined.SnippetFolder
 import androidx.compose.material.icons.outlined.TaskAlt
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -76,11 +75,14 @@ import com.kanso.core.model.SnippetMasker
 import com.kanso.core.model.TaskItem
 import com.kanso.core.model.TaskPriority
 import com.kanso.core.ui.components.KansoBentoCard
+import com.kanso.core.ui.components.KansoButtonSize
 import com.kanso.core.ui.components.KansoCheckCircle
 import com.kanso.core.ui.components.KansoDateFormatters
 import com.kanso.core.ui.components.KansoEmptyState
 import com.kanso.core.ui.components.KansoPillBadge
 import com.kanso.core.ui.components.KansoSegmentedRow
+import com.kanso.core.ui.components.KansoSmallIconButton
+import com.kanso.core.ui.components.KansoTonalButton
 import com.kanso.core.ui.components.expenseSemanticColor
 import com.kanso.core.ui.components.warningSemanticColor
 import com.kanso.core.ui.theme.KansoTheme
@@ -240,24 +242,20 @@ fun BrainScreenContent(
                 text = "Second Brain",
                 style = MaterialTheme.typography.headlineMedium
             )
-            FilledTonalButton(
+            KansoTonalButton(
+                text = when (selectedTab) {
+                    0 -> "Note"
+                    1 -> "Task"
+                    else -> "Snippet"
+                },
+                leadingIcon = Icons.Outlined.Add,
+                size = KansoButtonSize.COMPACT,
                 onClick = when (selectedTab) {
                     0 -> onAddNote
                     1 -> onAddTask
                     else -> onAddSnippet
-                },
-                shape = RoundedCornerShape(50),
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
-            ) {
-                Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(17.dp))
-                Text(
-                    text = when (selectedTab) {
-                        0 -> " Note"
-                        1 -> " Task"
-                        else -> " Snippet"
-                    }
-                )
-            }
+                }
+            )
         }
 
         KansoSegmentedRow(
@@ -411,17 +409,12 @@ private fun NotesTabContent(
                                     overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier.weight(1f)
                                 )
-                                IconButton(
-                                    onClick = { onTogglePinNote(note) },
-                                    modifier = Modifier.size(28.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = if (note.isPinned) Icons.Filled.PushPin else Icons.Outlined.PushPin,
-                                        contentDescription = if (note.isPinned) "Unpin" else "Pin",
-                                        tint = if (note.isPinned) brainAccent else MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
+                                KansoSmallIconButton(
+                                    icon = if (note.isPinned) Icons.Filled.PushPin else Icons.Outlined.PushPin,
+                                    contentDescription = if (note.isPinned) "Unpin" else "Pin",
+                                    tint = if (note.isPinned) brainAccent else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    onClick = { onTogglePinNote(note) }
+                                )
                             }
 
                             if (note.content.isNotBlank()) {
@@ -661,55 +654,35 @@ private fun SnippetsTabContent(
                             }
 
                             if (snippet.isSensitive) {
-                                IconButton(
-                                    onClick = { revealedIds[snippet.id] = !isRevealed },
-                                    modifier = Modifier.size(34.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = if (isRevealed) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
-                                        contentDescription = if (isRevealed) "Hide" else "Reveal",
-                                        modifier = Modifier.size(19.dp)
-                                    )
-                                }
-                            }
-
-                            IconButton(
-                                onClick = { onTogglePinSnippet(snippet) },
-                                modifier = Modifier.size(34.dp)
-                            ) {
-                                Icon(
-                                    imageVector = if (snippet.isPinned) Icons.Filled.PushPin else Icons.Outlined.PushPin,
-                                    contentDescription = "Pin",
-                                    tint = if (snippet.isPinned) brainAccent else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(18.dp)
+                                KansoSmallIconButton(
+                                    icon = if (isRevealed) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+                                    contentDescription = if (isRevealed) "Hide" else "Reveal",
+                                    onClick = { revealedIds[snippet.id] = !isRevealed }
                                 )
                             }
 
-                            IconButton(
-                                onClick = { onEditSnippet(snippet) },
-                                modifier = Modifier.size(34.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Outlined.Edit,
-                                    contentDescription = "Edit",
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
+                            KansoSmallIconButton(
+                                icon = if (snippet.isPinned) Icons.Filled.PushPin else Icons.Outlined.PushPin,
+                                contentDescription = "Pin",
+                                tint = if (snippet.isPinned) brainAccent else MaterialTheme.colorScheme.onSurfaceVariant,
+                                onClick = { onTogglePinSnippet(snippet) }
+                            )
 
-                            IconButton(
+                            KansoSmallIconButton(
+                                icon = Icons.Outlined.Edit,
+                                contentDescription = "Edit",
+                                onClick = { onEditSnippet(snippet) }
+                            )
+
+                            KansoSmallIconButton(
+                                icon = Icons.Outlined.ContentCopy,
+                                contentDescription = "Copy",
+                                tint = MaterialTheme.colorScheme.primary,
                                 onClick = {
                                     haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     onCopySnippet(snippet)
-                                },
-                                modifier = Modifier.size(34.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Outlined.ContentCopy,
-                                    contentDescription = "Copy",
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
+                                }
+                            )
                         }
 
                         Surface(

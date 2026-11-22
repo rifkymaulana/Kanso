@@ -40,15 +40,11 @@ import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -99,11 +95,16 @@ import com.kanso.core.security.BiometricAuthHelper
 import com.kanso.core.security.BiometricAvailability
 import com.kanso.core.ui.components.KansoAccentIconBadge
 import com.kanso.core.ui.components.KansoBentoCard
+import com.kanso.core.ui.components.KansoButtonSize
 import com.kanso.core.ui.components.KansoDateFormatters
 import com.kanso.core.ui.components.KansoEmptyState
 import com.kanso.core.ui.components.KansoHeroCard
+import com.kanso.core.ui.components.KansoOutlinedButton
 import com.kanso.core.ui.components.KansoPillBadge
+import com.kanso.core.ui.components.KansoPrimaryButton
 import com.kanso.core.ui.components.KansoSegmentedRow
+import com.kanso.core.ui.components.KansoSmallIconButton
+import com.kanso.core.ui.components.KansoTonalButton
 import com.kanso.core.ui.components.expenseSemanticColor
 import com.kanso.core.ui.components.incomeSemanticColor
 import com.kanso.core.ui.components.warningSemanticColor
@@ -413,14 +414,12 @@ private fun ExpiriesTabContent(
                         color = if (uiState.attentionExpiryCount > 0) warningColor else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                FilledTonalButton(
-                    onClick = onAddExpiry,
-                    shape = RoundedCornerShape(50),
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
-                ) {
-                    Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(17.dp))
-                    Text(" Add")
-                }
+                KansoTonalButton(
+                    text = "Add",
+                    leadingIcon = Icons.Outlined.Add,
+                    size = KansoButtonSize.COMPACT,
+                    onClick = onAddExpiry
+                )
             }
         }
 
@@ -484,19 +483,14 @@ private fun ExpiriesTabContent(
                                         style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
                                         color = MaterialTheme.colorScheme.primary
                                     )
-                                    IconButton(
+                                    KansoSmallIconButton(
+                                        icon = Icons.Outlined.ContentCopy,
+                                        contentDescription = "Copy reference",
                                         onClick = {
                                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                             onCopyReference(item.referenceNumber)
-                                        },
-                                        modifier = Modifier.size(28.dp)
-                                    ) {
-                                        Icon(
-                                            Icons.Outlined.ContentCopy,
-                                            contentDescription = "Copy reference",
-                                            modifier = Modifier.size(15.dp)
-                                        )
-                                    }
+                                        }
+                                    )
                                 }
                             }
                         }
@@ -537,14 +531,12 @@ private fun MaintenanceTabContent(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text("Maintenance History", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
-                FilledTonalButton(
-                    onClick = onAddMaintenance,
-                    shape = RoundedCornerShape(50),
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
-                ) {
-                    Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(17.dp))
-                    Text(" Add Log")
-                }
+                KansoTonalButton(
+                    text = "Add Log",
+                    leadingIcon = Icons.Outlined.Add,
+                    size = KansoButtonSize.COMPACT,
+                    onClick = onAddMaintenance
+                )
             }
         }
 
@@ -720,23 +712,18 @@ private fun VaultTabContent(
                     Spacer(modifier = Modifier.height(4.dp))
 
                     if (availability == BiometricAvailability.AVAILABLE) {
-                        Button(
+                        KansoPrimaryButton(
+                            text = "Unlock with Biometrics / PIN",
+                            leadingIcon = Icons.Outlined.Fingerprint,
+                            size = KansoButtonSize.LARGE,
+                            containerColor = Color(0xFF2DD4BF),
+                            contentColor = Color(0xFF042F2E),
+                            modifier = Modifier.fillMaxWidth(),
                             onClick = {
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 onRequestUnlockVault()
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(50.dp),
-                            shape = RoundedCornerShape(14.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF2DD4BF),
-                                contentColor = Color(0xFF042F2E)
-                            )
-                        ) {
-                            Icon(Icons.Outlined.Fingerprint, contentDescription = null)
-                            Text("  Unlock with Biometrics / PIN", style = MaterialTheme.typography.titleSmall)
-                        }
+                            }
+                        )
                     } else {
                         Text(
                             text = "Set a device PIN, pattern, or biometric lock in Android Settings to unlock the Private Vault.",
@@ -744,12 +731,14 @@ private fun VaultTabContent(
                             color = Color(0xFFFCA5A5),
                             textAlign = TextAlign.Center
                         )
-                        OutlinedButton(
-                            onClick = onOpenSecuritySettings,
-                            shape = RoundedCornerShape(14.dp)
-                        ) {
-                            Text("Open Security Settings", color = kansoColors.heroOnSurface)
-                        }
+                        KansoOutlinedButton(
+                            text = "Open Security Settings",
+                            size = KansoButtonSize.LARGE,
+                            contentColor = kansoColors.heroOnSurface,
+                            borderColor = Color.White.copy(alpha = 0.35f),
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = onOpenSecuritySettings
+                        )
                     }
                 }
             }
@@ -814,14 +803,12 @@ private fun VaultTabContent(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text("Encrypted Secrets", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
-                FilledTonalButton(
-                    onClick = onAddVaultItem,
-                    shape = RoundedCornerShape(50),
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
-                ) {
-                    Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(17.dp))
-                    Text(" Add")
-                }
+                KansoTonalButton(
+                    text = "Add",
+                    leadingIcon = Icons.Outlined.Add,
+                    size = KansoButtonSize.COMPACT,
+                    onClick = onAddVaultItem
+                )
             }
         }
 
@@ -875,21 +862,24 @@ private fun VaultTabContent(
                                 KansoPillBadge(text = item.category.label, color = kansoColors.lifeAdminAccent)
                             }
                             Row {
-                                IconButton(onClick = { revealedIds[item.id] = !isRevealed }) {
-                                    Icon(
-                                        imageVector = if (isRevealed) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
-                                        contentDescription = if (isRevealed) "Hide" else "Reveal"
-                                    )
-                                }
-                                IconButton(onClick = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    onCopyVaultSecret(item)
-                                }) {
-                                    Icon(Icons.Outlined.ContentCopy, contentDescription = "Copy")
-                                }
-                                IconButton(onClick = { onEditVaultItem(item) }) {
-                                    Icon(Icons.Outlined.Edit, contentDescription = "Edit")
-                                }
+                                KansoSmallIconButton(
+                                    icon = if (isRevealed) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+                                    contentDescription = if (isRevealed) "Hide" else "Reveal",
+                                    onClick = { revealedIds[item.id] = !isRevealed }
+                                )
+                                KansoSmallIconButton(
+                                    icon = Icons.Outlined.ContentCopy,
+                                    contentDescription = "Copy",
+                                    onClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        onCopyVaultSecret(item)
+                                    }
+                                )
+                                KansoSmallIconButton(
+                                    icon = Icons.Outlined.Edit,
+                                    contentDescription = "Edit",
+                                    onClick = { onEditVaultItem(item) }
+                                )
                             }
                         }
 

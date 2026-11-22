@@ -30,16 +30,12 @@ import androidx.compose.material.icons.outlined.Restore
 import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material.icons.outlined.Widgets
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
@@ -79,7 +75,10 @@ import com.kanso.core.model.CurrencyFormatter
 import com.kanso.core.model.ThemeMode
 import com.kanso.core.ui.components.KansoAnimatedProgressBar
 import com.kanso.core.ui.components.KansoBentoCard
+import com.kanso.core.ui.components.KansoButtonSize
 import com.kanso.core.ui.components.KansoDateFormatters
+import com.kanso.core.ui.components.KansoOutlinedButton
+import com.kanso.core.ui.components.KansoPrimaryButton
 import com.kanso.core.ui.components.KansoSegmentedRow
 import com.kanso.feature.money.OverallBudgetDialog
 import java.time.LocalDateTime
@@ -334,31 +333,29 @@ fun SettingsRoute(
                             }
 
                             val busy = uiState.backupStatus is BackupOperationStatus.InProgress
-                            Button(
+                            KansoPrimaryButton(
+                                text = "Export Encrypted Backup",
+                                leadingIcon = Icons.Outlined.CloudUpload,
+                                size = KansoButtonSize.LARGE,
+                                enabled = !busy,
+                                modifier = Modifier.fillMaxWidth(),
                                 onClick = {
                                     viewModel.clearBackupStatus()
                                     showExportPassphraseDialog = true
-                                },
+                                }
+                            )
+
+                            KansoOutlinedButton(
+                                text = "Restore from Backup",
+                                leadingIcon = Icons.Outlined.Restore,
+                                size = KansoButtonSize.LARGE,
                                 enabled = !busy,
                                 modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(14.dp)
-                            ) {
-                                Icon(Icons.Outlined.CloudUpload, contentDescription = null)
-                                Text("  Export Encrypted Backup")
-                            }
-
-                            OutlinedButton(
                                 onClick = {
                                     viewModel.clearBackupStatus()
                                     openBackupLauncher.launch(arrayOf("*/*"))
-                                },
-                                enabled = !busy,
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(14.dp)
-                            ) {
-                                Icon(Icons.Outlined.Restore, contentDescription = null)
-                                Text("  Restore from Backup")
-                            }
+                                }
+                            )
                         }
                     }
                 }
@@ -407,7 +404,11 @@ fun SettingsRoute(
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            OutlinedButton(
+                            KansoOutlinedButton(
+                                text = "Pin Today Widget to Home Screen",
+                                leadingIcon = Icons.Outlined.Widgets,
+                                size = KansoButtonSize.LARGE,
+                                modifier = Modifier.fillMaxWidth(),
                                 onClick = {
                                     if (appWidgetManager.isRequestPinAppWidgetSupported) {
                                         val provider = ComponentName(context, KansoTodayWidgetReceiver::class.java)
@@ -420,13 +421,8 @@ fun SettingsRoute(
                                     } else {
                                         widgetPinMessage = "Long-press your home screen -> Widgets -> Kanso to add it."
                                     }
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(14.dp)
-                            ) {
-                                Icon(Icons.Outlined.Widgets, contentDescription = null)
-                                Text("  Pin Today Widget to Home Screen")
-                            }
+                                }
+                            )
                             if (widgetPinMessage != null) {
                                 Text(
                                     text = widgetPinMessage.orEmpty(),
@@ -676,14 +672,13 @@ private fun AppUpdatesCard(
                                     color = MaterialTheme.colorScheme.onPrimaryContainer
                                 )
                             }
-                            Button(
-                                onClick = { onDownloadAndInstall(status.release) },
+                            KansoPrimaryButton(
+                                text = "Download & Install ${status.release.tagName}",
+                                leadingIcon = Icons.Outlined.InstallMobile,
+                                size = KansoButtonSize.LARGE,
                                 modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Icon(Icons.Outlined.InstallMobile, contentDescription = null)
-                                Text("  Download & Install ${status.release.tagName}")
-                            }
+                                onClick = { onDownloadAndInstall(status.release) }
+                            )
                         }
                     }
                 }
@@ -732,14 +727,13 @@ private fun AppUpdatesCard(
                                 style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
-                            Button(
-                                onClick = { onInstallApk(status.apkFile) },
+                            KansoPrimaryButton(
+                                text = "Install APK",
+                                leadingIcon = Icons.Outlined.InstallMobile,
+                                size = KansoButtonSize.LARGE,
                                 modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Icon(Icons.Outlined.InstallMobile, contentDescription = null)
-                                Text("  Install APK")
-                            }
+                                onClick = { onInstallApk(status.apkFile) }
+                            )
                         }
                     }
                 }
@@ -761,9 +755,11 @@ private fun AppUpdatesCard(
                                 color = MaterialTheme.colorScheme.onErrorContainer
                             )
                             if (status.needsToken) {
-                                OutlinedButton(onClick = onEditGithubToken) {
-                                    Text("Set GitHub Token")
-                                }
+                                KansoOutlinedButton(
+                                    text = "Set GitHub Token",
+                                    size = KansoButtonSize.COMPACT,
+                                    onClick = onEditGithubToken
+                                )
                             }
                         }
                     }
@@ -778,21 +774,21 @@ private fun AppUpdatesCard(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Button(
-                    onClick = onCheckUpdates,
+                KansoPrimaryButton(
+                    text = "Check Updates",
+                    size = KansoButtonSize.LARGE,
                     enabled = !busy,
                     modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Text("Check for Updates")
-                }
-                OutlinedButton(
-                    onClick = onOpenReleasesPage,
-                    modifier = Modifier.weight(0.9f),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Text("Open Releases")
-                }
+                    contentPadding = PaddingValues(horizontal = 10.dp),
+                    onClick = onCheckUpdates
+                )
+                KansoOutlinedButton(
+                    text = "Open Releases",
+                    size = KansoButtonSize.LARGE,
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 10.dp),
+                    onClick = onOpenReleasesPage
+                )
             }
         }
     }

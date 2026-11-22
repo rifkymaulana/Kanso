@@ -31,8 +31,6 @@ import androidx.compose.material.icons.outlined.ChevronLeft
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Handshake
 import androidx.compose.material.icons.outlined.PieChart
-import androidx.compose.material3.Button
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -72,6 +70,7 @@ import com.kanso.core.ui.components.DonutSlice
 import com.kanso.core.ui.components.KansoAccentIconBadge
 import com.kanso.core.ui.components.KansoAnimatedProgressBar
 import com.kanso.core.ui.components.KansoBentoCard
+import com.kanso.core.ui.components.KansoButtonSize
 import com.kanso.core.ui.components.KansoCategoryDonutChart
 import com.kanso.core.ui.components.KansoDateFormatters
 import com.kanso.core.ui.components.KansoEmptyState
@@ -79,6 +78,7 @@ import com.kanso.core.ui.components.KansoHeroCard
 import com.kanso.core.ui.components.KansoPillBadge
 import com.kanso.core.ui.components.KansoProgressRing
 import com.kanso.core.ui.components.KansoSegmentedRow
+import com.kanso.core.ui.components.KansoTonalButton
 import com.kanso.core.ui.components.MoneyAmountBadge
 import com.kanso.core.ui.components.SectionHeader
 import com.kanso.core.ui.components.accentColor
@@ -386,7 +386,7 @@ private fun MonthPillSelector(
         ) {
             Box(
                 modifier = Modifier
-                    .size(32.dp)
+                    .size(34.dp)
                     .clip(CircleShape)
                     .clickable(onClick = onPrevious),
                 contentAlignment = Alignment.Center
@@ -404,7 +404,7 @@ private fun MonthPillSelector(
             )
             Box(
                 modifier = Modifier
-                    .size(32.dp)
+                    .size(34.dp)
                     .clip(CircleShape)
                     .clickable(onClick = onNext),
                 contentAlignment = Alignment.Center
@@ -770,13 +770,11 @@ private fun BudgetsTabContent(
                         }
                     }
 
-                    FilledTonalButton(
-                        onClick = onEditOverallBudget,
-                        shape = RoundedCornerShape(50),
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
-                    ) {
-                        Text(if (uiState.overallMonthlyBudgetCents > 0L) "Edit" else "Set")
-                    }
+                    KansoTonalButton(
+                        text = if (uiState.overallMonthlyBudgetCents > 0L) "Edit" else "Set",
+                        size = KansoButtonSize.COMPACT,
+                        onClick = onEditOverallBudget
+                    )
                 }
             }
         }
@@ -880,14 +878,12 @@ private fun BillsTabContent(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text("Recurring Bills", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
-                FilledTonalButton(
-                    onClick = onAddBill,
-                    shape = RoundedCornerShape(50),
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
-                ) {
-                    Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(17.dp))
-                    Text(" Add Bill")
-                }
+                KansoTonalButton(
+                    text = "Add Bill",
+                    leadingIcon = Icons.Outlined.Add,
+                    size = KansoButtonSize.COMPACT,
+                    onClick = onAddBill
+                )
             }
         }
 
@@ -941,16 +937,14 @@ private fun BillsTabContent(
                         } else if (isPaid) {
                             KansoPillBadge(text = "Paid", color = incomeSemanticColor())
                         } else {
-                            FilledTonalButton(
+                            KansoTonalButton(
+                                text = "Mark Paid",
+                                size = KansoButtonSize.COMPACT,
                                 onClick = {
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     onPayBill(bill)
-                                },
-                                shape = RoundedCornerShape(50),
-                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
-                            ) {
-                                Text("Mark Paid")
-                            }
+                                }
+                            )
                         }
                     }
                 }
@@ -1042,14 +1036,12 @@ private fun IousTabContent(
                         label = { Text("Settled (${uiState.settledIous.size})") }
                     )
                 }
-                Button(
-                    onClick = onAddIou,
-                    shape = RoundedCornerShape(50),
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
-                ) {
-                    Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(17.dp))
-                    Text(" Add")
-                }
+                KansoTonalButton(
+                    text = "Add",
+                    leadingIcon = Icons.Outlined.Add,
+                    size = KansoButtonSize.COMPACT,
+                    onClick = onAddIou
+                )
             }
         }
 
@@ -1111,16 +1103,14 @@ private fun IousTabContent(
                         }
 
                         if (!iou.isSettled) {
-                            FilledTonalButton(
+                            KansoTonalButton(
+                                text = "Settle",
+                                size = KansoButtonSize.COMPACT,
                                 onClick = {
                                     haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     onRequestSettleIou(iou)
-                                },
-                                shape = RoundedCornerShape(50),
-                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
-                            ) {
-                                Text("Settle")
-                            }
+                                }
+                            )
                         } else {
                             KansoPillBadge(text = "Settled", color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }

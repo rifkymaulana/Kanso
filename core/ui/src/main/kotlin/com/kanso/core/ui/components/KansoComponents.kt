@@ -51,13 +51,17 @@ import androidx.compose.material.icons.outlined.Smartphone
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -570,12 +574,11 @@ fun KansoCompactEmptyHint(
                 )
             }
             if (actionLabel != null && onAction != null) {
-                FilledTonalButton(
+                KansoTonalButton(
+                    text = actionLabel,
                     onClick = onAction,
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                ) {
-                    Text(text = actionLabel, style = MaterialTheme.typography.labelLarge)
-                }
+                    size = KansoButtonSize.COMPACT
+                )
             }
         }
     }
@@ -676,14 +679,149 @@ fun KansoEmptyState(
             )
             if (actionLabel != null && onAction != null) {
                 Spacer(modifier = Modifier.height(16.dp))
-                FilledTonalButton(
+                KansoTonalButton(
+                    text = actionLabel,
                     onClick = onAction,
-                    shape = RoundedCornerShape(50)
-                ) {
-                    Text(text = actionLabel)
-                }
+                    size = KansoButtonSize.COMPACT
+                )
             }
         }
+    }
+}
+
+enum class KansoButtonSize(
+    val height: Dp,
+    val cornerRadius: Dp,
+    val horizontalPadding: Dp,
+    val iconSize: Dp,
+    val iconGap: Dp
+) {
+    LARGE(height = 48.dp, cornerRadius = 14.dp, horizontalPadding = 16.dp, iconSize = 18.dp, iconGap = 8.dp),
+    COMPACT(height = 38.dp, cornerRadius = 12.dp, horizontalPadding = 14.dp, iconSize = 16.dp, iconGap = 6.dp)
+}
+
+@Composable
+private fun KansoButtonLabel(
+    text: String,
+    size: KansoButtonSize,
+    leadingIcon: ImageVector?
+) {
+    if (leadingIcon != null) {
+        Icon(
+            imageVector = leadingIcon,
+            contentDescription = null,
+            modifier = Modifier.size(size.iconSize)
+        )
+        Spacer(modifier = Modifier.width(size.iconGap))
+    }
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+        maxLines = 1,
+        softWrap = false,
+        overflow = TextOverflow.Ellipsis
+    )
+}
+
+@Composable
+fun KansoPrimaryButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    size: KansoButtonSize = KansoButtonSize.LARGE,
+    leadingIcon: ImageVector? = null,
+    enabled: Boolean = true,
+    containerColor: Color = MaterialTheme.colorScheme.primary,
+    contentColor: Color = MaterialTheme.colorScheme.onPrimary,
+    contentPadding: PaddingValues = PaddingValues(horizontal = size.horizontalPadding, vertical = 0.dp)
+) {
+    Button(
+        onClick = onClick,
+        modifier = modifier.height(size.height),
+        enabled = enabled,
+        shape = RoundedCornerShape(size.cornerRadius),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = containerColor,
+            contentColor = contentColor
+        ),
+        contentPadding = contentPadding
+    ) {
+        KansoButtonLabel(text = text, size = size, leadingIcon = leadingIcon)
+    }
+}
+
+@Composable
+fun KansoTonalButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    size: KansoButtonSize = KansoButtonSize.COMPACT,
+    leadingIcon: ImageVector? = null,
+    enabled: Boolean = true,
+    containerColor: Color = MaterialTheme.colorScheme.primaryContainer,
+    contentColor: Color = MaterialTheme.colorScheme.onPrimaryContainer,
+    contentPadding: PaddingValues = PaddingValues(horizontal = size.horizontalPadding, vertical = 0.dp)
+) {
+    FilledTonalButton(
+        onClick = onClick,
+        modifier = modifier.height(size.height),
+        enabled = enabled,
+        shape = RoundedCornerShape(size.cornerRadius),
+        colors = ButtonDefaults.filledTonalButtonColors(
+            containerColor = containerColor,
+            contentColor = contentColor
+        ),
+        contentPadding = contentPadding
+    ) {
+        KansoButtonLabel(text = text, size = size, leadingIcon = leadingIcon)
+    }
+}
+
+@Composable
+fun KansoOutlinedButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    size: KansoButtonSize = KansoButtonSize.COMPACT,
+    leadingIcon: ImageVector? = null,
+    enabled: Boolean = true,
+    contentColor: Color = MaterialTheme.colorScheme.primary,
+    borderColor: Color = MaterialTheme.colorScheme.outline,
+    contentPadding: PaddingValues = PaddingValues(horizontal = size.horizontalPadding, vertical = 0.dp)
+) {
+    OutlinedButton(
+        onClick = onClick,
+        modifier = modifier.height(size.height),
+        enabled = enabled,
+        shape = RoundedCornerShape(size.cornerRadius),
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = contentColor),
+        border = BorderStroke(1.dp, if (enabled) borderColor else borderColor.copy(alpha = 0.35f)),
+        contentPadding = contentPadding
+    ) {
+        KansoButtonLabel(text = text, size = size, leadingIcon = leadingIcon)
+    }
+}
+
+@Composable
+fun KansoSmallIconButton(
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    tint: Color = LocalContentColor.current
+) {
+    IconButton(
+        onClick = onClick,
+        modifier = modifier.size(36.dp),
+        enabled = enabled
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = tint,
+            modifier = Modifier.size(18.dp)
+        )
     }
 }
 

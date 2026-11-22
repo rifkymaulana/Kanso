@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.SystemUpdate
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -26,6 +25,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.kanso.core.ui.components.KansoAccentIconBadge
 import com.kanso.core.ui.components.KansoAnimatedProgressBar
+import com.kanso.core.ui.components.KansoButtonSize
+import com.kanso.core.ui.components.KansoPrimaryButton
 import java.io.File
 
 fun launchApkInstall(
@@ -109,20 +110,23 @@ fun KansoUpdateBanner(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             TextButton(
                                 onClick = { onDismiss(updateState.release.tagName) },
-                                contentPadding = PaddingValues(horizontal = 10.dp)
+                                modifier = Modifier.height(KansoButtonSize.COMPACT.height),
+                                shape = RoundedCornerShape(KansoButtonSize.COMPACT.cornerRadius),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)
                             ) {
-                                Text("Later")
+                                Text("Later", maxLines = 1, softWrap = false)
                             }
-                            Button(
-                                onClick = { onDownload(updateState.release) },
-                                shape = RoundedCornerShape(50),
-                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
-                            ) {
-                                Text("Update")
-                            }
+                            KansoPrimaryButton(
+                                text = "Update",
+                                size = KansoButtonSize.COMPACT,
+                                onClick = { onDownload(updateState.release) }
+                            )
                         }
                     }
                 }
@@ -186,20 +190,23 @@ fun KansoUpdateBanner(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             TextButton(
                                 onClick = { onDismiss(updateState.release.tagName) },
-                                contentPadding = PaddingValues(horizontal = 10.dp)
+                                modifier = Modifier.height(KansoButtonSize.COMPACT.height),
+                                shape = RoundedCornerShape(KansoButtonSize.COMPACT.cornerRadius),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)
                             ) {
-                                Text("Later")
+                                Text("Later", maxLines = 1, softWrap = false)
                             }
-                            Button(
-                                onClick = { onInstall(updateState.apkFile) },
-                                shape = RoundedCornerShape(50),
-                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
-                            ) {
-                                Text("Install")
-                            }
+                            KansoPrimaryButton(
+                                text = "Install",
+                                size = KansoButtonSize.COMPACT,
+                                onClick = { onInstall(updateState.apkFile) }
+                            )
                         }
                     }
                 }

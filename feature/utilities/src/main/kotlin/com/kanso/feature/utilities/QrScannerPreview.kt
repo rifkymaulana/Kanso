@@ -13,6 +13,7 @@ import androidx.camera.view.PreviewView
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -20,10 +21,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.QrCodeScanner
-import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -40,6 +39,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.kanso.core.ui.components.KansoBentoCard
+import com.kanso.core.ui.components.KansoButtonSize
+import com.kanso.core.ui.components.KansoPrimaryButton
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -63,15 +65,12 @@ fun QrScannerCard(
     }
 
     if (!hasCameraPermission) {
-        Surface(
+        KansoBentoCard(
             modifier = modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surface
+            contentPadding = PaddingValues(24.dp)
         ) {
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(24.dp),
+                modifier = Modifier.fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
@@ -87,9 +86,12 @@ fun QrScannerCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center
                 )
-                Button(onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) }) {
-                    Text("Grant Camera Access")
-                }
+                KansoPrimaryButton(
+                    text = "Grant Camera Access",
+                    size = KansoButtonSize.LARGE,
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) }
+                )
             }
         }
         return
