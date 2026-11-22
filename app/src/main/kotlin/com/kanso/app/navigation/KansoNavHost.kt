@@ -1,0 +1,353 @@
+package com.kanso.app.navigation
+
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountBalanceWallet
+import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.Psychology
+import androidx.compose.material.icons.filled.Today
+import androidx.compose.material.icons.outlined.AccountBalanceWallet
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.GridView
+import androidx.compose.material.icons.outlined.Psychology
+import androidx.compose.material.icons.outlined.Today
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.NavDestination.Companion.hierarchy
+import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavType
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
+import com.kanso.app.MainViewModel
+import com.kanso.app.ui.hub.HubRoute
+import com.kanso.app.ui.search.GlobalSearchRoute
+import com.kanso.app.ui.settings.SettingsRoute
+import com.kanso.app.widget.KansoWidgetUpdater
+import com.kanso.core.ui.components.QuickCaptureMode
+import com.kanso.core.ui.components.QuickCaptureSheet
+import com.kanso.feature.brain.BrainRoute
+import com.kanso.feature.habits.HabitsRoute
+import com.kanso.feature.lifeadmin.LifeAdminRoute
+import com.kanso.feature.money.MoneyRoute
+import com.kanso.feature.today.TodayRoute
+import com.kanso.feature.utilities.UtilitiesRoute
+import kotlinx.coroutines.launch
+
+private object Routes {
+    const val TODAY = "today"
+    const val MONEY = "money"
+    const val BRAIN_PATTERN = "brain?tab={tab}"
+    const val HUB = "hub"
+    const val SEARCH = "search"
+    const val SETTINGS = "settings"
+    const val HABITS = "habits"
+    const val LIFEADMIN_PATTERN = "lifeadmin?tab={tab}"
+    const val UTILITIES_PATTERN = "utilities?tab={tab}"
+
+    fun brain(tab: Int = 0): String = "brain?tab=$tab"
+    fun lifeAdmin(tab: Int = 0): String = "lifeadmin?tab=$tab"
+    fun utilities(tab: Int = 0): String = "utilities?tab=$tab"
+}
+
+private data class TopLevelTab(
+    val route: String,
+    val baseRoute: String,
+    val label: String,
+    val selectedIcon: ImageVector,
+    val unselectedIcon: ImageVector
+)
+
+private val TopLevelTabs = listOf(
+    TopLevelTab(Routes.TODAY, Routes.TODAY, "Today", Icons.Filled.Today, Icons.Outlined.Today),
+    TopLevelTab(Routes.MONEY, Routes.MONEY, "Money", Icons.Filled.AccountBalanceWallet, Icons.Outlined.AccountBalanceWallet),
+    TopLevelTab(Routes.brain(0), "brain", "Brain", Icons.Filled.Psychology, Icons.Outlined.Psychology),
+    TopLevelTab(Routes.HUB, Routes.HUB, "Hub", Icons.Filled.GridView, Icons.Outlined.GridView)
+)
+
+@Composable
+fun KansoAppRoot(
+    mainViewModel: MainViewModel,
+    pendingLaunchCommand: LaunchCommand? = null,
+    onConsumeLaunchCommand: () -> Unit = {}
+) {
+    val navController = rememberNavController()
+    val backStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = backStackEntry?.destination?.route
+    val isTopLevel = currentRoute == Routes.TODAY ||
+        currentRoute == Routes.MONEY ||
+        currentRoute == Routes.BRAIN_PATTERN ||
+        currentRoute == Routes.HUB
+
+    val prefs by mainViewModel.preferences.collectAsStateWithLifecycle()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+
+    var showQuickCapture by remember { mutableStateOf(false) }
+    var quickCaptureInitialMode by remember { mutableStateOf(QuickCaptureMode.EXPENSE) }
+
+    val showMessage: (String) -> Unit = remember(scope, snackbarHostState) {
+        { message ->
+            scope.launch {
+                snackbarHostState.currentSnackbarData?.dismiss()
+                snackbarHostState.showSnackbar(message)
+            }
+        }
+    }
+
+    val navigateTopTab: (String) -> Unit = { route ->
+        navController.navigate(route) {
+            popUpTo(navController.graph.findStartDestination().id) {
+                saveState = true
+            }
+            launchSingleTop = true
+            restoreState = true
+        }
+    }
+
+    val openBrainTab: (Int) -> Unit = { tab ->
+        navController.navigate(Routes.brain(tab)) {
+            popUpTo(navController.graph.findStartDestination().id) {
+                saveState = true
+            }
+            launchSingleTop = true
+            restoreState = false
+        }
+    }
+
+    val openDefaultQuickCapture: () -> Unit = {
+        quickCaptureInitialMode = when (currentRoute) {
+            Routes.BRAIN_PATTERN -> QuickCaptureMode.NOTE
+            else -> QuickCaptureMode.EXPENSE
+        }
+        showQuickCapture = true
+    }
+
+    LaunchedEffect(pendingLaunchCommand) {
+        val cmd = pendingLaunchCommand ?: return@LaunchedEffect
+        when (cmd) {
+            is LaunchCommand.OpenQuickCapture -> {
+                quickCaptureInitialMode = cmd.mode
+                showQuickCapture = true
+            }
+            is LaunchCommand.OpenBrainTab -> openBrainTab(cmd.tab)
+            is LaunchCommand.OpenUtilitiesTab -> {
+                navController.navigate(Routes.utilities(cmd.tab)) { launchSingleTop = true }
+            }
+            LaunchCommand.OpenHabits -> {
+                navController.navigate(Routes.HABITS) { launchSingleTop = true }
+            }
+            is LaunchCommand.OpenLifeAdminTab -> {
+                navController.navigate(Routes.lifeAdmin(cmd.tab)) { launchSingleTop = true }
+            }
+            LaunchCommand.OpenMoney -> navigateTopTab(Routes.MONEY)
+        }
+        onConsumeLaunchCommand()
+    }
+
+    Scaffold(
+        modifier = Modifier.fillMaxSize(),
+        containerColor = MaterialTheme.colorScheme.background,
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
+        bottomBar = {
+            if (isTopLevel) {
+                NavigationBar {
+                    val hierarchy = backStackEntry?.destination?.hierarchy
+                    TopLevelTabs.forEach { tab ->
+                        val selected = hierarchy?.any { dest ->
+                            dest.route == tab.route ||
+                                (dest.route?.startsWith(tab.baseRoute) == true)
+                        } == true
+                        NavigationBarItem(
+                            selected = selected,
+                            onClick = { navigateTopTab(tab.route) },
+                            icon = {
+                                Icon(
+                                    imageVector = if (selected) tab.selectedIcon else tab.unselectedIcon,
+                                    contentDescription = tab.label
+                                )
+                            },
+                            label = { Text(tab.label) }
+                        )
+                    }
+                }
+            }
+        },
+        floatingActionButton = {
+            if (isTopLevel) {
+                FloatingActionButton(
+                    onClick = openDefaultQuickCapture,
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                ) {
+                    Icon(Icons.Outlined.Add, contentDescription = "Quick Capture")
+                }
+            }
+        }
+    ) { innerPadding ->
+        NavHost(
+            navController = navController,
+            startDestination = Routes.TODAY,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+        ) {
+            composable(Routes.TODAY) {
+                TodayRoute(
+                    onOpenQuickCapture = openDefaultQuickCapture,
+                    onOpenSearch = { navController.navigate(Routes.SEARCH) },
+                    onOpenSettings = { navController.navigate(Routes.SETTINGS) },
+                    onOpenMoney = { navigateTopTab(Routes.MONEY) },
+                    onOpenBrainTab = openBrainTab,
+                    onOpenHabits = { navController.navigate(Routes.HABITS) },
+                    onOpenExpiries = { navController.navigate(Routes.lifeAdmin(0)) },
+                    onShowMessage = showMessage
+                )
+            }
+
+            composable(Routes.MONEY) {
+                MoneyRoute(onShowMessage = showMessage)
+            }
+
+            composable(
+                route = Routes.BRAIN_PATTERN,
+                arguments = listOf(
+                    navArgument("tab") {
+                        type = NavType.IntType
+                        defaultValue = 0
+                    }
+                )
+            ) { entry ->
+                val initialTab = entry.arguments?.getInt("tab") ?: 0
+                BrainRoute(
+                    initialTab = initialTab,
+                    onShowMessage = showMessage
+                )
+            }
+
+            composable(Routes.HUB) {
+                HubRoute(
+                    onOpenMoney = { navigateTopTab(Routes.MONEY) },
+                    onOpenBrain = { navigateTopTab(Routes.brain(0)) },
+                    onOpenSearch = { navController.navigate(Routes.SEARCH) },
+                    onOpenSettings = { navController.navigate(Routes.SETTINGS) },
+                    onOpenHabits = { navController.navigate(Routes.HABITS) },
+                    onOpenLifeAdmin = { navController.navigate(Routes.lifeAdmin(0)) },
+                    onOpenUtilities = { navController.navigate(Routes.utilities(0)) }
+                )
+            }
+
+            composable(Routes.HABITS) {
+                HabitsRoute(
+                    onBack = { navController.popBackStack() },
+                    onShowMessage = showMessage
+                )
+            }
+
+            composable(
+                route = Routes.LIFEADMIN_PATTERN,
+                arguments = listOf(
+                    navArgument("tab") {
+                        type = NavType.IntType
+                        defaultValue = 0
+                    }
+                )
+            ) { entry ->
+                val initialTab = entry.arguments?.getInt("tab") ?: 0
+                LifeAdminRoute(
+                    initialTab = initialTab,
+                    onBack = { navController.popBackStack() },
+                    onShowMessage = showMessage
+                )
+            }
+
+            composable(
+                route = Routes.UTILITIES_PATTERN,
+                arguments = listOf(
+                    navArgument("tab") {
+                        type = NavType.IntType
+                        defaultValue = 0
+                    }
+                )
+            ) { entry ->
+                val initialTab = entry.arguments?.getInt("tab") ?: 0
+                UtilitiesRoute(
+                    initialTab = initialTab,
+                    onBack = { navController.popBackStack() },
+                    onShowMessage = showMessage
+                )
+            }
+
+            composable(Routes.SEARCH) {
+                GlobalSearchRoute(
+                    onBack = { navController.popBackStack() },
+                    onOpenMoney = { navigateTopTab(Routes.MONEY) },
+                    onOpenBrainTab = openBrainTab,
+                    onOpenLifeAdminTab = { tab -> navController.navigate(Routes.lifeAdmin(tab)) },
+                    onShowMessage = showMessage
+                )
+            }
+
+            composable(Routes.SETTINGS) {
+                SettingsRoute(
+                    onBack = { navController.popBackStack() }
+                )
+            }
+        }
+    }
+
+    if (showQuickCapture) {
+        QuickCaptureSheet(
+            currency = prefs.currency,
+            initialMode = quickCaptureInitialMode,
+            onDismiss = { showQuickCapture = false },
+            onSaveTransaction = { type, amountCents, category, wallet, note ->
+                mainViewModel.saveQuickTransaction(type, amountCents, category, wallet, note)
+                showMessage("Saved ${if (type.name == "INCOME") "income" else "expense"}")
+                scope.launch { KansoWidgetUpdater.updateAll(context) }
+            },
+            onSaveNote = { title, content, tags, isPinned ->
+                mainViewModel.saveQuickNote(title, content, tags, isPinned)
+                showMessage("Saved note")
+                scope.launch { KansoWidgetUpdater.updateAll(context) }
+            },
+            onSaveTask = { title, priority, dueDateEpochDay ->
+                mainViewModel.saveQuickTask(title, priority, dueDateEpochDay)
+                showMessage("Saved task")
+                scope.launch { KansoWidgetUpdater.updateAll(context) }
+            },
+            onSaveSnippet = { label, value, category, isSensitive, isPinned ->
+                mainViewModel.saveQuickSnippet(label, value, category, isSensitive, isPinned)
+                showMessage("Saved snippet")
+                scope.launch { KansoWidgetUpdater.updateAll(context) }
+            },
+            onSaveExpiry = { title, category, expiryEpochDay, remindDaysBefore ->
+                mainViewModel.saveQuickExpiry(title, category, expiryEpochDay, remindDaysBefore)
+                showMessage("Saved expiry alert")
+                scope.launch { KansoWidgetUpdater.updateAll(context) }
+            }
+        )
+    }
+}

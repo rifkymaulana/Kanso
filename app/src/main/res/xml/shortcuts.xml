@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="shortcut_expense"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_expense"
+        android:shortcutShortLabel="@string/shortcut_expense_short"
+        android:shortcutLongLabel="@string/shortcut_expense_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="kanso://quick-capture/expense"
+            android:targetPackage="com.kanso.app"
+            android:targetClass="com.kanso.app.MainActivity" />
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="shortcut_note"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_note"
+        android:shortcutShortLabel="@string/shortcut_note_short"
+        android:shortcutLongLabel="@string/shortcut_note_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="kanso://quick-capture/note"
+            android:targetPackage="com.kanso.app"
+            android:targetClass="com.kanso.app.MainActivity" />
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="shortcut_qr"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_qr"
+        android:shortcutShortLabel="@string/shortcut_qr_short"
+        android:shortcutLongLabel="@string/shortcut_qr_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="kanso://utilities/qr"
+            android:targetPackage="com.kanso.app"
+            android:targetClass="com.kanso.app.MainActivity" />
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="shortcut_snippets"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_snippet"
+        android:shortcutShortLabel="@string/shortcut_snippets_short"
+        android:shortcutLongLabel="@string/shortcut_snippets_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="kanso://brain/snippets"
+            android:targetPackage="com.kanso.app"
+            android:targetClass="com.kanso.app.MainActivity" />
+    </shortcut>
+</shortcuts>

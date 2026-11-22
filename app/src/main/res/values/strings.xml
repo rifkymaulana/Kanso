@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Kanso</string>
+    <string name="widget_today_description">Today command summary, hydration +250ml, and 1-tap Expense &amp; Note capture.</string>
+    <string name="tile_quick_capture_label">Kanso Capture</string>
+    <string name="shortcut_expense_short">Log Expense</string>
+    <string name="shortcut_expense_long">Log Expense in Kanso</string>
+    <string name="shortcut_note_short">Quick Note</string>
+    <string name="shortcut_note_long">Capture Quick Note</string>
+    <string name="shortcut_qr_short">Scan QR</string>
+    <string name="shortcut_qr_long">Open QR Scanner &amp; Generator</string>
+    <string name="shortcut_snippets_short">Snippets</string>
+    <string name="shortcut_snippets_long">Open 1-Tap Copy Snippets</string>
+</resources>
