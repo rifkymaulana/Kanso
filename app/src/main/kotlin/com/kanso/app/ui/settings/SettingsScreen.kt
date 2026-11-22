@@ -48,6 +48,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -56,6 +57,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -75,6 +77,8 @@ import com.kanso.core.backup.EncryptedBackupCrypto
 import com.kanso.core.model.AppCurrency
 import com.kanso.core.model.CurrencyFormatter
 import com.kanso.core.model.ThemeMode
+import com.kanso.core.ui.components.KansoAnimatedProgressBar
+import com.kanso.core.ui.components.KansoBentoCard
 import com.kanso.core.ui.components.KansoDateFormatters
 import com.kanso.core.ui.components.KansoSegmentedRow
 import com.kanso.feature.money.OverallBudgetDialog
@@ -144,11 +148,15 @@ fun SettingsRoute(
     }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
                 windowInsets = WindowInsets(0, 0, 0, 0),
-                title = { Text("Settings & Backup") },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background
+                ),
+                title = { Text("Settings & Backup", style = MaterialTheme.typography.titleLarge) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
@@ -165,23 +173,21 @@ fun SettingsRoute(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item {
-                Card(
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-                ) {
-                    Column(modifier = Modifier.fillMaxWidth()) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    SettingsSectionOverline("PREFERENCES")
+                    KansoBentoCard(contentPadding = PaddingValues(0.dp)) {
                         SettingsRow(
                             title = "Display Name",
                             subtitle = prefs.displayName.ifBlank { "Not set (shows neutral greeting)" },
                             onClick = { showNameDialog = true }
                         )
-                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
                         SettingsRow(
                             title = "Default Currency",
                             subtitle = "${prefs.currency.code} (${prefs.currency.symbol}) — ${prefs.currency.displayName}",
                             onClick = { showCurrencyDialog = true }
                         )
-                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
                         SettingsRow(
                             title = "Overall Monthly Budget",
                             subtitle = if (prefs.overallMonthlyBudgetCents > 0L) {
@@ -191,7 +197,7 @@ fun SettingsRoute(
                             },
                             onClick = { showBudgetDialog = true }
                         )
-                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
                         SettingsRow(
                             title = "Daily Hydration Goal",
                             subtitle = "${prefs.waterGoalMl} ml",
@@ -202,241 +208,232 @@ fun SettingsRoute(
             }
 
             item {
-                Card(
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Text("Appearance & Alerts", style = MaterialTheme.typography.titleMedium)
-                        KansoSegmentedRow(
-                            options = ThemeMode.entries.map { it.label },
-                            selectedIndex = ThemeMode.entries.indexOf(prefs.themeMode),
-                            onSelect = { idx -> viewModel.setThemeMode(ThemeMode.entries[idx]) }
-                        )
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    SettingsSectionOverline("APPEARANCE & ALERTS")
+                    KansoBentoCard(contentPadding = PaddingValues(16.dp)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text("Theme Mode", style = MaterialTheme.typography.titleMedium)
+                            KansoSegmentedRow(
+                                options = ThemeMode.entries.map { it.label },
+                                selectedIndex = ThemeMode.entries.indexOf(prefs.themeMode),
+                                onSelect = { idx -> viewModel.setThemeMode(ThemeMode.entries[idx]) }
+                            )
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("Material You Dynamic Color", style = MaterialTheme.typography.bodyLarge)
+                                        Text(
+                                            text = "Override Kanso Bento palette with wallpaper colors",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    Switch(
+                                        checked = prefs.useDynamicColor,
+                                        onCheckedChange = viewModel::setUseDynamicColor
+                                    )
+                                }
+                            }
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text("Material You Dynamic Color", style = MaterialTheme.typography.bodyLarge)
+                                    Text("Local Daily Reminders", style = MaterialTheme.typography.bodyLarge)
                                     Text(
-                                        text = "Adapt palette from your wallpaper",
+                                        text = "WorkManager alerts for bills, expiries, and habits",
                                         style = MaterialTheme.typography.labelMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
                                 Switch(
-                                    checked = prefs.useDynamicColor,
-                                    onCheckedChange = viewModel::setUseDynamicColor
+                                    checked = prefs.remindersEnabled,
+                                    onCheckedChange = { wantEnabled ->
+                                        if (wantEnabled &&
+                                            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                                            ContextCompat.checkSelfPermission(
+                                                context,
+                                                Manifest.permission.POST_NOTIFICATIONS
+                                            ) != PackageManager.PERMISSION_GRANTED
+                                        ) {
+                                            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                        } else {
+                                            viewModel.setRemindersEnabled(wantEnabled)
+                                            KansoReminderScheduler.syncSchedule(context, wantEnabled)
+                                        }
+                                    }
                                 )
                             }
                         }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("Local Daily Reminders", style = MaterialTheme.typography.bodyLarge)
-                                Text(
-                                    text = "WorkManager alerts for bills, expiries, and habits",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Switch(
-                                checked = prefs.remindersEnabled,
-                                onCheckedChange = { wantEnabled ->
-                                    if (wantEnabled &&
-                                        Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                                        ContextCompat.checkSelfPermission(
-                                            context,
-                                            Manifest.permission.POST_NOTIFICATIONS
-                                        ) != PackageManager.PERMISSION_GRANTED
-                                    ) {
-                                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                                    } else {
-                                        viewModel.setRemindersEnabled(wantEnabled)
-                                        KansoReminderScheduler.syncSchedule(context, wantEnabled)
+                    }
+                }
+            }
+
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    SettingsSectionOverline("BACKUP & RESTORE")
+                    KansoBentoCard(contentPadding = PaddingValues(16.dp)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text("Encrypted Backup & Restore", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                text = "Exports your entire database (including Vault secrets and preferences) into a single AES-256-GCM passphrase-encrypted .kanso.enc file.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = prefs.lastBackupMillis?.let {
+                                    "Last backup: ${KansoDateFormatters.formatFullDateTime(it)}"
+                                } ?: "Last backup: Never backed up",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+
+                            when (val status = uiState.backupStatus) {
+                                BackupOperationStatus.Idle -> Unit
+                                is BackupOperationStatus.InProgress -> {
+                                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        KansoAnimatedProgressBar(progress = 0.65f, height = 7.dp)
+                                        Text(status.label, style = MaterialTheme.typography.labelMedium)
                                     }
                                 }
+                                is BackupOperationStatus.Success -> {
+                                    Surface(
+                                        shape = RoundedCornerShape(12.dp),
+                                        color = MaterialTheme.colorScheme.primaryContainer
+                                    ) {
+                                        Text(
+                                            text = status.message,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(12.dp),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                                        )
+                                    }
+                                }
+                                is BackupOperationStatus.Error -> {
+                                    Surface(
+                                        shape = RoundedCornerShape(12.dp),
+                                        color = MaterialTheme.colorScheme.errorContainer
+                                    ) {
+                                        Text(
+                                            text = status.message,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(12.dp),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onErrorContainer
+                                        )
+                                    }
+                                }
+                            }
+
+                            val busy = uiState.backupStatus is BackupOperationStatus.InProgress
+                            Button(
+                                onClick = {
+                                    viewModel.clearBackupStatus()
+                                    showExportPassphraseDialog = true
+                                },
+                                enabled = !busy,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(14.dp)
+                            ) {
+                                Icon(Icons.Outlined.CloudUpload, contentDescription = null)
+                                Text("  Export Encrypted Backup")
+                            }
+
+                            OutlinedButton(
+                                onClick = {
+                                    viewModel.clearBackupStatus()
+                                    openBackupLauncher.launch(arrayOf("*/*"))
+                                },
+                                enabled = !busy,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(14.dp)
+                            ) {
+                                Icon(Icons.Outlined.Restore, contentDescription = null)
+                                Text("  Restore from Backup")
+                            }
+                        }
+                    }
+                }
+            }
+
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    SettingsSectionOverline("APP UPDATES")
+                    AppUpdatesCard(
+                        uiState = uiState,
+                        onToggleAutoCheck = viewModel::setAutoCheckUpdates,
+                        onEditGithubToken = { showGithubTokenDialog = true },
+                        onCheckUpdates = viewModel::checkForUpdates,
+                        onDownloadAndInstall = { release ->
+                            autoInstallPending = true
+                            viewModel.downloadUpdate(release)
+                        },
+                        onInstallApk = { apkFile ->
+                            launchApkInstall(
+                                context = context,
+                                apkFile = apkFile,
+                                canInstallPackages = viewModel::canInstallPackages,
+                                createInstallIntent = viewModel::createInstallIntent,
+                                createUnknownSourcesIntent = viewModel::createUnknownSourcesIntent,
+                                onMessage = onShowMessage
                             )
+                        },
+                        onOpenReleasesPage = {
+                            runCatching { context.startActivity(viewModel.createReleasesPageIntent()) }
                         }
-                    }
+                    )
                 }
-            }
-
-            item {
-                Card(
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Text("Encrypted Backup & Restore", style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            text = "Exports your entire database (including Vault secrets and preferences) into a single AES-256-GCM passphrase-encrypted .kanso.enc file. Pick Google Drive or local storage directly in Android's file picker.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = prefs.lastBackupMillis?.let {
-                                "Last backup: ${KansoDateFormatters.formatFullDateTime(it)}"
-                            } ?: "Last backup: Never backed up",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-
-                        when (val status = uiState.backupStatus) {
-                            BackupOperationStatus.Idle -> Unit
-                            is BackupOperationStatus.InProgress -> {
-                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                                    Text(status.label, style = MaterialTheme.typography.labelMedium)
-                                }
-                            }
-                            is BackupOperationStatus.Success -> {
-                                Surface(
-                                    shape = RoundedCornerShape(12.dp),
-                                    color = MaterialTheme.colorScheme.primaryContainer
-                                ) {
-                                    Text(
-                                        text = status.message,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(12.dp),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                                    )
-                                }
-                            }
-                            is BackupOperationStatus.Error -> {
-                                Surface(
-                                    shape = RoundedCornerShape(12.dp),
-                                    color = MaterialTheme.colorScheme.errorContainer
-                                ) {
-                                    Text(
-                                        text = status.message,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(12.dp),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onErrorContainer
-                                    )
-                                }
-                            }
-                        }
-
-                        val busy = uiState.backupStatus is BackupOperationStatus.InProgress
-                        Button(
-                            onClick = {
-                                viewModel.clearBackupStatus()
-                                showExportPassphraseDialog = true
-                            },
-                            enabled = !busy,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Outlined.CloudUpload, contentDescription = null)
-                            Text("  Export Encrypted Backup")
-                        }
-
-                        OutlinedButton(
-                            onClick = {
-                                viewModel.clearBackupStatus()
-                                openBackupLauncher.launch(arrayOf("*/*"))
-                            },
-                            enabled = !busy,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Outlined.Restore, contentDescription = null)
-                            Text("  Restore from Backup")
-                        }
-                    }
-                }
-            }
-
-            item {
-                AppUpdatesCard(
-                    uiState = uiState,
-                    onToggleAutoCheck = viewModel::setAutoCheckUpdates,
-                    onEditGithubToken = { showGithubTokenDialog = true },
-                    onCheckUpdates = viewModel::checkForUpdates,
-                    onDownloadAndInstall = { release ->
-                        autoInstallPending = true
-                        viewModel.downloadUpdate(release)
-                    },
-                    onInstallApk = { apkFile ->
-                        launchApkInstall(
-                            context = context,
-                            apkFile = apkFile,
-                            canInstallPackages = viewModel::canInstallPackages,
-                            createInstallIntent = viewModel::createInstallIntent,
-                            createUnknownSourcesIntent = viewModel::createUnknownSourcesIntent,
-                            onMessage = onShowMessage
-                        )
-                    },
-                    onOpenReleasesPage = {
-                        runCatching { context.startActivity(viewModel.createReleasesPageIntent()) }
-                    }
-                )
             }
 
             item {
                 var widgetPinMessage by remember { mutableStateOf<String?>(null) }
                 val appWidgetManager = remember(context) { AppWidgetManager.getInstance(context) }
 
-                Card(
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Text("Android Widgets & Shortcuts", style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            text = "Add the Kanso Today widget to your home screen, long-press the app icon for quick actions (Expense, Note, QR, Snippets), or add the \"Kanso Capture\" Quick Settings tile.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        OutlinedButton(
-                            onClick = {
-                                if (appWidgetManager.isRequestPinAppWidgetSupported) {
-                                    val provider = ComponentName(context, KansoTodayWidgetReceiver::class.java)
-                                    val requested = appWidgetManager.requestPinAppWidget(provider, null, null)
-                                    widgetPinMessage = if (requested) {
-                                        "Follow your launcher prompt to place the Kanso Today widget."
-                                    } else {
-                                        "Could not trigger pin dialog; long-press your home screen to add Kanso."
-                                    }
-                                } else {
-                                    widgetPinMessage = "Long-press your home screen -> Widgets -> Kanso to add it."
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Outlined.Widgets, contentDescription = null)
-                            Text("  Pin Today Widget to Home Screen")
-                        }
-                        if (widgetPinMessage != null) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    SettingsSectionOverline("WIDGETS & SHORTCUTS")
+                    KansoBentoCard(contentPadding = PaddingValues(16.dp)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text("Android Widgets & Shortcuts", style = MaterialTheme.typography.titleMedium)
                             Text(
-                                text = widgetPinMessage.orEmpty(),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary
+                                text = "Add the Kanso Today widget to your home screen, long-press the app icon for quick actions (Expense, Note, QR, Snippets), or add the \"Kanso Capture\" Quick Settings tile.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                            OutlinedButton(
+                                onClick = {
+                                    if (appWidgetManager.isRequestPinAppWidgetSupported) {
+                                        val provider = ComponentName(context, KansoTodayWidgetReceiver::class.java)
+                                        val requested = appWidgetManager.requestPinAppWidget(provider, null, null)
+                                        widgetPinMessage = if (requested) {
+                                            "Follow your launcher prompt to place the Kanso Today widget."
+                                        } else {
+                                            "Could not trigger pin dialog; long-press your home screen to add Kanso."
+                                        }
+                                    } else {
+                                        widgetPinMessage = "Long-press your home screen -> Widgets -> Kanso to add it."
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(14.dp)
+                            ) {
+                                Icon(Icons.Outlined.Widgets, contentDescription = null)
+                                Text("  Pin Today Widget to Home Screen")
+                            }
+                            if (widgetPinMessage != null) {
+                                Text(
+                                    text = widgetPinMessage.orEmpty(),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
                         }
                     }
                 }
@@ -534,6 +531,16 @@ fun SettingsRoute(
 }
 
 @Composable
+private fun SettingsSectionOverline(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = 4.dp)
+    )
+}
+
+@Composable
 private fun AppUpdatesCard(
     uiState: SettingsUiState,
     onToggleAutoCheck: (Boolean) -> Unit,
@@ -544,16 +551,8 @@ private fun AppUpdatesCard(
     onOpenReleasesPage: () -> Unit
 ) {
     val prefs = uiState.preferences
-    Card(
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
+    KansoBentoCard(contentPadding = PaddingValues(16.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -598,6 +597,7 @@ private fun AppUpdatesCard(
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
                     .clickable(onClick = onEditGithubToken),
                 shape = RoundedCornerShape(12.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
@@ -632,7 +632,7 @@ private fun AppUpdatesCard(
                 AppUpdateState.Idle -> Unit
                 AppUpdateState.Checking -> {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        KansoAnimatedProgressBar(progress = 0.45f, height = 7.dp)
                         Text("Checking GitHub Releases...", style = MaterialTheme.typography.labelMedium)
                     }
                 }
@@ -678,7 +678,8 @@ private fun AppUpdatesCard(
                             }
                             Button(
                                 onClick = { onDownloadAndInstall(status.release) },
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp)
                             ) {
                                 Icon(Icons.Outlined.InstallMobile, contentDescription = null)
                                 Text("  Download & Install ${status.release.tagName}")
@@ -691,20 +692,13 @@ private fun AppUpdatesCard(
                     val total = status.totalBytes
                     val progress = if (total > 0L) {
                         (status.downloadedBytes.toFloat() / total.toFloat()).coerceIn(0f, 1f)
-                    } else null
+                    } else 0.15f
                     val mbDownloaded = String.format(java.util.Locale.US, "%.1f", status.downloadedBytes / 1_048_576.0)
                     val mbTotal = if (total > 0L) {
                         String.format(java.util.Locale.US, "%.1f MB", total / 1_048_576.0)
                     } else "—"
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        if (progress != null) {
-                            LinearProgressIndicator(
-                                progress = { progress },
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        } else {
-                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                        }
+                        KansoAnimatedProgressBar(progress = progress, height = 7.dp)
                         Text(
                             text = "Downloading ${status.release.tagName}: $mbDownloaded / $mbTotal",
                             style = MaterialTheme.typography.labelMedium
@@ -714,7 +708,7 @@ private fun AppUpdatesCard(
 
                 is AppUpdateState.Verifying -> {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        KansoAnimatedProgressBar(progress = 0.95f, height = 7.dp)
                         Text(
                             text = "Verifying ${status.release.tagName} SHA-256 checksum...",
                             style = MaterialTheme.typography.labelMedium
@@ -740,7 +734,8 @@ private fun AppUpdatesCard(
                             )
                             Button(
                                 onClick = { onInstallApk(status.apkFile) },
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp)
                             ) {
                                 Icon(Icons.Outlined.InstallMobile, contentDescription = null)
                                 Text("  Install APK")
@@ -786,13 +781,15 @@ private fun AppUpdatesCard(
                 Button(
                     onClick = onCheckUpdates,
                     enabled = !busy,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp)
                 ) {
                     Text("Check for Updates")
                 }
                 OutlinedButton(
                     onClick = onOpenReleasesPage,
-                    modifier = Modifier.weight(0.9f)
+                    modifier = Modifier.weight(0.9f),
+                    shape = RoundedCornerShape(12.dp)
                 ) {
                     Text("Open Releases")
                 }

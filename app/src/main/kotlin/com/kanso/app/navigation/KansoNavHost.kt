@@ -1,27 +1,41 @@
 package com.kanso.app.navigation
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
-import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material.icons.outlined.Today
-import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -30,10 +44,18 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
@@ -201,37 +223,11 @@ fun KansoAppRoot(
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         bottomBar = {
             if (isTopLevel) {
-                NavigationBar {
-                    val hierarchy = backStackEntry?.destination?.hierarchy
-                    TopLevelTabs.forEach { tab ->
-                        val selected = hierarchy?.any { dest ->
-                            dest.route == tab.route ||
-                                (dest.route?.startsWith(tab.baseRoute) == true)
-                        } == true
-                        NavigationBarItem(
-                            selected = selected,
-                            onClick = { navigateTopTab(tab.route) },
-                            icon = {
-                                Icon(
-                                    imageVector = if (selected) tab.selectedIcon else tab.unselectedIcon,
-                                    contentDescription = tab.label
-                                )
-                            },
-                            label = { Text(tab.label) }
-                        )
-                    }
-                }
-            }
-        },
-        floatingActionButton = {
-            if (isTopLevel) {
-                FloatingActionButton(
-                    onClick = openDefaultQuickCapture,
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary
-                ) {
-                    Icon(Icons.Outlined.Add, contentDescription = "Quick Capture")
-                }
+                KansoBottomDock(
+                    hierarchy = backStackEntry?.destination?.hierarchy,
+                    onSelectTab = navigateTopTab,
+                    onQuickCapture = openDefaultQuickCapture
+                )
             }
         }
     ) { innerPadding ->
@@ -265,6 +261,10 @@ fun KansoAppRoot(
             NavHost(
                 navController = navController,
                 startDestination = Routes.TODAY,
+                enterTransition = { fadeIn(tween(200)) },
+                exitTransition = { fadeOut(tween(150)) },
+                popEnterTransition = { fadeIn(tween(200)) },
+                popExitTransition = { fadeOut(tween(150)) },
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
@@ -405,6 +405,152 @@ fun KansoAppRoot(
                 showMessage("Saved expiry alert")
                 scope.launch { KansoWidgetUpdater.updateAll(context) }
             }
+        )
+    }
+}
+
+@Composable
+private fun KansoBottomDock(
+    hierarchy: Sequence<NavDestination>?,
+    onSelectTab: (String) -> Unit,
+    onQuickCapture: () -> Unit
+) {
+    val haptic = LocalHapticFeedback.current
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        shadowElevation = 0.dp
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            HorizontalDivider(thickness = 1.dp, color = MaterialTheme.colorScheme.outlineVariant)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .height(66.dp)
+                    .padding(horizontal = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceAround
+            ) {
+                TopLevelTabs.take(2).forEach { tab ->
+                    DockTabItem(
+                        tab = tab,
+                        selected = hierarchy?.any { dest ->
+                            dest.route == tab.route || (dest.route?.startsWith(tab.baseRoute) == true)
+                        } == true,
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onSelectTab(tab.route)
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                Box(
+                    modifier = Modifier.weight(1f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Surface(
+                        modifier = Modifier
+                            .width(52.dp)
+                            .height(42.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .clickable {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                onQuickCapture()
+                            },
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        shadowElevation = 4.dp
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Rounded.Add,
+                                contentDescription = "Quick Capture",
+                                tint = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.size(26.dp)
+                            )
+                        }
+                    }
+                }
+
+                TopLevelTabs.drop(2).forEach { tab ->
+                    DockTabItem(
+                        tab = tab,
+                        selected = hierarchy?.any { dest ->
+                            dest.route == tab.route || (dest.route?.startsWith(tab.baseRoute) == true)
+                        } == true,
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onSelectTab(tab.route)
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DockTabItem(
+    tab: TopLevelTab,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val pillColor by animateColorAsState(
+        targetValue = if (selected) {
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+        } else {
+            Color.Transparent
+        },
+        animationSpec = tween(180),
+        label = "dockPill"
+    )
+    val contentColor by animateColorAsState(
+        targetValue = if (selected) {
+            MaterialTheme.colorScheme.primary
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant
+        },
+        animationSpec = tween(180),
+        label = "dockContent"
+    )
+
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick
+            )
+            .padding(vertical = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(3.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .width(46.dp)
+                .height(28.dp)
+                .clip(RoundedCornerShape(50))
+                .background(pillColor),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = if (selected) tab.selectedIcon else tab.unselectedIcon,
+                contentDescription = tab.label,
+                tint = contentColor,
+                modifier = Modifier.size(21.dp)
+            )
+        }
+        Text(
+            text = tab.label,
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
+            ),
+            color = contentColor,
+            maxLines = 1
         )
     }
 }

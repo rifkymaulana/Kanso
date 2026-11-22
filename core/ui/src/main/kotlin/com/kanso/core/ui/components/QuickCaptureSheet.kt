@@ -1,9 +1,13 @@
 package com.kanso.core.ui.components
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -11,17 +15,32 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ArrowDownward
+import androidx.compose.material.icons.outlined.ArrowUpward
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.ContentPaste
+import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.EventAvailable
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -34,8 +53,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.kanso.core.model.AppCurrency
 import com.kanso.core.model.CurrencyFormatter
@@ -45,6 +75,7 @@ import com.kanso.core.model.SnippetCategory
 import com.kanso.core.model.TaskPriority
 import com.kanso.core.model.TransactionType
 import com.kanso.core.model.WalletType
+import com.kanso.core.ui.theme.kansoColors
 import java.time.LocalDate
 
 enum class QuickCaptureMode(val label: String) {
@@ -54,6 +85,25 @@ enum class QuickCaptureMode(val label: String) {
     TASK("Task"),
     SNIPPET("Snippet"),
     EXPIRY("Expiry")
+}
+
+@Composable
+private fun QuickCaptureMode.accentColor(): Color = when (this) {
+    QuickCaptureMode.EXPENSE -> MaterialTheme.kansoColors.expense
+    QuickCaptureMode.INCOME -> MaterialTheme.kansoColors.income
+    QuickCaptureMode.NOTE -> MaterialTheme.kansoColors.brainAccent
+    QuickCaptureMode.TASK -> Color(0xFF8B5CF6)
+    QuickCaptureMode.SNIPPET -> MaterialTheme.colorScheme.primary
+    QuickCaptureMode.EXPIRY -> MaterialTheme.kansoColors.lifeAdminAccent
+}
+
+private fun QuickCaptureMode.icon(): ImageVector = when (this) {
+    QuickCaptureMode.EXPENSE -> Icons.Outlined.ArrowUpward
+    QuickCaptureMode.INCOME -> Icons.Outlined.ArrowDownward
+    QuickCaptureMode.NOTE -> Icons.Outlined.Description
+    QuickCaptureMode.TASK -> Icons.Outlined.CheckCircle
+    QuickCaptureMode.SNIPPET -> Icons.Outlined.ContentPaste
+    QuickCaptureMode.EXPIRY -> Icons.Outlined.EventAvailable
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -86,6 +136,7 @@ fun QuickCaptureSheet(
     ) -> Unit = { _, _, _, _ -> }
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val haptic = LocalHapticFeedback.current
     var mode by remember(initialMode) { mutableStateOf(initialMode) }
 
     // Transaction state
@@ -127,7 +178,9 @@ fun QuickCaptureSheet(
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = sheetState
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        containerColor = MaterialTheme.colorScheme.surface
     ) {
         Column(
             modifier = Modifier
@@ -137,63 +190,154 @@ fun QuickCaptureSheet(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Text(
-                text = "Quick Capture",
-                style = MaterialTheme.typography.titleLarge
-            )
-
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                QuickCaptureMode.entries.forEach { item ->
-                    FilterChip(
-                        selected = mode == item,
-                        onClick = {
-                            mode = item
-                            errorText = null
-                            if (item == QuickCaptureMode.INCOME && !selectedCategory.isIncomeDefault) {
-                                selectedCategory = ExpenseCategory.SALARY
-                            } else if (item == QuickCaptureMode.EXPENSE && selectedCategory.isIncomeDefault) {
-                                selectedCategory = ExpenseCategory.FOOD
-                            }
-                        },
-                        label = { Text(item.label) }
-                    )
+                Text(
+                    text = "Quick Capture",
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+                )
+                KansoPillBadge(
+                    text = mode.label,
+                    color = mode.accentColor(),
+                    leadingIcon = mode.icon()
+                )
+            }
+
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(QuickCaptureMode.entries, key = { it.name }) { item ->
+                    val selected = mode == item
+                    val accent = item.accentColor()
+                    Surface(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .clickable {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                mode = item
+                                errorText = null
+                                if (item == QuickCaptureMode.INCOME && !selectedCategory.isIncomeDefault) {
+                                    selectedCategory = ExpenseCategory.SALARY
+                                } else if (item == QuickCaptureMode.EXPENSE && selectedCategory.isIncomeDefault) {
+                                    selectedCategory = ExpenseCategory.FOOD
+                                }
+                            },
+                        shape = RoundedCornerShape(50),
+                        color = if (selected) accent.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
+                        border = BorderStroke(
+                            1.dp,
+                            if (selected) accent else MaterialTheme.colorScheme.outlineVariant
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 13.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = item.icon(),
+                                contentDescription = null,
+                                tint = if (selected) accent else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = item.label,
+                                style = MaterialTheme.typography.labelLarge.copy(
+                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
+                                ),
+                                color = if (selected) accent else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 }
             }
 
             when (mode) {
                 QuickCaptureMode.EXPENSE, QuickCaptureMode.INCOME -> {
-                    OutlinedTextField(
-                        value = amountText,
-                        onValueChange = {
-                            amountText = it
-                            errorText = null
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Amount (${currency.symbol})") },
-                        placeholder = { Text(if (currency.decimalDigits == 0) "25000" else "12.50") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = if (currency.decimalDigits == 0) {
-                                KeyboardType.Number
-                            } else {
-                                KeyboardType.Decimal
-                            }
-                        )
-                    )
+                    val amountAccent = mode.accentColor()
+                    val amountFocus = remember { FocusRequester() }
+                    val placeholder = if (currency.decimalDigits == 0) "0" else "0.00"
 
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        currency.quickPresets.forEach { presetCents ->
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(20.dp))
+                            .clickable { amountFocus.requestFocus() },
+                        shape = RoundedCornerShape(20.dp),
+                        color = amountAccent.copy(alpha = 0.08f),
+                        border = BorderStroke(1.dp, amountAccent.copy(alpha = 0.25f))
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 18.dp, vertical = 16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = if (mode == QuickCaptureMode.INCOME) "INCOME AMOUNT" else "EXPENSE AMOUNT",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = amountAccent
+                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Text(
+                                    text = currency.symbol,
+                                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+                                    color = amountAccent,
+                                    modifier = Modifier.padding(end = 6.dp)
+                                )
+                                Box(contentAlignment = Alignment.CenterStart) {
+                                    if (amountText.isEmpty()) {
+                                        Text(
+                                            text = placeholder,
+                                            style = MaterialTheme.typography.displaySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
+                                        )
+                                    }
+                                    BasicTextField(
+                                        value = amountText,
+                                        onValueChange = {
+                                            amountText = it
+                                            errorText = null
+                                        },
+                                        modifier = Modifier.focusRequester(amountFocus),
+                                        singleLine = true,
+                                        textStyle = MaterialTheme.typography.displaySmall.copy(
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            textAlign = TextAlign.Start
+                                        ),
+                                        cursorBrush = SolidColor(amountAccent),
+                                        keyboardOptions = KeyboardOptions(
+                                            keyboardType = if (currency.decimalDigits == 0) {
+                                                KeyboardType.Number
+                                            } else {
+                                                KeyboardType.Decimal
+                                            }
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(currency.quickPresets, key = { it }) { presetCents ->
                             AssistChip(
                                 onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     amountText = CurrencyFormatter.formatCompactInput(presetCents, currency)
                                     errorText = null
                                 },
-                                label = { Text(CurrencyFormatter.format(presetCents, currency)) }
+                                label = { Text(CurrencyFormatter.format(presetCents, currency)) },
+                                shape = RoundedCornerShape(50)
                             )
                         }
                     }
@@ -204,27 +348,101 @@ fun QuickCaptureSheet(
                         ExpenseCategory.expenseCategories
                     }
                     Text("Category", style = MaterialTheme.typography.labelLarge)
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        categoryPool.forEach { category ->
-                            FilterChip(
-                                selected = selectedCategory == category,
-                                onClick = { selectedCategory = category },
-                                label = { Text(category.label) }
-                            )
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(categoryPool, key = { it.name }) { category ->
+                            val selected = selectedCategory == category
+                            val catAccent = category.accentColor()
+                            Surface(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .clickable {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        selectedCategory = category
+                                    },
+                                shape = RoundedCornerShape(14.dp),
+                                color = if (selected) catAccent.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (selected) catAccent else MaterialTheme.colorScheme.outlineVariant
+                                )
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = category.icon(),
+                                        contentDescription = null,
+                                        tint = if (selected) catAccent else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Text(
+                                        text = category.label,
+                                        style = MaterialTheme.typography.labelLarge.copy(
+                                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
+                                        ),
+                                        color = if (selected) catAccent else MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
                         }
                     }
 
                     Text("Wallet", style = MaterialTheme.typography.labelLarge)
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         WalletType.entries.forEach { wallet ->
-                            FilterChip(
-                                selected = selectedWallet == wallet,
-                                onClick = { selectedWallet = wallet },
-                                label = { Text(wallet.label) }
-                            )
+                            val selected = selectedWallet == wallet
+                            Surface(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .clickable {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        selectedWallet = wallet
+                                    },
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (selected) {
+                                    MaterialTheme.colorScheme.primaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                },
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+                                )
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(3.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = wallet.icon(),
+                                        contentDescription = null,
+                                        tint = if (selected) {
+                                            MaterialTheme.colorScheme.primary
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        },
+                                        modifier = Modifier.size(17.dp)
+                                    )
+                                    Text(
+                                        text = wallet.label,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = if (selected) {
+                                            MaterialTheme.colorScheme.onPrimaryContainer
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        },
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
                         }
                     }
 
@@ -234,6 +452,7 @@ fun QuickCaptureSheet(
                         modifier = Modifier.fillMaxWidth(),
                         label = { Text("Note (optional)") },
                         singleLine = true,
+                        shape = RoundedCornerShape(14.dp),
                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences)
                     )
                 }
@@ -248,6 +467,7 @@ fun QuickCaptureSheet(
                         modifier = Modifier.fillMaxWidth(),
                         label = { Text("Title") },
                         singleLine = true,
+                        shape = RoundedCornerShape(14.dp),
                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences)
                     )
                     OutlinedTextField(
@@ -260,6 +480,7 @@ fun QuickCaptureSheet(
                         label = { Text("Thought or note") },
                         minLines = 3,
                         maxLines = 6,
+                        shape = RoundedCornerShape(14.dp),
                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences)
                     )
                     OutlinedTextField(
@@ -268,7 +489,8 @@ fun QuickCaptureSheet(
                         modifier = Modifier.fillMaxWidth(),
                         label = { Text("Tags (comma separated)") },
                         placeholder = { Text("ideas, work, shopping") },
-                        singleLine = true
+                        singleLine = true,
+                        shape = RoundedCornerShape(14.dp)
                     )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -290,6 +512,7 @@ fun QuickCaptureSheet(
                         modifier = Modifier.fillMaxWidth(),
                         label = { Text("What needs to get done?") },
                         singleLine = true,
+                        shape = RoundedCornerShape(14.dp),
                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences)
                     )
                     Text("Priority", style = MaterialTheme.typography.labelLarge)
@@ -326,6 +549,7 @@ fun QuickCaptureSheet(
                         label = { Text("Label") },
                         placeholder = { Text("e.g., Home Address, Bank Account") },
                         singleLine = true,
+                        shape = RoundedCornerShape(14.dp),
                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words)
                     )
                     OutlinedTextField(
@@ -337,7 +561,8 @@ fun QuickCaptureSheet(
                         modifier = Modifier.fillMaxWidth(),
                         label = { Text("Value (copied in 1 tap)") },
                         minLines = 2,
-                        maxLines = 4
+                        maxLines = 4,
+                        shape = RoundedCornerShape(14.dp)
                     )
                     Text("Category", style = MaterialTheme.typography.labelLarge)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -378,6 +603,7 @@ fun QuickCaptureSheet(
                         label = { Text("Document or item") },
                         placeholder = { Text("e.g., Passport, Driver's License, STNK") },
                         singleLine = true,
+                        shape = RoundedCornerShape(14.dp),
                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words)
                     )
                     Text("Category", style = MaterialTheme.typography.labelLarge)
@@ -390,7 +616,10 @@ fun QuickCaptureSheet(
                             )
                         }
                     }
-                    Text("Expires on: ${KansoDateFormatters.formatFullDate(expiryEpochDay)}", style = MaterialTheme.typography.labelLarge)
+                    Text(
+                        "Expires on: ${KansoDateFormatters.formatFullDate(expiryEpochDay)}",
+                        style = MaterialTheme.typography.labelLarge
+                    )
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         AssistChip(
                             onClick = { expiryEpochDay = LocalDate.now().plusDays(30).toEpochDay() },
@@ -429,8 +658,12 @@ fun QuickCaptureSheet(
                 )
             }
 
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(2.dp))
 
+            val buttonColor = when (mode) {
+                QuickCaptureMode.EXPENSE, QuickCaptureMode.INCOME -> mode.accentColor()
+                else -> MaterialTheme.colorScheme.primary
+            }
             Button(
                 onClick = {
                     when (mode) {
@@ -444,6 +677,7 @@ fun QuickCaptureSheet(
                                 } else {
                                     TransactionType.EXPENSE
                                 }
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 onSaveTransaction(type, cents, selectedCategory, selectedWallet, txNote.trim())
                                 onDismiss()
                             }
@@ -459,6 +693,7 @@ fun QuickCaptureSheet(
                                 val tags = noteTagsText.split(',')
                                     .map { it.trim() }
                                     .filter { it.isNotEmpty() }
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 onSaveNote(resolvedTitle, noteContent.trim(), tags, notePinned)
                                 onDismiss()
                             }
@@ -475,6 +710,7 @@ fun QuickCaptureSheet(
                                     2 -> today.plusDays(7).toEpochDay()
                                     else -> null
                                 }
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 onSaveTask(taskTitle.trim(), taskPriority, dueDay)
                                 onDismiss()
                             }
@@ -484,6 +720,7 @@ fun QuickCaptureSheet(
                             if (snippetLabel.isBlank() || snippetValue.isBlank()) {
                                 errorText = "Enter both a label and value."
                             } else {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 onSaveSnippet(
                                     snippetLabel.trim(),
                                     snippetValue.trim(),
@@ -499,6 +736,7 @@ fun QuickCaptureSheet(
                             if (expiryTitle.isBlank()) {
                                 errorText = "Enter a document or item name."
                             } else {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 onSaveExpiry(
                                     expiryTitle.trim(),
                                     expiryCategory,
@@ -510,9 +748,19 @@ fun QuickCaptureSheet(
                         }
                     }
                 },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = buttonColor,
+                    contentColor = Color.White
+                )
             ) {
-                Text("Save ${mode.label}")
+                Text(
+                    text = "Save ${mode.label}",
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold)
+                )
             }
         }
     }

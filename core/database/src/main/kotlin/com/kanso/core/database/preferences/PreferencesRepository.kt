@@ -57,7 +57,7 @@ class PreferencesRepository @Inject constructor(
             themeMode = runCatching {
                 ThemeMode.valueOf(prefs[Keys.THEME_MODE] ?: ThemeMode.SYSTEM.name)
             }.getOrDefault(ThemeMode.SYSTEM),
-            useDynamicColor = prefs[Keys.USE_DYNAMIC_COLOR] ?: true,
+            useDynamicColor = prefs[Keys.USE_DYNAMIC_COLOR] ?: false,
             overallMonthlyBudgetCents = prefs[Keys.OVERALL_MONTHLY_BUDGET_CENTS] ?: 0L,
             lastBackupMillis = prefs[Keys.LAST_BACKUP_MILLIS],
             waterGoalMl = (prefs[Keys.WATER_GOAL_ML] ?: 2000).coerceAtLeast(250),

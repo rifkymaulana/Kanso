@@ -1,9 +1,13 @@
 package com.kanso.feature.money
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,6 +21,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ReceiptLong
@@ -27,15 +32,10 @@ import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Handshake
 import androidx.compose.material.icons.outlined.PieChart
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -48,6 +48,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -65,17 +68,26 @@ import com.kanso.core.model.MoneyTransaction
 import com.kanso.core.model.RecurringBill
 import com.kanso.core.model.TransactionType
 import com.kanso.core.model.WalletType
+import com.kanso.core.ui.components.DonutSlice
+import com.kanso.core.ui.components.KansoAccentIconBadge
+import com.kanso.core.ui.components.KansoAnimatedProgressBar
+import com.kanso.core.ui.components.KansoBentoCard
+import com.kanso.core.ui.components.KansoCategoryDonutChart
 import com.kanso.core.ui.components.KansoDateFormatters
 import com.kanso.core.ui.components.KansoEmptyState
+import com.kanso.core.ui.components.KansoHeroCard
+import com.kanso.core.ui.components.KansoPillBadge
+import com.kanso.core.ui.components.KansoProgressRing
 import com.kanso.core.ui.components.KansoSegmentedRow
 import com.kanso.core.ui.components.MoneyAmountBadge
 import com.kanso.core.ui.components.SectionHeader
+import com.kanso.core.ui.components.accentColor
 import com.kanso.core.ui.components.expenseSemanticColor
 import com.kanso.core.ui.components.icon
 import com.kanso.core.ui.components.incomeSemanticColor
+import com.kanso.core.ui.components.warningSemanticColor
 import com.kanso.core.ui.theme.KansoTheme
-import com.kanso.core.ui.theme.WarningAmber
-import com.kanso.core.ui.theme.WarningAmberDark
+import com.kanso.core.ui.theme.kansoColors
 import java.time.YearMonth
 
 @Composable
@@ -293,13 +305,24 @@ fun MoneyScreenContent(
         modifier = modifier
             .fillMaxSize()
             .padding(horizontal = 16.dp)
-            .padding(top = 14.dp),
+            .padding(top = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Text(
-            text = "Money",
-            style = MaterialTheme.typography.headlineMedium
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Money",
+                style = MaterialTheme.typography.headlineMedium
+            )
+            MonthPillSelector(
+                label = uiState.selectedMonthLabel,
+                onPrevious = onPreviousMonth,
+                onNext = onNextMonth
+            )
+        }
 
         KansoSegmentedRow(
             options = listOf("Log", "Budgets", "Bills", "IOUs"),
@@ -307,37 +330,91 @@ fun MoneyScreenContent(
             onSelect = { selectedTab = it }
         )
 
-        when (selectedTab) {
-            0 -> LogTabContent(
-                uiState = uiState,
-                onPreviousMonth = onPreviousMonth,
-                onNextMonth = onNextMonth,
-                onAddTransaction = onAddTransaction,
-                onEditTransaction = onEditTransaction
-            )
+        AnimatedContent(
+            targetState = selectedTab,
+            transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
+            label = "moneyTab"
+        ) { tab ->
+            when (tab) {
+                0 -> LogTabContent(
+                    uiState = uiState,
+                    onAddTransaction = onAddTransaction,
+                    onEditTransaction = onEditTransaction
+                )
 
-            1 -> BudgetsTabContent(
-                uiState = uiState,
-                onEditOverallBudget = onEditOverallBudget,
-                onAddCategoryBudget = onAddCategoryBudget,
-                onEditCategoryBudget = onEditCategoryBudget
-            )
+                1 -> BudgetsTabContent(
+                    uiState = uiState,
+                    onEditOverallBudget = onEditOverallBudget,
+                    onAddCategoryBudget = onAddCategoryBudget,
+                    onEditCategoryBudget = onEditCategoryBudget
+                )
 
-            2 -> BillsTabContent(
-                uiState = uiState,
-                onAddBill = onAddBill,
-                onEditBill = onEditBill,
-                onPayBill = onPayBill
-            )
+                2 -> BillsTabContent(
+                    uiState = uiState,
+                    onAddBill = onAddBill,
+                    onEditBill = onEditBill,
+                    onPayBill = onPayBill
+                )
 
-            else -> IousTabContent(
-                uiState = uiState,
-                showSettled = iouFilterSettled,
-                onToggleShowSettled = { iouFilterSettled = it },
-                onAddIou = onAddIou,
-                onEditIou = onEditIou,
-                onRequestSettleIou = onRequestSettleIou
+                else -> IousTabContent(
+                    uiState = uiState,
+                    showSettled = iouFilterSettled,
+                    onToggleShowSettled = { iouFilterSettled = it },
+                    onAddIou = onAddIou,
+                    onEditIou = onEditIou,
+                    onRequestSettleIou = onRequestSettleIou
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MonthPillSelector(
+    label: String,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(50),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .clickable(onClick = onPrevious),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.ChevronLeft,
+                    contentDescription = "Previous Month",
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.padding(horizontal = 6.dp)
             )
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .clickable(onClick = onNext),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.ChevronRight,
+                    contentDescription = "Next Month",
+                    modifier = Modifier.size(18.dp)
+                )
+            }
         }
     }
 }
@@ -345,112 +422,152 @@ fun MoneyScreenContent(
 @Composable
 private fun LogTabContent(
     uiState: MoneyUiState,
-    onPreviousMonth: () -> Unit,
-    onNextMonth: () -> Unit,
     onAddTransaction: () -> Unit,
     onEditTransaction: (MoneyTransaction) -> Unit
 ) {
+    val kansoColors = MaterialTheme.kansoColors
     val topCategories = remember(uiState.summary.byCategory) {
         uiState.summary.byCategory.entries
             .sortedByDescending { it.value }
             .take(5)
     }
+    val slices = remember(topCategories) {
+        topCategories.map { (cat, amount) ->
+            DonutSlice(
+                label = cat.label,
+                value = amount.toFloat(),
+                color = cat.accentColor()
+            )
+        }
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 88.dp),
+        contentPadding = PaddingValues(bottom = 28.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = onPreviousMonth) {
-                    Icon(Icons.Outlined.ChevronLeft, contentDescription = "Previous Month")
-                }
-                Text(
-                    text = uiState.selectedMonthLabel,
-                    style = MaterialTheme.typography.titleMedium
-                )
-                IconButton(onClick = onNextMonth) {
-                    Icon(Icons.Outlined.ChevronRight, contentDescription = "Next Month")
-                }
-            }
-        }
+            val isPositive = uiState.summary.netCents >= 0L
+            KansoHeroCard(glowColor = kansoColors.moneyAccent) {
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "NET CASHFLOW",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = kansoColors.heroOnSurfaceMuted
+                        )
+                        Surface(
+                            shape = RoundedCornerShape(50),
+                            color = (if (isPositive) Color(0xFF34D399) else Color(0xFFF87171)).copy(alpha = 0.18f)
+                        ) {
+                            Text(
+                                text = if (isPositive) "Positive" else "Deficit",
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = if (isPositive) Color(0xFF6EE7B7) else Color(0xFFFCA5A5)
+                            )
+                        }
+                    }
 
-        item {
-            Card(
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    SummaryMetric(
-                        label = "Expense",
-                        value = CurrencyFormatter.format(uiState.summary.expenseCents, uiState.currency),
-                        color = expenseSemanticColor()
+                    Text(
+                        text = CurrencyFormatter.format(uiState.summary.netCents, uiState.currency, showSign = true),
+                        style = MaterialTheme.typography.displaySmall,
+                        color = kansoColors.heroOnSurface
                     )
-                    SummaryMetric(
-                        label = "Income",
-                        value = CurrencyFormatter.format(uiState.summary.incomeCents, uiState.currency),
-                        color = incomeSemanticColor()
-                    )
-                    SummaryMetric(
-                        label = "Net",
-                        value = CurrencyFormatter.format(uiState.summary.netCents, uiState.currency, showSign = true),
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        HeroCashPill(
+                            label = "Spent",
+                            value = CurrencyFormatter.format(uiState.summary.expenseCents, uiState.currency),
+                            dotColor = Color(0xFFF87171),
+                            modifier = Modifier.weight(1f)
+                        )
+                        HeroCashPill(
+                            label = "Income",
+                            value = CurrencyFormatter.format(uiState.summary.incomeCents, uiState.currency),
+                            dotColor = Color(0xFF34D399),
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
                 }
             }
         }
 
         if (topCategories.isNotEmpty() && uiState.summary.expenseCents > 0L) {
             item {
-                Card(
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
+                KansoBentoCard(contentPadding = PaddingValues(16.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                         Text(
-                            text = "Top Categories",
+                            text = "Spending Breakdown",
                             style = MaterialTheme.typography.titleMedium
                         )
-                        topCategories.forEach { (category, amount) ->
-                            val ratio = (amount.toFloat() / uiState.summary.expenseCents.toFloat()).coerceIn(0f, 1f)
-                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            KansoCategoryDonutChart(
+                                slices = slices,
+                                size = 122.dp,
+                                strokeWidth = 15.dp
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                     Text(
-                                        text = category.label,
-                                        style = MaterialTheme.typography.bodyMedium
+                                        text = "${uiState.summary.byCategory.size}",
+                                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                                        color = MaterialTheme.colorScheme.onSurface
                                     )
                                     Text(
-                                        text = "${CurrencyFormatter.format(amount, uiState.currency)} (${(ratio * 100).toInt()}%)",
-                                        style = MaterialTheme.typography.labelLarge,
+                                        text = "categories",
+                                        style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
-                                LinearProgressIndicator(
-                                    progress = { ratio },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(6.dp)
-                                        .clip(RoundedCornerShape(3.dp)),
-                                    trackColor = MaterialTheme.colorScheme.surfaceVariant
-                                )
+                            }
+
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                topCategories.forEach { (category, amount) ->
+                                    val pct = ((amount.toFloat() / uiState.summary.expenseCents.toFloat()) * 100f).toInt()
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(7.dp),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(8.dp)
+                                                    .clip(CircleShape)
+                                                    .background(category.accentColor())
+                                            )
+                                            Text(
+                                                text = category.label,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                        Text(
+                                            text = "$pct% · ${CurrencyFormatter.format(amount, uiState.currency)}",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -489,22 +606,49 @@ private fun LogTabContent(
 }
 
 @Composable
-private fun SummaryMetric(
+private fun HeroCashPill(
     label: String,
     value: String,
-    color: androidx.compose.ui.graphics.Color
+    dotColor: Color,
+    modifier: Modifier = Modifier
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Text(
-            text = value,
-            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-            color = color
-        )
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(14.dp),
+        color = Color.White.copy(alpha = 0.08f),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f))
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(7.dp)
+                        .clip(CircleShape)
+                        .background(dotColor)
+                )
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.kansoColors.heroOnSurfaceMuted
+                )
+            }
+            Text(
+                text = value,
+                style = MaterialTheme.typography.titleSmall.copy(
+                    fontWeight = FontWeight.SemiBold,
+                    fontFeatureSettings = "tnum"
+                ),
+                color = MaterialTheme.kansoColors.heroOnSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
     }
 }
 
@@ -514,35 +658,25 @@ private fun TransactionRowCard(
     currency: AppCurrency,
     onClick: () -> Unit
 ) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surface
+    KansoBentoCard(
+        modifier = Modifier.fillMaxWidth(),
+        onClick = onClick,
+        cornerRadius = 18.dp,
+        contentPadding = PaddingValues(14.dp)
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(14.dp),
+            modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
-                contentAlignment = Alignment.Center
+            KansoAccentIconBadge(
+                icon = transaction.category.icon(),
+                accent = transaction.category.accentColor()
+            )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
-                Icon(
-                    imageVector = transaction.category.icon(),
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary
-                )
-            }
-            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = transaction.note.ifBlank { transaction.category.label },
                     style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
@@ -550,7 +684,7 @@ private fun TransactionRowCard(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = "${transaction.category.label} • ${transaction.wallet.label} • ${
+                    text = "${transaction.category.label} · ${transaction.wallet.label} · ${
                         KansoDateFormatters.formatShortDate(transaction.timestampMillis)
                     }",
                     style = MaterialTheme.typography.labelMedium,
@@ -575,63 +709,73 @@ private fun BudgetsTabContent(
     onAddCategoryBudget: () -> Unit,
     onEditCategoryBudget: (ExpenseCategory) -> Unit
 ) {
-    val warningColor = if (isSystemInDarkTheme()) WarningAmberDark else WarningAmber
+    val warningColor = warningSemanticColor()
+    val moneyAccent = MaterialTheme.kansoColors.moneyAccent
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 88.dp),
+        contentPadding = PaddingValues(bottom = 28.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            Card(
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+            KansoBentoCard(contentPadding = PaddingValues(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Overall Monthly Budget", style = MaterialTheme.typography.titleMedium)
-                        OutlinedButton(onClick = onEditOverallBudget) {
-                            Text(if (uiState.overallMonthlyBudgetCents > 0L) "Edit" else "Set")
-                        }
-                    }
                     if (uiState.overallMonthlyBudgetCents > 0L) {
                         val ratio = uiState.summary.expenseCents.toFloat() / uiState.overallMonthlyBudgetCents.toFloat()
-                        val barColor = when {
+                        val ringColor = when {
                             ratio > 1f -> expenseSemanticColor()
                             ratio >= 0.8f -> warningColor
-                            else -> MaterialTheme.colorScheme.primary
+                            else -> moneyAccent
                         }
-                        LinearProgressIndicator(
-                            progress = { ratio.coerceIn(0f, 1f) },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(8.dp)
-                                .clip(RoundedCornerShape(4.dp)),
-                            color = barColor,
-                            trackColor = MaterialTheme.colorScheme.surfaceVariant
-                        )
-                        Text(
-                            text = "${CurrencyFormatter.format(uiState.summary.expenseCents, uiState.currency)} of ${
-                                CurrencyFormatter.format(uiState.overallMonthlyBudgetCents, uiState.currency)
-                            } (${(ratio * 100).toInt()}%)",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    } else {
-                        Text(
-                            text = "No monthly cap set yet.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        KansoProgressRing(
+                            progress = ratio,
+                            color = ringColor,
+                            size = 72.dp,
+                            strokeWidth = 7.dp
+                        ) {
+                            Text(
+                                text = "${(ratio * 100).toInt()}%",
+                                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                                color = ringColor
+                            )
+                        }
+                    }
+
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text("Overall Monthly Budget", style = MaterialTheme.typography.titleMedium)
+                        if (uiState.overallMonthlyBudgetCents > 0L) {
+                            Text(
+                                text = "${CurrencyFormatter.format(uiState.summary.expenseCents, uiState.currency)} spent",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "Limit ${CurrencyFormatter.format(uiState.overallMonthlyBudgetCents, uiState.currency)}",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            Text(
+                                text = "Set a monthly cap to track pace.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    FilledTonalButton(
+                        onClick = onEditOverallBudget,
+                        shape = RoundedCornerShape(50),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+                    ) {
+                        Text(if (uiState.overallMonthlyBudgetCents > 0L) "Edit" else "Set")
                     }
                 }
             }
@@ -657,52 +801,55 @@ private fun BudgetsTabContent(
             }
         } else {
             items(uiState.budgetStatuses, key = { it.category.name }) { status ->
-                val color = when {
+                val statusColor = when {
                     status.isOverBudget -> expenseSemanticColor()
                     status.isWarning -> warningColor
-                    else -> MaterialTheme.colorScheme.primary
+                    else -> status.category.accentColor()
                 }
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
-                        .clickable { onEditCategoryBudget(status.category) },
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surface
+                KansoBentoCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { onEditCategoryBudget(status.category) },
+                    cornerRadius = 18.dp,
+                    contentPadding = PaddingValues(14.dp)
                 ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(status.category.label, style = MaterialTheme.typography.titleMedium)
-                            Text(
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                KansoAccentIconBadge(
+                                    icon = status.category.icon(),
+                                    accent = status.category.accentColor(),
+                                    size = 36.dp,
+                                    iconSize = 18.dp,
+                                    cornerRadius = 11.dp
+                                )
+                                Column {
+                                    Text(status.category.label, style = MaterialTheme.typography.titleMedium)
+                                    Text(
+                                        text = "${CurrencyFormatter.format(status.spentCents, uiState.currency)} / ${
+                                            CurrencyFormatter.format(status.limitCents, uiState.currency)
+                                        }",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                            KansoPillBadge(
                                 text = "${(status.ratio * 100).toInt()}%",
-                                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
-                                color = color
+                                color = statusColor
                             )
                         }
-                        LinearProgressIndicator(
-                            progress = { status.ratio.coerceIn(0f, 1f) },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(7.dp)
-                                .clip(RoundedCornerShape(4.dp)),
-                            color = color,
-                            trackColor = MaterialTheme.colorScheme.surfaceVariant
-                        )
-                        Text(
-                            text = "${CurrencyFormatter.format(status.spentCents, uiState.currency)} / ${
-                                CurrencyFormatter.format(status.limitCents, uiState.currency)
-                            }",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        KansoAnimatedProgressBar(
+                            progress = status.ratio,
+                            height = 7.dp,
+                            color = statusColor
                         )
                     }
                 }
@@ -719,10 +866,11 @@ private fun BillsTabContent(
     onPayBill: (RecurringBill) -> Unit
 ) {
     val currentMonth = YearMonth.now()
+    val haptic = LocalHapticFeedback.current
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 88.dp),
+        contentPadding = PaddingValues(bottom = 28.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
@@ -731,9 +879,13 @@ private fun BillsTabContent(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Recurring Bills", style = MaterialTheme.typography.titleMedium)
-                Button(onClick = onAddBill) {
-                    Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                Text("Recurring Bills", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+                FilledTonalButton(
+                    onClick = onAddBill,
+                    shape = RoundedCornerShape(50),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+                ) {
+                    Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(17.dp))
                     Text(" Add Bill")
                 }
             }
@@ -752,61 +904,51 @@ private fun BillsTabContent(
         } else {
             items(uiState.bills, key = { it.id }) { bill ->
                 val isPaid = MoneyCalculations.isBillPaidForMonth(bill, currentMonth)
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
-                        .clickable { onEditBill(bill) },
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    border = if (!bill.isActive) {
-                        BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                    } else null
+                KansoBentoCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { onEditBill(bill) },
+                    cornerRadius = 18.dp,
+                    contentPadding = PaddingValues(14.dp)
                 ) {
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
+                        modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
+                        KansoAccentIconBadge(
+                            icon = bill.category.icon(),
+                            accent = bill.category.accentColor()
+                        )
                         Column(modifier = Modifier.weight(1f)) {
+                            Text(bill.name, style = MaterialTheme.typography.titleMedium)
                             Text(
-                                text = bill.name,
-                                style = MaterialTheme.typography.titleMedium
-                            )
-                            Text(
-                                text = "Day ${bill.dueDayOfMonth} • ${bill.frequency.label} • ${bill.wallet.label}",
+                                text = "Day ${bill.dueDayOfMonth} · ${bill.frequency.label} · ${bill.wallet.label}",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            Spacer(modifier = Modifier.height(4.dp))
+                            Spacer(modifier = Modifier.height(3.dp))
                             Text(
                                 text = CurrencyFormatter.format(bill.amountCents, uiState.currency),
-                                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold)
+                                style = MaterialTheme.typography.titleSmall.copy(
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontFeatureSettings = "tnum"
+                                )
                             )
                         }
 
                         if (!bill.isActive) {
-                            Text(
-                                text = "Paused",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            KansoPillBadge(text = "Paused", color = MaterialTheme.colorScheme.onSurfaceVariant)
                         } else if (isPaid) {
-                            Surface(
-                                shape = RoundedCornerShape(10.dp),
-                                color = incomeSemanticColor().copy(alpha = 0.14f)
-                            ) {
-                                Text(
-                                    text = "Paid",
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = incomeSemanticColor()
-                                )
-                            }
+                            KansoPillBadge(text = "Paid", color = incomeSemanticColor())
                         } else {
-                            FilledTonalButton(onClick = { onPayBill(bill) }) {
+                            FilledTonalButton(
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    onPayBill(bill)
+                                },
+                                shape = RoundedCornerShape(50),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                            ) {
                                 Text("Mark Paid")
                             }
                         }
@@ -827,32 +969,56 @@ private fun IousTabContent(
     onRequestSettleIou: (IouEntry) -> Unit
 ) {
     val displayed = if (showSettled) uiState.settledIous else uiState.openIous
+    val haptic = LocalHapticFeedback.current
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 88.dp),
+        contentPadding = PaddingValues(bottom = 28.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            Card(
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                KansoBentoCard(
+                    modifier = Modifier.weight(1f),
+                    containerColor = incomeSemanticColor().copy(alpha = 0.08f),
+                    borderColor = incomeSemanticColor().copy(alpha = 0.25f),
+                    contentPadding = PaddingValues(14.dp)
                 ) {
-                    SummaryMetric(
-                        label = "Owes Me",
-                        value = CurrencyFormatter.format(uiState.owesMeTotalCents, uiState.currency),
+                    Text(
+                        text = "OWES ME",
+                        style = MaterialTheme.typography.labelSmall,
                         color = incomeSemanticColor()
                     )
-                    SummaryMetric(
-                        label = "I Owe",
-                        value = CurrencyFormatter.format(uiState.iOweTotalCents, uiState.currency),
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = CurrencyFormatter.format(uiState.owesMeTotalCents, uiState.currency),
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                        color = incomeSemanticColor(),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                KansoBentoCard(
+                    modifier = Modifier.weight(1f),
+                    containerColor = expenseSemanticColor().copy(alpha = 0.08f),
+                    borderColor = expenseSemanticColor().copy(alpha = 0.25f),
+                    contentPadding = PaddingValues(14.dp)
+                ) {
+                    Text(
+                        text = "I OWE",
+                        style = MaterialTheme.typography.labelSmall,
                         color = expenseSemanticColor()
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = CurrencyFormatter.format(uiState.iOweTotalCents, uiState.currency),
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                        color = expenseSemanticColor(),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
@@ -876,8 +1042,12 @@ private fun IousTabContent(
                         label = { Text("Settled (${uiState.settledIous.size})") }
                     )
                 }
-                Button(onClick = onAddIou) {
-                    Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                Button(
+                    onClick = onAddIou,
+                    shape = RoundedCornerShape(50),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+                ) {
+                    Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(17.dp))
                     Text(" Add")
                 }
             }
@@ -896,18 +1066,19 @@ private fun IousTabContent(
         } else {
             items(displayed, key = { it.id }) { iou ->
                 val dueLabel = KansoDateFormatters.formatEpochDayLabel(iou.dueDateEpochDay)
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
-                        .clickable { onEditIou(iou) },
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surface
+                val accent = if (iou.direction == IouDirection.OWES_ME) {
+                    incomeSemanticColor()
+                } else {
+                    expenseSemanticColor()
+                }
+                KansoBentoCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { onEditIou(iou) },
+                    cornerRadius = 18.dp,
+                    contentPadding = PaddingValues(14.dp)
                 ) {
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
+                        modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
@@ -918,8 +1089,8 @@ private fun IousTabContent(
                             )
                             val meta = buildString {
                                 append(iou.direction.label)
-                                if (iou.note.isNotBlank()) append(" • ${iou.note}")
-                                if (dueLabel != null) append(" • Due $dueLabel")
+                                if (iou.note.isNotBlank()) append(" · ${iou.note}")
+                                if (dueLabel != null) append(" · Due $dueLabel")
                             }
                             Text(
                                 text = meta,
@@ -931,25 +1102,27 @@ private fun IousTabContent(
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
                                 text = CurrencyFormatter.format(iou.amountCents, uiState.currency),
-                                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
-                                color = if (iou.direction == IouDirection.OWES_ME) {
-                                    incomeSemanticColor()
-                                } else {
-                                    expenseSemanticColor()
-                                }
+                                style = MaterialTheme.typography.titleSmall.copy(
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontFeatureSettings = "tnum"
+                                ),
+                                color = accent
                             )
                         }
 
                         if (!iou.isSettled) {
-                            FilledTonalButton(onClick = { onRequestSettleIou(iou) }) {
+                            FilledTonalButton(
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    onRequestSettleIou(iou)
+                                },
+                                shape = RoundedCornerShape(50),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                            ) {
                                 Text("Settle")
                             }
                         } else {
-                            Text(
-                                text = "Settled",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            KansoPillBadge(text = "Settled", color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }

@@ -2,16 +2,19 @@ package com.kanso.app.update
 
 import android.content.Context
 import android.content.Intent
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material3.Button
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -21,6 +24,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.kanso.core.ui.components.KansoAccentIconBadge
+import com.kanso.core.ui.components.KansoAnimatedProgressBar
 import java.io.File
 
 fun launchApkInstall(
@@ -63,44 +68,59 @@ fun KansoUpdateBanner(
     }
     if (activeTag == null || activeTag == dismissedTag) return
 
+    val accent = MaterialTheme.colorScheme.primary
     Surface(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp),
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.primaryContainer,
-        tonalElevation = 2.dp
+        shape = RoundedCornerShape(18.dp),
+        color = accent.copy(alpha = 0.10f),
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.28f))
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             when (updateState) {
                 is AppUpdateState.UpdateAvailable -> {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
+                        KansoAccentIconBadge(
+                            icon = Icons.Outlined.SystemUpdate,
+                            accent = accent,
+                            size = 38.dp,
+                            iconSize = 20.dp,
+                            cornerRadius = 12.dp
+                        )
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Update ${updateState.release.tagName} available",
+                                text = "Update ${updateState.release.tagName} ready",
                                 style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = "Current: v${updateState.currentVersion}",
+                                text = "Installed v${updateState.currentVersion}",
                                 style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        Row {
-                            TextButton(onClick = { onDismiss(updateState.release.tagName) }) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            TextButton(
+                                onClick = { onDismiss(updateState.release.tagName) },
+                                contentPadding = PaddingValues(horizontal = 10.dp)
+                            ) {
                                 Text("Later")
                             }
-                            Button(onClick = { onDownload(updateState.release) }) {
+                            Button(
+                                onClick = { onDownload(updateState.release) },
+                                shape = RoundedCornerShape(50),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                            ) {
                                 Text("Update")
                             }
                         }
@@ -111,56 +131,73 @@ fun KansoUpdateBanner(
                     val total = updateState.totalBytes
                     val progress = if (total > 0L) {
                         (updateState.downloadedBytes.toFloat() / total.toFloat()).coerceIn(0f, 1f)
-                    } else null
+                    } else 0.15f
 
                     Text(
                         text = "Downloading ${updateState.release.tagName}...",
                         style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                        color = MaterialTheme.colorScheme.onSurface
                     )
-                    if (progress != null) {
-                        LinearProgressIndicator(
-                            progress = { progress },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    } else {
-                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                    }
+                    KansoAnimatedProgressBar(
+                        progress = progress,
+                        height = 7.dp,
+                        color = accent,
+                        trackColor = accent.copy(alpha = 0.2f)
+                    )
                 }
 
                 is AppUpdateState.Verifying -> {
                     Text(
                         text = "Verifying ${updateState.release.tagName} SHA-256...",
                         style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                        color = MaterialTheme.colorScheme.onSurface
                     )
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    KansoAnimatedProgressBar(
+                        progress = 0.95f,
+                        height = 7.dp,
+                        color = accent,
+                        trackColor = accent.copy(alpha = 0.2f)
+                    )
                 }
 
                 is AppUpdateState.ReadyToInstall -> {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
+                        KansoAccentIconBadge(
+                            icon = Icons.Outlined.SystemUpdate,
+                            accent = accent,
+                            size = 38.dp,
+                            iconSize = 20.dp,
+                            cornerRadius = 12.dp
+                        )
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = "${updateState.release.tagName} verified & ready",
                                 style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                                color = MaterialTheme.colorScheme.onSurface
                             )
-                            Spacer(modifier = Modifier.height(2.dp))
+                            Spacer(modifier = Modifier.height(1.dp))
                             Text(
                                 text = "Tap Install to update Kanso.",
                                 style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        Row {
-                            TextButton(onClick = { onDismiss(updateState.release.tagName) }) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            TextButton(
+                                onClick = { onDismiss(updateState.release.tagName) },
+                                contentPadding = PaddingValues(horizontal = 10.dp)
+                            ) {
                                 Text("Later")
                             }
-                            Button(onClick = { onInstall(updateState.apkFile) }) {
+                            Button(
+                                onClick = { onInstall(updateState.apkFile) },
+                                shape = RoundedCornerShape(50),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                            ) {
                                 Text("Install")
                             }
                         }

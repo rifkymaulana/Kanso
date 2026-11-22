@@ -5,9 +5,14 @@ import android.content.ContextWrapper
 import android.content.Intent
 import android.provider.Settings
 import android.view.WindowManager
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -21,6 +26,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
@@ -35,9 +41,9 @@ import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -48,6 +54,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -61,9 +68,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -86,14 +97,18 @@ import com.kanso.core.model.VaultCategory
 import com.kanso.core.model.VaultItem
 import com.kanso.core.security.BiometricAuthHelper
 import com.kanso.core.security.BiometricAvailability
+import com.kanso.core.ui.components.KansoAccentIconBadge
+import com.kanso.core.ui.components.KansoBentoCard
 import com.kanso.core.ui.components.KansoDateFormatters
 import com.kanso.core.ui.components.KansoEmptyState
+import com.kanso.core.ui.components.KansoHeroCard
+import com.kanso.core.ui.components.KansoPillBadge
 import com.kanso.core.ui.components.KansoSegmentedRow
 import com.kanso.core.ui.components.expenseSemanticColor
 import com.kanso.core.ui.components.incomeSemanticColor
+import com.kanso.core.ui.components.warningSemanticColor
 import com.kanso.core.ui.theme.KansoTheme
-import com.kanso.core.ui.theme.WarningAmber
-import com.kanso.core.ui.theme.WarningAmberDark
+import com.kanso.core.ui.theme.kansoColors
 import java.time.LocalDate
 
 private tailrec fun Context.findFragmentActivity(): FragmentActivity? = when (this) {
@@ -300,11 +315,15 @@ fun LifeAdminScreenContent(
     onCopyVaultSecret: (VaultItem) -> Unit
 ) {
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
                 windowInsets = WindowInsets(0, 0, 0, 0),
-                title = { Text("Life Admin & Vault") },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background
+                ),
+                title = { Text("Life Admin & Vault", style = MaterialTheme.typography.titleLarge) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
@@ -326,29 +345,35 @@ fun LifeAdminScreenContent(
                 onSelect = onSelectTab
             )
 
-            when (selectedTab) {
-                0 -> ExpiriesTabContent(
-                    uiState = uiState,
-                    onAddExpiry = onAddExpiry,
-                    onEditExpiry = onEditExpiry,
-                    onCopyReference = onCopyReference
-                )
+            AnimatedContent(
+                targetState = selectedTab,
+                transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
+                label = "lifeAdminTab"
+            ) { tab ->
+                when (tab) {
+                    0 -> ExpiriesTabContent(
+                        uiState = uiState,
+                        onAddExpiry = onAddExpiry,
+                        onEditExpiry = onEditExpiry,
+                        onCopyReference = onCopyReference
+                    )
 
-                1 -> MaintenanceTabContent(
-                    uiState = uiState,
-                    onAddMaintenance = onAddMaintenance,
-                    onEditMaintenance = onEditMaintenance
-                )
+                    1 -> MaintenanceTabContent(
+                        uiState = uiState,
+                        onAddMaintenance = onAddMaintenance,
+                        onEditMaintenance = onEditMaintenance
+                    )
 
-                else -> VaultTabContent(
-                    uiState = uiState,
-                    onRequestUnlockVault = onRequestUnlockVault,
-                    onOpenSecuritySettings = onOpenSecuritySettings,
-                    onLockVault = onLockVault,
-                    onAddVaultItem = onAddVaultItem,
-                    onEditVaultItem = onEditVaultItem,
-                    onCopyVaultSecret = onCopyVaultSecret
-                )
+                    else -> VaultTabContent(
+                        uiState = uiState,
+                        onRequestUnlockVault = onRequestUnlockVault,
+                        onOpenSecuritySettings = onOpenSecuritySettings,
+                        onLockVault = onLockVault,
+                        onAddVaultItem = onAddVaultItem,
+                        onEditVaultItem = onEditVaultItem,
+                        onCopyVaultSecret = onCopyVaultSecret
+                    )
+                }
             }
         }
     }
@@ -362,7 +387,8 @@ private fun ExpiriesTabContent(
     onCopyReference: (String) -> Unit
 ) {
     val todayEpoch = LocalDate.now().toEpochDay()
-    val warningColor = if (isSystemInDarkTheme()) WarningAmberDark else WarningAmber
+    val warningColor = warningSemanticColor()
+    val haptic = LocalHapticFeedback.current
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -376,7 +402,7 @@ private fun ExpiriesTabContent(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column {
-                    Text("IDs, Taxes & Warranties", style = MaterialTheme.typography.titleMedium)
+                    Text("IDs, Taxes & Warranties", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
                     Text(
                         text = if (uiState.attentionExpiryCount > 0) {
                             "${uiState.attentionExpiryCount} item(s) need attention"
@@ -384,15 +410,15 @@ private fun ExpiriesTabContent(
                             "All tracked documents up to date"
                         },
                         style = MaterialTheme.typography.labelMedium,
-                        color = if (uiState.attentionExpiryCount > 0) {
-                            warningColor
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        }
+                        color = if (uiState.attentionExpiryCount > 0) warningColor else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                Button(onClick = onAddExpiry) {
-                    Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                FilledTonalButton(
+                    onClick = onAddExpiry,
+                    shape = RoundedCornerShape(50),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+                ) {
+                    Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(17.dp))
                     Text(" Add")
                 }
             }
@@ -423,25 +449,28 @@ private fun ExpiriesTabContent(
                     else -> "${delta}d left"
                 }
 
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
-                        .clickable { onEditExpiry(item) },
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surface
+                KansoBentoCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { onEditExpiry(item) },
+                    cornerRadius = 18.dp,
+                    contentPadding = PaddingValues(14.dp)
                 ) {
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
+                        modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
+                        KansoAccentIconBadge(
+                            icon = Icons.Outlined.EventAvailable,
+                            accent = badgeColor
+                        )
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
                             Text(item.title, style = MaterialTheme.typography.titleMedium)
                             Text(
-                                text = "${item.category.label} • ${KansoDateFormatters.formatFullDate(item.expiryEpochDay)}",
+                                text = "${item.category.label} · ${KansoDateFormatters.formatFullDate(item.expiryEpochDay)}",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -452,34 +481,27 @@ private fun ExpiriesTabContent(
                                 ) {
                                     Text(
                                         text = item.referenceNumber,
-                                        style = MaterialTheme.typography.bodyMedium,
+                                        style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
                                         color = MaterialTheme.colorScheme.primary
                                     )
                                     IconButton(
-                                        onClick = { onCopyReference(item.referenceNumber) },
+                                        onClick = {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            onCopyReference(item.referenceNumber)
+                                        },
                                         modifier = Modifier.size(28.dp)
                                     ) {
                                         Icon(
                                             Icons.Outlined.ContentCopy,
                                             contentDescription = "Copy reference",
-                                            modifier = Modifier.size(16.dp)
+                                            modifier = Modifier.size(15.dp)
                                         )
                                     }
                                 }
                             }
                         }
 
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = badgeColor.copy(alpha = 0.14f)
-                        ) {
-                            Text(
-                                text = badgeText,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                style = MaterialTheme.typography.labelLarge,
-                                color = badgeColor
-                            )
-                        }
+                        KansoPillBadge(text = badgeText, color = badgeColor)
                     }
                 }
             }
@@ -501,6 +523,7 @@ private fun MaintenanceTabContent(
             uiState.maintenanceLogs.filter { it.category == categoryFilter }
         }
     }
+    val accent = MaterialTheme.kansoColors.lifeAdminAccent
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -513,9 +536,13 @@ private fun MaintenanceTabContent(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Maintenance History", style = MaterialTheme.typography.titleMedium)
-                Button(onClick = onAddMaintenance) {
-                    Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                Text("Maintenance History", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+                FilledTonalButton(
+                    onClick = onAddMaintenance,
+                    shape = RoundedCornerShape(50),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+                ) {
+                    Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(17.dp))
                     Text(" Add Log")
                 }
             }
@@ -557,58 +584,60 @@ private fun MaintenanceTabContent(
                 val nextDay = log.nextDueEpochDay
                 val nextOdo = log.nextDueOdometerKm
 
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
-                        .clickable { onEditMaintenance(log) },
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surface
+                KansoBentoCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { onEditMaintenance(log) },
+                    cornerRadius = 18.dp,
+                    contentPadding = PaddingValues(14.dp)
                 ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.Top,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                        KansoAccentIconBadge(
+                            icon = Icons.Outlined.Build,
+                            accent = accent
+                        )
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "${log.assetName} — ${log.serviceDescription}",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    modifier = Modifier.weight(1f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = KansoDateFormatters.formatFullDate(log.serviceEpochDay),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            val meta = buildList {
+                                add(log.category.label)
+                                if (odo != null) add("$odo km")
+                                if (cost != null) add(CurrencyFormatter.format(cost, uiState.currency))
+                            }.joinToString(" · ")
                             Text(
-                                text = "${log.assetName} — ${log.serviceDescription}",
-                                style = MaterialTheme.typography.titleMedium,
-                                modifier = Modifier.weight(1f),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                text = KansoDateFormatters.formatFullDate(log.serviceEpochDay),
-                                style = MaterialTheme.typography.labelMedium,
+                                text = meta,
+                                style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                        }
-                        val meta = buildList {
-                            add(log.category.label)
-                            if (odo != null) add("$odo km")
-                            if (cost != null) add(CurrencyFormatter.format(cost, uiState.currency))
-                        }.joinToString(" • ")
-                        Text(
-                            text = meta,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        if (nextDay != null || nextOdo != null) {
-                            val nextText = buildList {
-                                if (nextDay != null) add("Next: ${KansoDateFormatters.formatFullDate(nextDay)}")
-                                if (nextOdo != null) add("at $nextOdo km")
-                            }.joinToString(" ")
-                            Text(
-                                text = nextText,
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.primary
-                            )
+                            if (nextDay != null || nextOdo != null) {
+                                val nextText = buildList {
+                                    if (nextDay != null) add("Next: ${KansoDateFormatters.formatFullDate(nextDay)}")
+                                    if (nextOdo != null) add("at $nextOdo km")
+                                }.joinToString(" ")
+                                KansoPillBadge(text = nextText, color = accent)
+                            }
                         }
                     }
                 }
@@ -629,50 +658,99 @@ private fun VaultTabContent(
 ) {
     val context = LocalContext.current
     val availability = remember(context) { BiometricAuthHelper.checkAvailability(context) }
+    val haptic = LocalHapticFeedback.current
+    val kansoColors = MaterialTheme.kansoColors
 
     if (!uiState.isVaultUnlocked) {
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(vertical = 24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+                .padding(vertical = 16.dp),
+            contentAlignment = Alignment.Center
         ) {
-            Icon(
-                imageVector = Icons.Outlined.Lock,
-                contentDescription = null,
-                modifier = Modifier.size(56.dp),
-                tint = MaterialTheme.colorScheme.primary
-            )
-            Spacer(modifier = Modifier.height(14.dp))
-            Text(
-                text = "Private Vault Locked",
-                style = MaterialTheme.typography.headlineMedium
-            )
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = "${uiState.vaultItemCount} encrypted secret(s) stored with Android Keystore AES-256-GCM. Screenshots are blocked while open.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
-            )
-            Spacer(modifier = Modifier.height(20.dp))
+            KansoHeroCard(
+                glowColor = kansoColors.lifeAdminAccent,
+                contentPadding = PaddingValues(24.dp)
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(64.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFFBBF24).copy(alpha = 0.16f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Lock,
+                            contentDescription = null,
+                            modifier = Modifier.size(30.dp),
+                            tint = Color(0xFFFBBF24)
+                        )
+                    }
 
-            if (availability == BiometricAvailability.AVAILABLE) {
-                Button(onClick = onRequestUnlockVault) {
-                    Icon(Icons.Outlined.Fingerprint, contentDescription = null)
-                    Text("  Unlock with Biometrics / PIN")
-                }
-            } else {
-                Text(
-                    text = "Set a device PIN, pattern, or biometric lock in Android Settings to unlock the Private Vault.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.error,
-                    textAlign = TextAlign.Center
-                )
-                Spacer(modifier = Modifier.height(10.dp))
-                OutlinedButton(onClick = onOpenSecuritySettings) {
-                    Text("Open Security Settings")
+                    Text(
+                        text = "Private Vault Locked",
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = kansoColors.heroOnSurface
+                    )
+
+                    Surface(
+                        shape = RoundedCornerShape(50),
+                        color = Color.White.copy(alpha = 0.12f)
+                    ) {
+                        Text(
+                            text = "${uiState.vaultItemCount} encrypted secret(s) · AES-256-GCM",
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = kansoColors.heroOnSurface
+                        )
+                    }
+
+                    Text(
+                        text = "Backed by Android Keystore hardware encryption. Screenshots & screen recording are blocked while unlocked.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = kansoColors.heroOnSurfaceMuted,
+                        textAlign = TextAlign.Center
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    if (availability == BiometricAvailability.AVAILABLE) {
+                        Button(
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                onRequestUnlockVault()
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(50.dp),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF2DD4BF),
+                                contentColor = Color(0xFF042F2E)
+                            )
+                        ) {
+                            Icon(Icons.Outlined.Fingerprint, contentDescription = null)
+                            Text("  Unlock with Biometrics / PIN", style = MaterialTheme.typography.titleSmall)
+                        }
+                    } else {
+                        Text(
+                            text = "Set a device PIN, pattern, or biometric lock in Android Settings to unlock the Private Vault.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color(0xFFFCA5A5),
+                            textAlign = TextAlign.Center
+                        )
+                        OutlinedButton(
+                            onClick = onOpenSecuritySettings,
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
+                            Text("Open Security Settings", color = kansoColors.heroOnSurface)
+                        }
+                    }
                 }
             }
         }
@@ -695,14 +773,14 @@ private fun VaultTabContent(
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         item {
-            Card(
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+            KansoBentoCard(
+                containerColor = kansoColors.income.copy(alpha = 0.08f),
+                borderColor = kansoColors.income.copy(alpha = 0.28f),
+                cornerRadius = 18.dp,
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp)
             ) {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -714,12 +792,12 @@ private fun VaultTabContent(
                         Icon(
                             Icons.Outlined.Shield,
                             contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer
+                            tint = kansoColors.income
                         )
                         Text(
-                            text = "Unlocked • Screenshots blocked",
+                            text = "Unlocked · Screenshots blocked",
                             style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                            color = kansoColors.income
                         )
                     }
                     TextButton(onClick = onLockVault) {
@@ -735,9 +813,13 @@ private fun VaultTabContent(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Encrypted Secrets", style = MaterialTheme.typography.titleMedium)
-                Button(onClick = onAddVaultItem) {
-                    Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                Text("Encrypted Secrets", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+                FilledTonalButton(
+                    onClick = onAddVaultItem,
+                    shape = RoundedCornerShape(50),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+                ) {
+                    Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(17.dp))
                     Text(" Add")
                 }
             }
@@ -767,7 +849,7 @@ private fun VaultTabContent(
                 KansoEmptyState(
                     icon = Icons.Outlined.Lock,
                     title = "Vault is empty",
-                    subtitle = "Save recovery codes, spare PINs, passport scans notes, or private credentials encrypted offline.",
+                    subtitle = "Save recovery codes, spare PINs, passport notes, or private credentials encrypted offline.",
                     actionLabel = "Add Secret",
                     onAction = onAddVaultItem
                 )
@@ -775,28 +857,22 @@ private fun VaultTabContent(
         } else {
             items(filtered, key = { it.id }) { item ->
                 val isRevealed = revealedIds[item.id] == true
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surface
+                KansoBentoCard(
+                    cornerRadius = 18.dp,
+                    contentPadding = PaddingValues(14.dp)
                 ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column(modifier = Modifier.weight(1f)) {
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(3.dp)
+                            ) {
                                 Text(item.title, style = MaterialTheme.typography.titleMedium)
-                                Text(
-                                    text = item.category.label,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
+                                KansoPillBadge(text = item.category.label, color = kansoColors.lifeAdminAccent)
                             }
                             Row {
                                 IconButton(onClick = { revealedIds[item.id] = !isRevealed }) {
@@ -805,7 +881,10 @@ private fun VaultTabContent(
                                         contentDescription = if (isRevealed) "Hide" else "Reveal"
                                     )
                                 }
-                                IconButton(onClick = { onCopyVaultSecret(item) }) {
+                                IconButton(onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    onCopyVaultSecret(item)
+                                }) {
                                     Icon(Icons.Outlined.ContentCopy, contentDescription = "Copy")
                                 }
                                 IconButton(onClick = { onEditVaultItem(item) }) {
@@ -814,11 +893,22 @@ private fun VaultTabContent(
                             }
                         }
 
-                        Text(
-                            text = if (isRevealed) item.secretContent else "•••••••• ••••••••",
-                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                        ) {
+                            Text(
+                                text = if (isRevealed) item.secretContent else "•••••••• ••••••••",
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Medium
+                                ),
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
                     }
                 }
             }

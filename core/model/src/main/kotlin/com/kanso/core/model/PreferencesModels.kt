@@ -14,7 +14,7 @@ data class UserPreferences(
     val displayName: String = "",
     val currency: AppCurrency = AppCurrency.IDR,
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
-    val useDynamicColor: Boolean = true,
+    val useDynamicColor: Boolean = false,
     val overallMonthlyBudgetCents: Long = 0L,
     val lastBackupMillis: Long? = null,
     val waterGoalMl: Int = 2000,

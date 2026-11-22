@@ -2,9 +2,13 @@ package com.kanso.feature.utilities
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -37,10 +41,8 @@ import androidx.compose.material.icons.outlined.Wifi
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -52,6 +54,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -67,8 +70,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -83,11 +88,16 @@ import com.kanso.core.model.CountdownItem
 import com.kanso.core.model.OfflineCurrencyConverter
 import com.kanso.core.model.UnitConverter
 import com.kanso.core.model.UnitDomain
+import com.kanso.core.ui.components.KansoBentoCard
 import com.kanso.core.ui.components.KansoDateFormatters
 import com.kanso.core.ui.components.KansoDatePickerDialog
 import com.kanso.core.ui.components.KansoEmptyState
+import com.kanso.core.ui.components.KansoHeroCard
+import com.kanso.core.ui.components.KansoPillBadge
+import com.kanso.core.ui.components.KansoProgressRing
 import com.kanso.core.ui.components.KansoSegmentedRow
 import com.kanso.core.ui.theme.KansoTheme
+import com.kanso.core.ui.theme.kansoColors
 import java.text.DecimalFormat
 import java.time.LocalDate
 import java.util.Locale
@@ -185,11 +195,15 @@ fun UtilitiesScreenContent(
     }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
                 windowInsets = WindowInsets(0, 0, 0, 0),
-                title = { Text("Pocket Utilities") },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background
+                ),
+                title = { Text("Pocket Utilities", style = MaterialTheme.typography.titleLarge) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
@@ -211,24 +225,30 @@ fun UtilitiesScreenContent(
                 onSelect = { selectedTab = it }
             )
 
-            when (selectedTab) {
-                0 -> QrTabContent(onCopyText = onCopyText)
-                1 -> ConverterTabContent(
-                    uiState = uiState,
-                    onCopyText = onCopyText,
-                    onOpenRatesDialog = onOpenRatesDialog
-                )
-                2 -> FocusTabContent(
-                    pomodoro = uiState.pomodoro,
-                    onSelectMode = onSelectTimerMode,
-                    onToggle = onToggleTimer,
-                    onReset = onResetTimer
-                )
-                else -> CountdownsTabContent(
-                    countdowns = uiState.countdowns,
-                    onAddCountdown = onAddCountdown,
-                    onEditCountdown = onEditCountdown
-                )
+            AnimatedContent(
+                targetState = selectedTab,
+                transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
+                label = "utilitiesTab"
+            ) { tab ->
+                when (tab) {
+                    0 -> QrTabContent(onCopyText = onCopyText)
+                    1 -> ConverterTabContent(
+                        uiState = uiState,
+                        onCopyText = onCopyText,
+                        onOpenRatesDialog = onOpenRatesDialog
+                    )
+                    2 -> FocusTabContent(
+                        pomodoro = uiState.pomodoro,
+                        onSelectMode = onSelectTimerMode,
+                        onToggle = onToggleTimer,
+                        onReset = onResetTimer
+                    )
+                    else -> CountdownsTabContent(
+                        countdowns = uiState.countdowns,
+                        onAddCountdown = onAddCountdown,
+                        onEditCountdown = onEditCountdown
+                    )
+                }
             }
         }
     }
@@ -239,6 +259,7 @@ private fun QrTabContent(
     onCopyText: (String, String) -> Unit
 ) {
     val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
     var qrMode by rememberSaveable { mutableIntStateOf(0) } // 0=Generate, 1=Scan
     var qrInput by rememberSaveable { mutableStateOf("") }
     var scannedResult by remember { mutableStateOf<String?>(null) }
@@ -275,17 +296,24 @@ private fun QrTabContent(
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text("Text, URL, or Wi-Fi payload") },
                     minLines = 2,
-                    maxLines = 4
+                    maxLines = 4,
+                    shape = RoundedCornerShape(14.dp)
                 )
             }
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { showWifiDialog = true }) {
+                    OutlinedButton(onClick = { showWifiDialog = true }, shape = RoundedCornerShape(50)) {
                         Icon(Icons.Outlined.Wifi, contentDescription = null, modifier = Modifier.size(18.dp))
                         Text(" Wi-Fi QR")
                     }
                     if (qrInput.isNotBlank()) {
-                        OutlinedButton(onClick = { onCopyText(qrInput, "QR text") }) {
+                        OutlinedButton(
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                onCopyText(qrInput, "QR text")
+                            },
+                            shape = RoundedCornerShape(50)
+                        ) {
                             Icon(Icons.Outlined.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
                             Text(" Copy Text")
                         }
@@ -295,21 +323,16 @@ private fun QrTabContent(
             item {
                 val bitmap = remember(qrInput) { QrCodeUtils.generateQrBitmap(qrInput, 560) }
                 if (bitmap != null) {
-                    Card(
-                        shape = RoundedCornerShape(20.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-                    ) {
+                    KansoBentoCard(contentPadding = PaddingValues(20.dp)) {
                         Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(20.dp),
+                            modifier = Modifier.fillMaxWidth(),
                             contentAlignment = Alignment.Center
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .clip(RoundedCornerShape(12.dp))
+                                    .clip(RoundedCornerShape(14.dp))
                                     .background(Color.White)
-                                    .padding(12.dp)
+                                    .padding(14.dp)
                             ) {
                                 Image(
                                     bitmap = bitmap.asImageBitmap(),
@@ -320,15 +343,9 @@ private fun QrTabContent(
                         }
                     }
                 } else {
-                    Surface(
-                        shape = RoundedCornerShape(18.dp),
-                        color = MaterialTheme.colorScheme.surface
-                    ) {
+                    KansoBentoCard(contentPadding = PaddingValues(18.dp)) {
                         Text(
                             text = "Type text or tap Wi-Fi QR above to generate a crisp offline QR code.",
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(20.dp),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -341,31 +358,32 @@ private fun QrTabContent(
                 if (result == null) {
                     QrScannerCard(onScanned = { decoded -> scannedResult = decoded })
                 } else {
-                    Card(
-                        shape = RoundedCornerShape(20.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
+                    KansoBentoCard(contentPadding = PaddingValues(16.dp)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             Text("Scanned Result", style = MaterialTheme.typography.titleMedium)
                             Text(result, style = MaterialTheme.typography.bodyLarge)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Button(onClick = { onCopyText(result, "scanned QR") }) {
+                                Button(
+                                    onClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        onCopyText(result, "scanned QR")
+                                    },
+                                    shape = RoundedCornerShape(50)
+                                ) {
                                     Icon(Icons.Outlined.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
                                     Text(" Copy")
                                 }
                                 if (result.startsWith("http://", ignoreCase = true) ||
                                     result.startsWith("https://", ignoreCase = true)
                                 ) {
-                                    OutlinedButton(onClick = {
-                                        runCatching {
-                                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(result)))
-                                        }
-                                    }) {
+                                    OutlinedButton(
+                                        onClick = {
+                                            runCatching {
+                                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(result)))
+                                            }
+                                        },
+                                        shape = RoundedCornerShape(50)
+                                    ) {
                                         Icon(Icons.Outlined.OpenInBrowser, contentDescription = null, modifier = Modifier.size(18.dp))
                                         Text(" Open")
                                     }
@@ -398,6 +416,8 @@ private fun ConverterTabContent(
     onCopyText: (String, String) -> Unit,
     onOpenRatesDialog: () -> Unit
 ) {
+    val haptic = LocalHapticFeedback.current
+    val utilitiesAccent = MaterialTheme.kansoColors.utilitiesAccent
     var mode by rememberSaveable { mutableIntStateOf(0) } // 0=Units, 1=Currency
 
     var domain by remember { mutableStateOf(UnitDomain.LENGTH) }
@@ -442,22 +462,15 @@ private fun ConverterTabContent(
                 val rawValue = unitInput.trim().replace(',', '.').toDoubleOrNull()
                 val converted = rawValue?.let { UnitConverter.convert(it, fromUnit, toUnit) }
 
-                Card(
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
+                KansoBentoCard(contentPadding = PaddingValues(16.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         OutlinedTextField(
                             value = unitInput,
                             onValueChange = { unitInput = it },
                             modifier = Modifier.fillMaxWidth(),
                             label = { Text("Value (${fromUnit.symbol})") },
                             singleLine = true,
+                            shape = RoundedCornerShape(14.dp),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
                         )
                         Text("From", style = MaterialTheme.typography.labelLarge)
@@ -477,6 +490,7 @@ private fun ConverterTabContent(
                         ) {
                             Text("To", style = MaterialTheme.typography.labelLarge)
                             IconButton(onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 val prevFrom = fromUnit.id
                                 fromUnitId = toUnit.id
                                 toUnitId = prevFrom
@@ -494,32 +508,33 @@ private fun ConverterTabContent(
                             }
                         }
                         val formatted = converted?.let { "${numberFormat.format(it)} ${toUnit.symbol}" } ?: "—"
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(14.dp))
-                                .clickable(enabled = converted != null) {
+                        KansoBentoCard(
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = if (converted != null) {
+                                {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     onCopyText(formatted, "converted value")
-                                },
-                            shape = RoundedCornerShape(14.dp),
-                            color = MaterialTheme.colorScheme.primaryContainer
+                                }
+                            } else null,
+                            containerColor = utilitiesAccent.copy(alpha = 0.12f),
+                            borderColor = utilitiesAccent.copy(alpha = 0.30f),
+                            cornerRadius = 16.dp,
+                            contentPadding = PaddingValues(14.dp)
                         ) {
                             Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(14.dp),
+                                modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
                                     text = formatted,
-                                    style = MaterialTheme.typography.headlineMedium,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    style = MaterialTheme.typography.displaySmall,
+                                    color = utilitiesAccent
                                 )
                                 Icon(
                                     Icons.Outlined.ContentCopy,
                                     contentDescription = "Copy",
-                                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                    tint = utilitiesAccent
                                 )
                             }
                         }
@@ -538,16 +553,8 @@ private fun ConverterTabContent(
                     )
                 }
 
-                Card(
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
+                KansoBentoCard(contentPadding = PaddingValues(16.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -562,6 +569,7 @@ private fun ConverterTabContent(
                             modifier = Modifier.fillMaxWidth(),
                             label = { Text("Amount (${fromCurrency.code})") },
                             singleLine = true,
+                            shape = RoundedCornerShape(14.dp),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
                         )
                         Text("From", style = MaterialTheme.typography.labelLarge)
@@ -581,6 +589,7 @@ private fun ConverterTabContent(
                         ) {
                             Text("To", style = MaterialTheme.typography.labelLarge)
                             IconButton(onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 val prev = fromCurrency
                                 fromCurrency = toCurrency
                                 toCurrency = prev
@@ -603,32 +612,33 @@ private fun ConverterTabContent(
                             "${toCurrency.symbol} ${DecimalFormat(pattern).format(converted)}"
                         } else "—"
 
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(14.dp))
-                                .clickable(enabled = converted != null) {
+                        KansoBentoCard(
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = if (converted != null) {
+                                {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     onCopyText(resultFmt, "converted amount")
-                                },
-                            shape = RoundedCornerShape(14.dp),
-                            color = MaterialTheme.colorScheme.primaryContainer
+                                }
+                            } else null,
+                            containerColor = utilitiesAccent.copy(alpha = 0.12f),
+                            borderColor = utilitiesAccent.copy(alpha = 0.30f),
+                            cornerRadius = 16.dp,
+                            contentPadding = PaddingValues(14.dp)
                         ) {
                             Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(14.dp),
+                                modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
                                     text = resultFmt,
-                                    style = MaterialTheme.typography.headlineMedium,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    style = MaterialTheme.typography.displaySmall,
+                                    color = utilitiesAccent
                                 )
                                 Icon(
                                     Icons.Outlined.ContentCopy,
                                     contentDescription = "Copy",
-                                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                    tint = utilitiesAccent
                                 )
                             }
                         }
@@ -651,6 +661,9 @@ private fun FocusTabContent(
     onToggle: () -> Unit,
     onReset: () -> Unit
 ) {
+    val haptic = LocalHapticFeedback.current
+    val kansoColors = MaterialTheme.kansoColors
+    val ringColor = if (pomodoro.mode == PomodoroMode.FOCUS) Color(0xFF22D3EE) else Color(0xFF34D399)
     val mins = pomodoro.remainingSeconds / 60
     val secs = pomodoro.remainingSeconds % 60
     val timeLabel = String.format(Locale.US, "%02d:%02d", mins, secs)
@@ -658,57 +671,108 @@ private fun FocusTabContent(
         pomodoro.remainingSeconds.toFloat() / pomodoro.totalSeconds.toFloat()
     } else 0f
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(vertical = 12.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(20.dp)
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(bottom = 32.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            PomodoroMode.entries.forEach { mode ->
-                FilterChip(
-                    selected = pomodoro.mode == mode,
-                    onClick = { onSelectMode(mode) },
-                    label = { Text(mode.label) }
-                )
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                PomodoroMode.entries.forEach { mode ->
+                    FilterChip(
+                        selected = pomodoro.mode == mode,
+                        onClick = { onSelectMode(mode) },
+                        label = { Text(mode.label) }
+                    )
+                }
             }
         }
 
-        Box(contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(
-                progress = { progress.coerceIn(0f, 1f) },
-                modifier = Modifier.size(210.dp),
-                strokeWidth = 10.dp,
-                trackColor = MaterialTheme.colorScheme.surfaceVariant
-            )
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    text = timeLabel,
-                    style = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.Bold)
-                )
-                Text(
-                    text = if (pomodoro.isRunning) "Running" else pomodoro.mode.label,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+        item {
+            KansoHeroCard(
+                glowColor = ringColor,
+                contentPadding = PaddingValues(24.dp)
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(20.dp)
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(50),
+                        color = Color.White.copy(alpha = 0.12f)
+                    ) {
+                        Text(
+                            text = if (pomodoro.isRunning) "Running · ${pomodoro.mode.label}" else "Ready · ${pomodoro.mode.label}",
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = kansoColors.heroOnSurface
+                        )
+                    }
+
+                    KansoProgressRing(
+                        progress = progress,
+                        color = ringColor,
+                        trackColor = Color.White.copy(alpha = 0.14f),
+                        size = 220.dp,
+                        strokeWidth = 12.dp
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = timeLabel,
+                                style = MaterialTheme.typography.displayMedium.copy(fontWeight = FontWeight.Bold),
+                                color = kansoColors.heroOnSurface
+                            )
+                            Text(
+                                text = "${pomodoro.completedFocusSessions} sessions today",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = kansoColors.heroOnSurfaceMuted
+                            )
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                onToggle()
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = ringColor,
+                                contentColor = Color(0xFF042F2E)
+                            )
+                        ) {
+                            Text(
+                                text = if (pomodoro.isRunning) "Pause" else "Start",
+                                style = MaterialTheme.typography.titleSmall
+                            )
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                onReset()
+                            },
+                            modifier = Modifier
+                                .weight(0.75f)
+                                .height(48.dp),
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
+                            Text("Reset", color = kansoColors.heroOnSurface)
+                        }
+                    }
+                }
             }
         }
-
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Button(onClick = onToggle) {
-                Text(if (pomodoro.isRunning) "Pause" else "Start")
-            }
-            OutlinedButton(onClick = onReset) {
-                Text("Reset")
-            }
-        }
-
-        Text(
-            text = "Focus sessions completed: ${pomodoro.completedFocusSessions}",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
     }
 }
 
@@ -719,6 +783,7 @@ private fun CountdownsTabContent(
     onEditCountdown: (CountdownItem) -> Unit
 ) {
     val todayEpoch = LocalDate.now().toEpochDay()
+    val utilitiesAccent = MaterialTheme.kansoColors.utilitiesAccent
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -731,9 +796,13 @@ private fun CountdownsTabContent(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Date Countdowns", style = MaterialTheme.typography.titleMedium)
-                Button(onClick = onAddCountdown) {
-                    Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                Text("Date Countdowns", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+                FilledTonalButton(
+                    onClick = onAddCountdown,
+                    shape = RoundedCornerShape(50),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+                ) {
+                    Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(17.dp))
                     Text(" Add")
                 }
             }
@@ -754,18 +823,14 @@ private fun CountdownsTabContent(
                 val delta = CountdownCalculations.daysRemaining(item.targetEpochDay, todayEpoch)
                 val deltaText = CountdownCalculations.formatDelta(delta)
 
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
-                        .clickable { onEditCountdown(item) },
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surface
+                KansoBentoCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { onEditCountdown(item) },
+                    cornerRadius = 18.dp,
+                    contentPadding = PaddingValues(14.dp)
                 ) {
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
+                        modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -784,17 +849,7 @@ private fun CountdownsTabContent(
                                 )
                             }
                         }
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = MaterialTheme.colorScheme.primaryContainer
-                        ) {
-                            Text(
-                                text = deltaText,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                        }
+                        KansoPillBadge(text = deltaText, color = utilitiesAccent)
                     }
                 }
             }

@@ -1,15 +1,24 @@
 package com.kanso.feature.brain
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -27,14 +36,13 @@ import androidx.compose.material.icons.outlined.SnippetFolder
 import androidx.compose.material.icons.outlined.TaskAlt
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.Button
-import androidx.compose.material3.Checkbox
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -49,8 +57,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -64,10 +75,16 @@ import com.kanso.core.model.SnippetItem
 import com.kanso.core.model.SnippetMasker
 import com.kanso.core.model.TaskItem
 import com.kanso.core.model.TaskPriority
+import com.kanso.core.ui.components.KansoBentoCard
+import com.kanso.core.ui.components.KansoCheckCircle
 import com.kanso.core.ui.components.KansoDateFormatters
 import com.kanso.core.ui.components.KansoEmptyState
+import com.kanso.core.ui.components.KansoPillBadge
 import com.kanso.core.ui.components.KansoSegmentedRow
+import com.kanso.core.ui.components.expenseSemanticColor
+import com.kanso.core.ui.components.warningSemanticColor
 import com.kanso.core.ui.theme.KansoTheme
+import com.kanso.core.ui.theme.kansoColors
 import java.time.LocalDate
 
 @Composable
@@ -211,13 +228,37 @@ fun BrainScreenContent(
         modifier = modifier
             .fillMaxSize()
             .padding(horizontal = 16.dp)
-            .padding(top = 14.dp),
+            .padding(top = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Text(
-            text = "Second Brain",
-            style = MaterialTheme.typography.headlineMedium
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Second Brain",
+                style = MaterialTheme.typography.headlineMedium
+            )
+            FilledTonalButton(
+                onClick = when (selectedTab) {
+                    0 -> onAddNote
+                    1 -> onAddTask
+                    else -> onAddSnippet
+                },
+                shape = RoundedCornerShape(50),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+            ) {
+                Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(17.dp))
+                Text(
+                    text = when (selectedTab) {
+                        0 -> " Note"
+                        1 -> " Task"
+                        else -> " Snippet"
+                    }
+                )
+            }
+        }
 
         KansoSegmentedRow(
             options = listOf("Notes", "Tasks (${uiState.activeTaskCount})", "Snippets"),
@@ -225,32 +266,38 @@ fun BrainScreenContent(
             onSelect = { selectedTab = it }
         )
 
-        when (selectedTab) {
-            0 -> NotesTabContent(
-                uiState = uiState,
-                onQueryChange = onQueryChange,
-                onSelectTag = onSelectTag,
-                onAddNote = onAddNote,
-                onEditNote = onEditNote,
-                onTogglePinNote = onTogglePinNote
-            )
+        AnimatedContent(
+            targetState = selectedTab,
+            transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
+            label = "brainTab"
+        ) { tab ->
+            when (tab) {
+                0 -> NotesTabContent(
+                    uiState = uiState,
+                    onQueryChange = onQueryChange,
+                    onSelectTag = onSelectTag,
+                    onAddNote = onAddNote,
+                    onEditNote = onEditNote,
+                    onTogglePinNote = onTogglePinNote
+                )
 
-            1 -> TasksTabContent(
-                uiState = uiState,
-                onSelectTaskFilter = onSelectTaskFilter,
-                onAddTask = onAddTask,
-                onEditTask = onEditTask,
-                onToggleTask = onToggleTask
-            )
+                1 -> TasksTabContent(
+                    uiState = uiState,
+                    onSelectTaskFilter = onSelectTaskFilter,
+                    onAddTask = onAddTask,
+                    onEditTask = onEditTask,
+                    onToggleTask = onToggleTask
+                )
 
-            else -> SnippetsTabContent(
-                uiState = uiState,
-                onSelectCategory = onSelectSnippetCategory,
-                onAddSnippet = onAddSnippet,
-                onEditSnippet = onEditSnippet,
-                onTogglePinSnippet = onTogglePinSnippet,
-                onCopySnippet = onCopySnippet
-            )
+                else -> SnippetsTabContent(
+                    uiState = uiState,
+                    onSelectCategory = onSelectSnippetCategory,
+                    onAddSnippet = onAddSnippet,
+                    onEditSnippet = onEditSnippet,
+                    onTogglePinSnippet = onTogglePinSnippet,
+                    onCopySnippet = onCopySnippet
+                )
+            }
         }
     }
 }
@@ -264,38 +311,35 @@ private fun NotesTabContent(
     onEditNote: (NoteItem) -> Unit,
     onTogglePinNote: (NoteItem) -> Unit
 ) {
+    val brainAccent = MaterialTheme.kansoColors.brainAccent
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 88.dp),
+        contentPadding = PaddingValues(bottom = 28.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         item {
-            Row(
+            OutlinedTextField(
+                value = uiState.noteSearchQuery,
+                onValueChange = onQueryChange,
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                OutlinedTextField(
-                    value = uiState.noteSearchQuery,
-                    onValueChange = onQueryChange,
-                    modifier = Modifier.weight(1f),
-                    placeholder = { Text("Search notes (FTS)...") },
-                    leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
-                    trailingIcon = {
-                        if (uiState.noteSearchQuery.isNotEmpty()) {
-                            IconButton(onClick = { onQueryChange("") }) {
-                                Icon(Icons.Outlined.Clear, contentDescription = "Clear")
-                            }
+                placeholder = { Text("Search notes & tags...") },
+                leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
+                trailingIcon = {
+                    if (uiState.noteSearchQuery.isNotEmpty()) {
+                        IconButton(onClick = { onQueryChange("") }) {
+                            Icon(Icons.Outlined.Clear, contentDescription = "Clear")
                         }
-                    },
-                    singleLine = true,
-                    shape = RoundedCornerShape(14.dp)
+                    }
+                },
+                singleLine = true,
+                shape = RoundedCornerShape(16.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = MaterialTheme.colorScheme.surface,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
                 )
-                Button(onClick = onAddNote) {
-                    Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Text(" New")
-                }
-            }
+            )
         }
 
         if (uiState.availableTags.isNotEmpty()) {
@@ -324,87 +368,95 @@ private fun NotesTabContent(
                 KansoEmptyState(
                     icon = Icons.Outlined.Description,
                     title = if (uiState.noteSearchQuery.isNotBlank()) "No matching notes" else "Your brain inbox is empty",
-                    subtitle = "Save ideas, reading notes, or quick reference docs with instant full-text search.",
+                    subtitle = "Save ideas, reading notes, or quick reference docs with instant offline search.",
                     actionLabel = "Create Note",
                     onAction = onAddNote
                 )
             }
         } else {
             items(uiState.notes, key = { it.id }) { note ->
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
-                        .clickable { onEditNote(note) },
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surface
+                KansoBentoCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { onEditNote(note) },
+                    cornerRadius = 18.dp,
+                    contentPadding = PaddingValues(14.dp)
                 ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.Top
                     ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = note.title,
-                                style = MaterialTheme.typography.titleMedium,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f)
-                            )
-                            IconButton(
-                                onClick = { onTogglePinNote(note) },
-                                modifier = Modifier.size(28.dp)
-                            ) {
-                                Icon(
-                                    imageVector = if (note.isPinned) Icons.Filled.PushPin else Icons.Outlined.PushPin,
-                                    contentDescription = if (note.isPinned) "Unpin" else "Pin",
-                                    tint = if (note.isPinned) {
-                                        MaterialTheme.colorScheme.primary
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    },
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                        }
-
-                        if (note.content.isNotBlank()) {
-                            Text(
-                                text = note.content,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 3,
-                                overflow = TextOverflow.Ellipsis
+                        if (note.isPinned) {
+                            Box(
+                                modifier = Modifier
+                                    .width(3.dp)
+                                    .height(44.dp)
+                                    .clip(RoundedCornerShape(50))
+                                    .background(brainAccent)
                             )
                         }
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Row(
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                note.tags.take(3).forEach { tag ->
-                                    AssistChip(
-                                        onClick = { onSelectTag(tag) },
-                                        label = { Text("#$tag", style = MaterialTheme.typography.labelMedium) }
+                                Text(
+                                    text = note.title,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                IconButton(
+                                    onClick = { onTogglePinNote(note) },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = if (note.isPinned) Icons.Filled.PushPin else Icons.Outlined.PushPin,
+                                        contentDescription = if (note.isPinned) "Unpin" else "Pin",
+                                        tint = if (note.isPinned) brainAccent else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(18.dp)
                                     )
                                 }
                             }
-                            Text(
-                                text = KansoDateFormatters.formatShortDate(note.updatedAtMillis),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+
+                            if (note.content.isNotBlank()) {
+                                Text(
+                                    text = note.content,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 3,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    note.tags.take(3).forEach { tag ->
+                                        KansoPillBadge(
+                                            text = "#$tag",
+                                            color = brainAccent,
+                                            modifier = Modifier.clickable { onSelectTag(tag) }
+                                        )
+                                    }
+                                }
+                                Text(
+                                    text = KansoDateFormatters.formatShortDate(note.updatedAtMillis),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                     }
                 }
@@ -422,30 +474,21 @@ private fun TasksTabContent(
     onToggleTask: (TaskItem) -> Unit
 ) {
     val todayEpoch = LocalDate.now().toEpochDay()
+    val brainAccent = MaterialTheme.kansoColors.brainAccent
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 88.dp),
+        contentPadding = PaddingValues(bottom = 28.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    TaskFilter.entries.forEach { filter ->
-                        FilterChip(
-                            selected = uiState.taskFilter == filter,
-                            onClick = { onSelectTaskFilter(filter) },
-                            label = { Text(filter.label) }
-                        )
-                    }
-                }
-                Button(onClick = onAddTask) {
-                    Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Text(" Add")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TaskFilter.entries.forEach { filter ->
+                    FilterChip(
+                        selected = uiState.taskFilter == filter,
+                        onClick = { onSelectTaskFilter(filter) },
+                        label = { Text(filter.label) }
+                    )
                 }
             }
         }
@@ -466,28 +509,29 @@ private fun TasksTabContent(
                 val isOverdue = !task.isCompleted && dueDay != null && dueDay < todayEpoch
                 val dueLabel = KansoDateFormatters.formatEpochDayLabel(dueDay)
 
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
-                        .clickable { onEditTask(task) },
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surface
+                KansoBentoCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { onEditTask(task) },
+                    cornerRadius = 18.dp,
+                    contentPadding = PaddingValues(start = 6.dp, end = 14.dp, top = 8.dp, bottom = 8.dp)
                 ) {
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 8.dp, vertical = 8.dp),
+                        modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Checkbox(
+                        KansoCheckCircle(
                             checked = task.isCompleted,
-                            onCheckedChange = { onToggleTask(task) }
+                            accentColor = brainAccent,
+                            onToggle = { onToggleTask(task) }
                         )
-                        Column(modifier = Modifier.weight(1f)) {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
                             Text(
                                 text = task.title,
                                 style = MaterialTheme.typography.bodyLarge.copy(
+                                    fontWeight = FontWeight.Medium,
                                     textDecoration = if (task.isCompleted) TextDecoration.LineThrough else TextDecoration.None
                                 ),
                                 color = if (task.isCompleted) {
@@ -506,30 +550,17 @@ private fun TasksTabContent(
                                 )
                             }
                             if (dueLabel != null || task.priority != TaskPriority.MEDIUM) {
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                     if (dueLabel != null) {
-                                        Text(
+                                        KansoPillBadge(
                                             text = dueLabel,
-                                            style = MaterialTheme.typography.labelMedium,
-                                            color = if (isOverdue) {
-                                                MaterialTheme.colorScheme.error
-                                            } else {
-                                                MaterialTheme.colorScheme.onSurfaceVariant
-                                            }
+                                            color = if (isOverdue) expenseSemanticColor() else MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
                                     if (task.priority == TaskPriority.HIGH) {
-                                        Text(
-                                            text = "High priority",
-                                            style = MaterialTheme.typography.labelMedium,
-                                            color = MaterialTheme.colorScheme.secondary
-                                        )
+                                        KansoPillBadge(text = "High", color = warningSemanticColor())
                                     } else if (task.priority == TaskPriority.LOW) {
-                                        Text(
-                                            text = "Low",
-                                            style = MaterialTheme.typography.labelMedium,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
+                                        KansoPillBadge(text = "Low", color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                 }
                             }
@@ -551,26 +582,14 @@ private fun SnippetsTabContent(
     onCopySnippet: (SnippetItem) -> Unit
 ) {
     val revealedIds = remember { mutableStateMapOf<Long, Boolean>() }
+    val haptic = LocalHapticFeedback.current
+    val brainAccent = MaterialTheme.kansoColors.brainAccent
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 88.dp),
+        contentPadding = PaddingValues(bottom = 28.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("1-Tap Copy Snippets", style = MaterialTheme.typography.titleMedium)
-                Button(onClick = onAddSnippet) {
-                    Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Text(" Add")
-                }
-            }
-        }
-
         item {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 item {
@@ -613,25 +632,24 @@ private fun SnippetsTabContent(
                     snippet.value
                 }
 
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
-                        .clickable { onCopySnippet(snippet) },
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surface
+                KansoBentoCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onCopySnippet(snippet)
+                    },
+                    cornerRadius = 18.dp,
+                    contentPadding = PaddingValues(14.dp)
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(3.dp)
                             ) {
                                 Text(
                                     text = snippet.label,
@@ -639,54 +657,74 @@ private fun SnippetsTabContent(
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
-                                Text(
-                                    text = snippet.category.label,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
+                                KansoPillBadge(text = snippet.category.label, color = brainAccent)
                             }
-                            Spacer(modifier = Modifier.size(4.dp))
-                            Text(
-                                text = displayValue,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
 
-                        if (snippet.isSensitive) {
+                            if (snippet.isSensitive) {
+                                IconButton(
+                                    onClick = { revealedIds[snippet.id] = !isRevealed },
+                                    modifier = Modifier.size(34.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = if (isRevealed) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+                                        contentDescription = if (isRevealed) "Hide" else "Reveal",
+                                        modifier = Modifier.size(19.dp)
+                                    )
+                                }
+                            }
+
                             IconButton(
-                                onClick = { revealedIds[snippet.id] = !isRevealed }
+                                onClick = { onTogglePinSnippet(snippet) },
+                                modifier = Modifier.size(34.dp)
                             ) {
                                 Icon(
-                                    imageVector = if (isRevealed) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
-                                    contentDescription = if (isRevealed) "Hide" else "Reveal"
+                                    imageVector = if (snippet.isPinned) Icons.Filled.PushPin else Icons.Outlined.PushPin,
+                                    contentDescription = "Pin",
+                                    tint = if (snippet.isPinned) brainAccent else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+
+                            IconButton(
+                                onClick = { onEditSnippet(snippet) },
+                                modifier = Modifier.size(34.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Edit,
+                                    contentDescription = "Edit",
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+
+                            IconButton(
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    onCopySnippet(snippet)
+                                },
+                                modifier = Modifier.size(34.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.ContentCopy,
+                                    contentDescription = "Copy",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(18.dp)
                                 )
                             }
                         }
 
-                        IconButton(onClick = { onTogglePinSnippet(snippet) }) {
-                            Icon(
-                                imageVector = if (snippet.isPinned) Icons.Filled.PushPin else Icons.Outlined.PushPin,
-                                contentDescription = "Pin",
-                                tint = if (snippet.isPinned) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                }
-                            )
-                        }
-
-                        IconButton(onClick = { onEditSnippet(snippet) }) {
-                            Icon(Icons.Outlined.Edit, contentDescription = "Edit")
-                        }
-
-                        IconButton(onClick = { onCopySnippet(snippet) }) {
-                            Icon(
-                                imageVector = Icons.Outlined.ContentCopy,
-                                contentDescription = "Copy",
-                                tint = MaterialTheme.colorScheme.primary
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                        ) {
+                            Text(
+                                text = displayValue,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                                style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }

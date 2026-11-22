@@ -1,10 +1,6 @@
 package com.kanso.app.ui.hub
 
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -13,9 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.Backup
@@ -24,29 +18,34 @@ import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material.icons.outlined.Shield
+import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.kanso.core.ui.components.KansoAccentIconBadge
+import com.kanso.core.ui.components.KansoBentoCard
 import com.kanso.core.ui.components.KansoDateFormatters
+import com.kanso.core.ui.components.KansoPillBadge
+import com.kanso.core.ui.theme.kansoColors
 
 private data class HubMiniAppItem(
     val title: String,
     val subtitle: String,
     val icon: ImageVector,
+    val accent: Color,
+    val badgeText: String,
     val onClick: () -> Unit
 )
 
@@ -62,57 +61,67 @@ fun HubRoute(
     viewModel: HubViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val kansoColors = MaterialTheme.kansoColors
+    val stats = uiState.stats
 
     val items = remember(
+        stats,
+        uiState.lastBackupMillis,
+        kansoColors,
         onOpenMoney,
         onOpenBrain,
         onOpenHabits,
         onOpenLifeAdmin,
         onOpenUtilities,
-        onOpenSearch,
         onOpenSettings
     ) {
         listOf(
             HubMiniAppItem(
                 title = "Money & Budgets",
-                subtitle = "Expenses, limits, bills, IOUs",
+                subtitle = "Expenses, caps, bills, IOUs",
                 icon = Icons.Outlined.AccountBalanceWallet,
+                accent = kansoColors.moneyAccent,
+                badgeText = "${stats.transactionCount} entries",
                 onClick = onOpenMoney
             ),
             HubMiniAppItem(
                 title = "Second Brain",
                 subtitle = "Notes, tasks & 1-tap snippets",
                 icon = Icons.Outlined.Psychology,
+                accent = kansoColors.brainAccent,
+                badgeText = "${stats.noteCount + stats.openTaskCount + stats.snippetCount} items",
                 onClick = onOpenBrain
             ),
             HubMiniAppItem(
                 title = "Habits & Health",
                 subtitle = "Streaks, sleep, water, mood",
                 icon = Icons.Outlined.FavoriteBorder,
+                accent = kansoColors.habitsAccent,
+                badgeText = "${stats.habitCount} habits",
                 onClick = onOpenHabits
             ),
             HubMiniAppItem(
                 title = "Life Admin & Vault",
                 subtitle = "Expiries, service & locked vault",
                 icon = Icons.Outlined.Lock,
+                accent = kansoColors.lifeAdminAccent,
+                badgeText = "${stats.expiryCount + stats.vaultCount} tracked",
                 onClick = onOpenLifeAdmin
             ),
             HubMiniAppItem(
                 title = "Pocket Utilities",
                 subtitle = "QR tools, converters, Pomodoro",
                 icon = Icons.Outlined.Build,
+                accent = kansoColors.utilitiesAccent,
+                badgeText = "4 tools",
                 onClick = onOpenUtilities
             ),
             HubMiniAppItem(
-                title = "Global Search",
-                subtitle = "Search everything offline",
-                icon = Icons.Outlined.Search,
-                onClick = onOpenSearch
-            ),
-            HubMiniAppItem(
                 title = "Backup & Settings",
-                subtitle = "AES-256 export & preferences",
+                subtitle = "AES-256 export, theme & updates",
                 icon = Icons.Outlined.Backup,
+                accent = kansoColors.settingsAccent,
+                badgeText = if (uiState.lastBackupMillis != null) "Backed up" else "Setup",
                 onClick = onOpenSettings
             )
         )
@@ -120,59 +129,52 @@ fun HubRoute(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 88.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 28.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item {
-            Text(
-                text = "Hub",
-                style = MaterialTheme.typography.headlineMedium
-            )
-            Text(
-                text = "Your personal modular mini-apps",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = "Hub",
+                    style = MaterialTheme.typography.headlineMedium
+                )
+                Text(
+                    text = "Your personal offline-first workspace",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
 
         item {
-            Card(
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            KansoBentoCard(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = onOpenSearch,
+                cornerRadius = 18.dp,
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 13.dp)
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Text(
-                        text = "On-Device Storage",
-                        style = MaterialTheme.typography.titleMedium
+                    Icon(
+                        imageVector = Icons.Outlined.Search,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
                     )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        StatChip("Entries", uiState.stats.transactionCount)
-                        StatChip("Notes", uiState.stats.noteCount)
-                        StatChip("Tasks", uiState.stats.openTaskCount)
-                        StatChip("Snippets", uiState.stats.snippetCount)
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly
-                    ) {
-                        StatChip("Habits", uiState.stats.habitCount)
-                        StatChip("Expiries", uiState.stats.expiryCount)
-                        StatChip("Vault", uiState.stats.vaultCount)
-                    }
                     Text(
-                        text = uiState.lastBackupMillis?.let {
-                            "Last encrypted backup: ${KansoDateFormatters.formatFullDateTime(it)}"
-                        } ?: "No encrypted backup created yet — tap Backup & Settings.",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        text = "Search notes, expenses, tasks, expiries...",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Icon(
+                        imageVector = Icons.Rounded.ChevronRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
@@ -197,22 +199,53 @@ fun HubRoute(
                 }
             }
         }
-    }
-}
 
-@Composable
-private fun StatChip(label: String, count: Int) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            text = count.toString(),
-            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-            color = MaterialTheme.colorScheme.primary
-        )
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        item {
+            val hasBackup = uiState.lastBackupMillis != null
+            val backupAccent = if (hasBackup) kansoColors.income else kansoColors.warning
+            KansoBentoCard(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = onOpenSettings,
+                cornerRadius = 18.dp,
+                contentPadding = PaddingValues(14.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    KansoAccentIconBadge(
+                        icon = Icons.Outlined.Shield,
+                        accent = backupAccent,
+                        size = 40.dp,
+                        iconSize = 20.dp
+                    )
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Text(
+                            text = if (hasBackup) "Encrypted Backup Ready" else "Create an Encrypted Backup",
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                        Text(
+                            text = uiState.lastBackupMillis?.let {
+                                "Last backup: ${KansoDateFormatters.formatFullDateTime(it)}"
+                            } ?: "Tap to export your local database securely",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    Icon(
+                        imageVector = Icons.Rounded.ChevronRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -222,48 +255,47 @@ private fun MiniAppCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Surface(
-        modifier = modifier
-            .height(138.dp)
-            .clip(RoundedCornerShape(20.dp))
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(
-            width = 1.dp,
-            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)
-        )
+    KansoBentoCard(
+        modifier = modifier.height(152.dp),
+        onClick = onClick,
+        cornerRadius = 22.dp,
+        contentPadding = PaddingValues(14.dp)
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(14.dp),
+            modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(MaterialTheme.colorScheme.primaryContainer),
-                contentAlignment = Alignment.Center
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
             ) {
-                Icon(
-                    imageVector = item.icon,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                KansoAccentIconBadge(
+                    icon = item.icon,
+                    accent = item.accent,
+                    size = 42.dp,
+                    iconSize = 21.dp,
+                    cornerRadius = 14.dp
+                )
+                KansoPillBadge(
+                    text = item.badgeText,
+                    color = item.accent
                 )
             }
 
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
                     text = item.title,
-                    style = MaterialTheme.typography.titleMedium
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
                 Text(
                     text = item.subtitle,
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }

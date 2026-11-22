@@ -1,12 +1,16 @@
 package com.kanso.feature.habits
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -30,17 +34,18 @@ import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.LocalFireDepartment
+import androidx.compose.material.icons.outlined.SentimentDissatisfied
+import androidx.compose.material.icons.outlined.SentimentNeutral
+import androidx.compose.material.icons.outlined.SentimentSatisfied
+import androidx.compose.material.icons.outlined.SentimentVeryDissatisfied
+import androidx.compose.material.icons.outlined.SentimentVerySatisfied
 import androidx.compose.material.icons.outlined.WaterDrop
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Checkbox
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -48,6 +53,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -59,6 +65,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
@@ -68,10 +78,16 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.kanso.core.model.DailyHealthLog
 import com.kanso.core.model.HabitItem
+import com.kanso.core.ui.components.KansoBentoCard
+import com.kanso.core.ui.components.KansoCheckCircle
 import com.kanso.core.ui.components.KansoDateFormatters
 import com.kanso.core.ui.components.KansoEmptyState
+import com.kanso.core.ui.components.KansoPillBadge
+import com.kanso.core.ui.components.KansoProgressRing
 import com.kanso.core.ui.components.KansoSegmentedRow
+import com.kanso.core.ui.components.warningSemanticColor
 import com.kanso.core.ui.theme.KansoTheme
+import com.kanso.core.ui.theme.kansoColors
 import java.time.LocalDate
 import java.util.Locale
 
@@ -157,11 +173,15 @@ fun HabitsScreenContent(
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
                 windowInsets = WindowInsets(0, 0, 0, 0),
-                title = { Text("Habits & Health") },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background
+                ),
+                title = { Text("Habits & Health", style = MaterialTheme.typography.titleLarge) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
@@ -183,24 +203,30 @@ fun HabitsScreenContent(
                 onSelect = { selectedTab = it }
             )
 
-            when (selectedTab) {
-                0 -> HabitsTabContent(
-                    uiState = uiState,
-                    onAddHabit = onAddHabit,
-                    onEditHabit = onEditHabit,
-                    onOpenHeatmap = onOpenHeatmap,
-                    onToggleHabitToday = onToggleHabitToday
-                )
+            AnimatedContent(
+                targetState = selectedTab,
+                transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
+                label = "habitsTab"
+            ) { tab ->
+                when (tab) {
+                    0 -> HabitsTabContent(
+                        uiState = uiState,
+                        onAddHabit = onAddHabit,
+                        onEditHabit = onEditHabit,
+                        onOpenHeatmap = onOpenHeatmap,
+                        onToggleHabitToday = onToggleHabitToday
+                    )
 
-                1 -> HealthTabContent(
-                    uiState = uiState,
-                    onPreviousDay = onPreviousDay,
-                    onNextDay = onNextDay,
-                    onAdjustWater = onAdjustWater,
-                    onSaveHealthDetails = onSaveHealthDetails
-                )
+                    1 -> HealthTabContent(
+                        uiState = uiState,
+                        onPreviousDay = onPreviousDay,
+                        onNextDay = onNextDay,
+                        onAdjustWater = onAdjustWater,
+                        onSaveHealthDetails = onSaveHealthDetails
+                    )
 
-                else -> InsightsTabContent(uiState = uiState)
+                    else -> InsightsTabContent(uiState = uiState)
+                }
             }
         }
     }
@@ -214,50 +240,53 @@ private fun HabitsTabContent(
     onOpenHeatmap: (HabitRowUiModel) -> Unit,
     onToggleHabitToday: (Long) -> Unit
 ) {
+    val habitsAccent = MaterialTheme.kansoColors.habitsAccent
+    val ratio = if (uiState.totalHabitsCount > 0) {
+        (uiState.completedTodayCount.toFloat() / uiState.totalHabitsCount.toFloat()).coerceIn(0f, 1f)
+    } else 0f
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            Card(
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+            KansoBentoCard(contentPadding = PaddingValues(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                    KansoProgressRing(
+                        progress = ratio,
+                        color = habitsAccent,
+                        size = 64.dp,
+                        strokeWidth = 6.dp
                     ) {
-                        Column {
-                            Text("Today's Habits", style = MaterialTheme.typography.titleMedium)
-                            Text(
-                                text = "${uiState.completedTodayCount} of ${uiState.totalHabitsCount} completed",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Button(onClick = onAddHabit) {
-                            Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Text(" Add")
-                        }
-                    }
-                    if (uiState.totalHabitsCount > 0) {
-                        val ratio = uiState.completedTodayCount.toFloat() / uiState.totalHabitsCount.toFloat()
-                        LinearProgressIndicator(
-                            progress = { ratio.coerceIn(0f, 1f) },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(8.dp)
-                                .clip(RoundedCornerShape(4.dp)),
-                            trackColor = MaterialTheme.colorScheme.surfaceVariant
+                        Text(
+                            text = "${(ratio * 100).toInt()}%",
+                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                            color = habitsAccent
                         )
+                    }
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Text("Today's Habits", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            text = "${uiState.completedTodayCount} of ${uiState.totalHabitsCount} completed",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    FilledTonalButton(
+                        onClick = onAddHabit,
+                        shape = RoundedCornerShape(50),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+                    ) {
+                        Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(17.dp))
+                        Text(" Add")
                     }
                 }
             }
@@ -275,27 +304,24 @@ private fun HabitsTabContent(
             }
         } else {
             items(uiState.habits, key = { it.habit.id }) { row ->
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(18.dp))
-                        .clickable { onOpenHeatmap(row) },
-                    shape = RoundedCornerShape(18.dp),
-                    color = MaterialTheme.colorScheme.surface
+                KansoBentoCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { onOpenHeatmap(row) },
+                    cornerRadius = 18.dp,
+                    contentPadding = PaddingValues(start = 6.dp, end = 6.dp, top = 10.dp, bottom = 10.dp)
                 ) {
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 8.dp, vertical = 10.dp),
+                        modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Checkbox(
+                        KansoCheckCircle(
                             checked = row.isCompletedToday,
-                            onCheckedChange = { onToggleHabitToday(row.habit.id) }
+                            accentColor = habitsAccent,
+                            onToggle = { onToggleHabitToday(row.habit.id) }
                         )
                         Column(
                             modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Text(
                                 text = row.habit.name,
@@ -303,37 +329,21 @@ private fun HabitsTabContent(
                             )
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(2.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Outlined.LocalFireDepartment,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(15.dp),
-                                        tint = MaterialTheme.colorScheme.secondary
-                                    )
-                                    Text(
-                                        text = "${row.currentStreak}d streak",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = MaterialTheme.colorScheme.secondary
-                                    )
-                                }
-                                // Last 7 days mini dots
+                                KansoPillBadge(
+                                    text = "${row.currentStreak}d streak",
+                                    color = warningSemanticColor(),
+                                    leadingIcon = Icons.Outlined.LocalFireDepartment
+                                )
                                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                     row.last30DaysGrid.takeLast(7).forEach { (_, done) ->
                                         Box(
                                             modifier = Modifier
-                                                .size(8.dp)
-                                                .clip(CircleShape)
+                                                .size(10.dp)
+                                                .clip(RoundedCornerShape(3.dp))
                                                 .background(
-                                                    if (done) {
-                                                        MaterialTheme.colorScheme.primary
-                                                    } else {
-                                                        MaterialTheme.colorScheme.surfaceVariant
-                                                    }
+                                                    if (done) habitsAccent else MaterialTheme.colorScheme.surfaceVariant
                                                 )
                                         )
                                     }
@@ -350,7 +360,13 @@ private fun HabitsTabContent(
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+private data class MoodOption(
+    val score: Int,
+    val label: String,
+    val icon: ImageVector,
+    val color: Color
+)
+
 @Composable
 private fun HealthTabContent(
     uiState: HabitsUiState,
@@ -376,6 +392,20 @@ private fun HealthTabContent(
         workoutNote = log?.workoutNote.orEmpty()
     }
 
+    val haptic = LocalHapticFeedback.current
+    val kansoColors = MaterialTheme.kansoColors
+    val hydrationAccent = kansoColors.hydrationAccent
+
+    val moodOptions = remember(kansoColors) {
+        listOf(
+            MoodOption(1, "Low", Icons.Outlined.SentimentVeryDissatisfied, kansoColors.expense),
+            MoodOption(2, "Tired", Icons.Outlined.SentimentDissatisfied, kansoColors.warning),
+            MoodOption(3, "Okay", Icons.Outlined.SentimentNeutral, Color(0xFF64748B)),
+            MoodOption(4, "Good", Icons.Outlined.SentimentSatisfied, kansoColors.hydrationAccent),
+            MoodOption(5, "Great", Icons.Outlined.SentimentVerySatisfied, kansoColors.income)
+        )
+    }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 32.dp),
@@ -384,18 +414,49 @@ private fun HealthTabContent(
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                horizontalArrangement = Arrangement.Center
             ) {
-                IconButton(onClick = onPreviousDay) {
-                    Icon(Icons.Outlined.ChevronLeft, contentDescription = "Previous day")
-                }
-                Text(uiState.selectedDateLabel, style = MaterialTheme.typography.titleMedium)
-                IconButton(
-                    onClick = onNextDay,
-                    enabled = !uiState.isSelectedDateToday
+                Surface(
+                    shape = RoundedCornerShape(50),
+                    color = MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                 ) {
-                    Icon(Icons.Outlined.ChevronRight, contentDescription = "Next day")
+                    Row(
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(34.dp)
+                                .clip(CircleShape)
+                                .clickable(onClick = onPreviousDay),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Outlined.ChevronLeft, contentDescription = "Previous day")
+                        }
+                        Text(
+                            text = uiState.selectedDateLabel,
+                            style = MaterialTheme.typography.titleSmall,
+                            modifier = Modifier.padding(horizontal = 12.dp)
+                        )
+                        Box(
+                            modifier = Modifier
+                                .size(34.dp)
+                                .clip(CircleShape)
+                                .clickable(enabled = !uiState.isSelectedDateToday, onClick = onNextDay),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.ChevronRight,
+                                contentDescription = "Next day",
+                                tint = if (uiState.isSelectedDateToday) {
+                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                }
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -404,15 +465,11 @@ private fun HealthTabContent(
             val waterMl = log?.waterMl ?: 0
             val goal = uiState.waterGoalMl.coerceAtLeast(250)
             val progress = (waterMl.toFloat() / goal.toFloat()).coerceIn(0f, 1f)
-            Card(
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-            ) {
+            KansoBentoCard(contentPadding = PaddingValues(18.dp)) {
                 Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -423,43 +480,68 @@ private fun HealthTabContent(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Icon(Icons.Outlined.WaterDrop, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Icon(Icons.Outlined.WaterDrop, contentDescription = null, tint = hydrationAccent)
                             Text("Hydration", style = MaterialTheme.typography.titleMedium)
                         }
-                        Text(
-                            text = "$waterMl / $goal ml",
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                            color = MaterialTheme.colorScheme.primary
-                        )
+                        KansoPillBadge(text = "${(progress * 100).toInt()}% of goal", color = hydrationAccent)
                     }
-                    LinearProgressIndicator(
-                        progress = { progress },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(8.dp)
-                            .clip(RoundedCornerShape(4.dp)),
-                        trackColor = MaterialTheme.colorScheme.surfaceVariant
-                    )
+
+                    KansoProgressRing(
+                        progress = progress,
+                        color = hydrationAccent,
+                        size = 124.dp,
+                        strokeWidth = 10.dp
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = "$waterMl",
+                                style = MaterialTheme.typography.headlineMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "/ $goal ml",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         OutlinedButton(
-                            onClick = { onAdjustWater(-250) },
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                onAdjustWater(-250)
+                            },
                             modifier = Modifier.weight(1f),
-                            enabled = waterMl >= 250
+                            enabled = waterMl >= 250,
+                            shape = RoundedCornerShape(14.dp)
                         ) {
                             Text("-250 ml")
                         }
                         FilledTonalButton(
-                            onClick = { onAdjustWater(250) },
-                            modifier = Modifier.weight(1f)
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                onAdjustWater(250)
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(14.dp)
                         ) {
                             Text("+250 ml")
                         }
                         Button(
-                            onClick = { onAdjustWater(500) },
-                            modifier = Modifier.weight(1f)
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                onAdjustWater(500)
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = hydrationAccent,
+                                contentColor = Color.White
+                            )
                         ) {
                             Text("+500 ml")
                         }
@@ -469,27 +551,51 @@ private fun HealthTabContent(
         }
 
         item {
-            Card(
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
+            KansoBentoCard(contentPadding = PaddingValues(16.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("Daily Check-In", style = MaterialTheme.typography.titleMedium)
 
                     Text("Mood", style = MaterialTheme.typography.labelLarge)
-                    val moods = listOf(1 to "Low", 2 to "Tired", 3 to "Okay", 4 to "Good", 5 to "Great")
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        moods.forEach { (score, label) ->
-                            FilterChip(
-                                selected = selectedMood == score,
-                                onClick = { selectedMood = if (selectedMood == score) null else score },
-                                label = { Text("$score · $label") }
-                            )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        moodOptions.forEach { mood ->
+                            val selected = selectedMood == mood.score
+                            Surface(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .clickable {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        selectedMood = if (selected) null else mood.score
+                                    },
+                                shape = RoundedCornerShape(14.dp),
+                                color = if (selected) mood.color.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (selected) mood.color else MaterialTheme.colorScheme.outlineVariant
+                                )
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(vertical = 10.dp, horizontal = 2.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = mood.icon,
+                                        contentDescription = mood.label,
+                                        tint = if (selected) mood.color else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                    Text(
+                                        text = mood.label,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (selected) mood.color else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1
+                                    )
+                                }
+                            }
                         }
                     }
 
@@ -501,6 +607,7 @@ private fun HealthTabContent(
                             label = { Text("Sleep (hrs)") },
                             placeholder = { Text("7.5") },
                             singleLine = true,
+                            shape = RoundedCornerShape(14.dp),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
                         )
                         OutlinedTextField(
@@ -510,6 +617,7 @@ private fun HealthTabContent(
                             label = { Text("Weight (kg)") },
                             placeholder = { Text("68.0") },
                             singleLine = true,
+                            shape = RoundedCornerShape(14.dp),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
                         )
                     }
@@ -522,13 +630,13 @@ private fun HealthTabContent(
                         placeholder = { Text("30m run, gym upper body...") },
                         minLines = 2,
                         maxLines = 4,
-                        keyboardOptions = KeyboardCapitalization.Sentences.let {
-                            KeyboardOptions(capitalization = it)
-                        }
+                        shape = RoundedCornerShape(14.dp),
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences)
                     )
 
                     Button(
                         onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             onSaveHealthDetails(
                                 sleepText.trim().replace(',', '.').toFloatOrNull(),
                                 weightText.trim().replace(',', '.').toFloatOrNull(),
@@ -536,7 +644,10 @@ private fun HealthTabContent(
                                 workoutNote
                             )
                         },
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
+                        shape = RoundedCornerShape(14.dp)
                     ) {
                         Text("Save Daily Check-In")
                     }
@@ -548,43 +659,47 @@ private fun HealthTabContent(
 
 @Composable
 private fun InsightsTabContent(uiState: HabitsUiState) {
+    val kansoColors = MaterialTheme.kansoColors
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            Card(
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            Text(
+                text = "7-DAY AVERAGES",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Text("7-Day Averages", style = MaterialTheme.typography.titleMedium)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        InsightStat("Water", "${uiState.avgWaterMl7d} ml")
-                        InsightStat(
-                            "Sleep",
-                            uiState.avgSleepHours7d?.let { String.format(Locale.US, "%.1fh", it) } ?: "—"
-                        )
-                        InsightStat(
-                            "Mood",
-                            uiState.avgMood7d?.let { String.format(Locale.US, "%.1f/5", it) } ?: "—"
-                        )
-                    }
-                }
+                InsightKpiTile(
+                    label = "Water",
+                    value = "${uiState.avgWaterMl7d} ml",
+                    accent = kansoColors.hydrationAccent,
+                    modifier = Modifier.weight(1f)
+                )
+                InsightKpiTile(
+                    label = "Sleep",
+                    value = uiState.avgSleepHours7d?.let { String.format(Locale.US, "%.1fh", it) } ?: "—",
+                    accent = kansoColors.brainAccent,
+                    modifier = Modifier.weight(1f)
+                )
+                InsightKpiTile(
+                    label = "Mood",
+                    value = uiState.avgMood7d?.let { String.format(Locale.US, "%.1f/5", it) } ?: "—",
+                    accent = kansoColors.warning,
+                    modifier = Modifier.weight(1f)
+                )
             }
         }
 
         item {
-            Text("Recent Health Logs", style = MaterialTheme.typography.titleMedium)
+            Text("Recent Health Logs", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
         }
 
         if (uiState.recentHealthLogs.isEmpty()) {
@@ -597,36 +712,31 @@ private fun InsightsTabContent(uiState: HabitsUiState) {
             }
         } else {
             items(uiState.recentHealthLogs, key = { it.epochDay }) { item ->
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surface
+                KansoBentoCard(
+                    cornerRadius = 18.dp,
+                    contentPadding = PaddingValues(14.dp)
                 ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
                                 text = KansoDateFormatters.formatEpochDayLabel(item.epochDay)
                                     ?: KansoDateFormatters.formatFullDate(item.epochDay),
                                 style = MaterialTheme.typography.titleMedium
                             )
-                            Text(
+                            KansoPillBadge(
                                 text = "${item.waterMl} ml water",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.primary
+                                color = kansoColors.hydrationAccent
                             )
                         }
                         val details = buildList {
-                            item.sleepHours?.let { add("Sleep: ${String.format(Locale.US, "%.1f", it)}h") }
-                            item.weightKg?.let { add("Weight: ${String.format(Locale.US, "%.1f", it)} kg") }
-                            item.mood?.let { add("Mood: $it/5") }
-                        }.joinToString(" • ")
+                            item.sleepHours?.let { add("Sleep ${String.format(Locale.US, "%.1f", it)}h") }
+                            item.weightKg?.let { add("Weight ${String.format(Locale.US, "%.1f", it)} kg") }
+                            item.mood?.let { add("Mood $it/5") }
+                        }.joinToString(" · ")
                         if (details.isNotEmpty()) {
                             Text(
                                 text = details,
@@ -648,17 +758,29 @@ private fun InsightsTabContent(uiState: HabitsUiState) {
 }
 
 @Composable
-private fun InsightStat(label: String, value: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+private fun InsightKpiTile(
+    label: String,
+    value: String,
+    accent: Color,
+    modifier: Modifier = Modifier
+) {
+    KansoBentoCard(
+        modifier = modifier,
+        containerColor = accent.copy(alpha = 0.08f),
+        borderColor = accent.copy(alpha = 0.25f),
+        cornerRadius = 18.dp,
+        contentPadding = PaddingValues(12.dp)
+    ) {
+        Text(
+            text = label.uppercase(),
+            style = MaterialTheme.typography.labelSmall,
+            color = accent
+        )
+        Spacer(modifier = Modifier.height(4.dp))
         Text(
             text = value,
             style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-            color = MaterialTheme.colorScheme.primary
-        )
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurface
         )
     }
 }
