@@ -1,12 +1,14 @@
 package com.kanso.app.ui.settings
 
 import android.Manifest
+import android.app.Activity
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -24,6 +26,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.CloudDone
+import androidx.compose.material.icons.outlined.CloudDownload
+import androidx.compose.material.icons.outlined.CloudSync
 import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material.icons.outlined.InstallMobile
 import androidx.compose.material.icons.outlined.Restore
@@ -59,6 +64,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -69,17 +75,24 @@ import com.kanso.app.update.AppUpdateManager
 import com.kanso.app.update.AppUpdateState
 import com.kanso.app.update.launchApkInstall
 import com.kanso.app.widget.KansoTodayWidgetReceiver
+import com.kanso.app.widget.KansoWidgetUpdater
 import com.kanso.core.backup.EncryptedBackupCrypto
+import com.kanso.core.backup.drive.DriveSyncState
 import com.kanso.core.model.AppCurrency
 import com.kanso.core.model.CurrencyFormatter
 import com.kanso.core.model.ThemeMode
+import com.kanso.core.ui.components.ConfirmDeleteDialog
+import com.kanso.core.ui.components.KansoAccentIconBadge
 import com.kanso.core.ui.components.KansoAnimatedProgressBar
 import com.kanso.core.ui.components.KansoBentoCard
 import com.kanso.core.ui.components.KansoButtonSize
 import com.kanso.core.ui.components.KansoDateFormatters
 import com.kanso.core.ui.components.KansoOutlinedButton
+import com.kanso.core.ui.components.KansoPillBadge
 import com.kanso.core.ui.components.KansoPrimaryButton
 import com.kanso.core.ui.components.KansoSegmentedRow
+import com.kanso.core.ui.components.KansoTonalButton
+import com.kanso.core.ui.theme.kansoColors
 import com.kanso.feature.money.OverallBudgetDialog
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -105,6 +118,41 @@ fun SettingsRoute(
     var showExportPassphraseDialog by remember { mutableStateOf(false) }
     var pendingExportPassphrase by remember { mutableStateOf<String?>(null) }
     var pendingRestoreUri by remember { mutableStateOf<Uri?>(null) }
+
+    var showDrivePassphraseDialog by remember { mutableStateOf(false) }
+    var resumeDriveAfterPassphrase by remember { mutableStateOf(false) }
+    var showDriveRestoreConfirm by remember { mutableStateOf(false) }
+    var showDriveDisconnectConfirm by remember { mutableStateOf(false) }
+
+    val driveConsentLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        viewModel.onDriveConsentResult(
+            resultOk = result.resultCode == Activity.RESULT_OK,
+            data = result.data
+        )
+    }
+
+    LaunchedEffect(uiState.driveSyncState) {
+        when (val driveState = uiState.driveSyncState) {
+            is DriveSyncState.NeedsConsent -> {
+                val request = IntentSenderRequest.Builder(driveState.pendingIntent.intentSender).build()
+                viewModel.consumeDriveConsentPrompt()
+                driveConsentLauncher.launch(request)
+            }
+
+            is DriveSyncState.NeedsPassphrase -> {
+                resumeDriveAfterPassphrase = true
+                showDrivePassphraseDialog = true
+            }
+
+            is DriveSyncState.Synced -> {
+                KansoWidgetUpdater.updateAll(context)
+            }
+
+            else -> Unit
+        }
+    }
 
     LaunchedEffect(uiState.updateState) {
         val ready = uiState.updateState as? AppUpdateState.ReadyToInstall
@@ -275,6 +323,25 @@ fun SettingsRoute(
 
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    SettingsSectionOverline("GOOGLE DRIVE SYNC")
+                    GoogleDriveSyncCard(
+                        uiState = uiState,
+                        onConnectOrSync = viewModel::connectOrSyncDrive,
+                        onForceUpload = viewModel::forceUploadToDrive,
+                        onRequestForceRestore = { showDriveRestoreConfirm = true },
+                        onToggleAutoSync = viewModel::setDriveAutoSync,
+                        onEditPassphrase = {
+                            resumeDriveAfterPassphrase = false
+                            showDrivePassphraseDialog = true
+                        },
+                        onRequestDisconnect = { showDriveDisconnectConfirm = true },
+                        onOpenConflictDialog = viewModel::connectOrSyncDrive
+                    )
+                }
+            }
+
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     SettingsSectionOverline("BACKUP & RESTORE")
                     KansoBentoCard(contentPadding = PaddingValues(16.dp)) {
                         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -437,7 +504,7 @@ fun SettingsRoute(
 
             item {
                 Text(
-                    text = "Kanso v${BuildConfig.VERSION_NAME} • Offline-First + GitHub Updates",
+                    text = "Kanso v${BuildConfig.VERSION_NAME} • Offline-First + Google Drive Sync + GitHub Updates",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -524,6 +591,469 @@ fun SettingsRoute(
             }
         )
     }
+
+    if (showDrivePassphraseDialog) {
+        DrivePassphraseDialog(
+            hasExisting = uiState.driveSyncConfig.hasPassphrase,
+            onDismiss = {
+                showDrivePassphraseDialog = false
+                if (uiState.driveSyncState is DriveSyncState.NeedsPassphrase) {
+                    viewModel.clearDriveSyncStatus()
+                }
+            },
+            onSave = { passphrase ->
+                showDrivePassphraseDialog = false
+                viewModel.saveDriveSyncPassphrase(
+                    passphrase = passphrase,
+                    resumeSync = resumeDriveAfterPassphrase
+                )
+            }
+        )
+    }
+
+    val conflictState = uiState.driveSyncState as? DriveSyncState.Conflict
+    if (conflictState != null) {
+        DriveConflictDialog(
+            conflict = conflictState,
+            onKeepCloud = { viewModel.resolveDriveConflict(keepCloud = true) },
+            onKeepDevice = { viewModel.resolveDriveConflict(keepCloud = false) },
+            onDismiss = viewModel::clearDriveSyncStatus
+        )
+    }
+
+    if (showDriveRestoreConfirm) {
+        ConfirmDeleteDialog(
+            title = "Restore from Google Drive?",
+            message = "This replaces all current local data (Money, Brain, Habits, Life Admin, Vault, and Countdowns) with the encrypted snapshot stored in your Google Drive.",
+            confirmLabel = "Restore Cloud Data",
+            onConfirm = {
+                showDriveRestoreConfirm = false
+                viewModel.forceRestoreFromDrive()
+            },
+            onDismiss = { showDriveRestoreConfirm = false }
+        )
+    }
+
+    if (showDriveDisconnectConfirm) {
+        ConfirmDeleteDialog(
+            title = "Disconnect Google Drive?",
+            message = "Your local data and existing encrypted backup inside Google Drive will remain intact, and automatic sync on this device will stop.",
+            confirmLabel = "Disconnect",
+            onConfirm = {
+                showDriveDisconnectConfirm = false
+                viewModel.disconnectDrive()
+                onShowMessage("Google Drive sync disconnected")
+            },
+            onDismiss = { showDriveDisconnectConfirm = false }
+        )
+    }
+}
+
+@Composable
+private fun GoogleDriveSyncCard(
+    uiState: SettingsUiState,
+    onConnectOrSync: () -> Unit,
+    onForceUpload: () -> Unit,
+    onRequestForceRestore: () -> Unit,
+    onToggleAutoSync: (Boolean) -> Unit,
+    onEditPassphrase: () -> Unit,
+    onRequestDisconnect: () -> Unit,
+    onOpenConflictDialog: () -> Unit
+) {
+    val config = uiState.driveSyncConfig
+    val driveState = uiState.driveSyncState
+    val kansoColors = MaterialTheme.kansoColors
+    val busy = driveState is DriveSyncState.Authorizing || driveState is DriveSyncState.Syncing
+
+    KansoBentoCard(contentPadding = PaddingValues(16.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                KansoAccentIconBadge(
+                    icon = if (config.isConnected) Icons.Outlined.CloudDone else Icons.Outlined.CloudSync,
+                    accent = if (config.isConnected) kansoColors.income else MaterialTheme.colorScheme.primary,
+                    size = 42.dp,
+                    iconSize = 21.dp
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Google Drive Sync", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        text = config.accountEmail ?: "End-to-end encrypted cross-device sync",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                KansoPillBadge(
+                    text = if (config.isConnected) "Connected" else "Off",
+                    color = if (config.isConnected) kansoColors.income else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Text(
+                text = "Stores an AES-256-GCM encrypted snapshot inside your private Google Drive App Data folder — invisible in My Drive and unreadable without your Sync Passphrase.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Text(
+                text = config.lastSyncMillis?.let {
+                    "Last synced: ${KansoDateFormatters.formatFullDateTime(it)}"
+                } ?: "Last synced: Not synced yet",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary
+            )
+
+            if (config.isConnected) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Auto-sync across devices", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            text = "Syncs on app launch, background & every 6 hours",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = config.autoSyncEnabled,
+                        onCheckedChange = onToggleAutoSync
+                    )
+                }
+
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable(onClick = onEditPassphrase),
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Text(
+                            text = "Sync Encryption Passphrase",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium)
+                        )
+                        Text(
+                            text = if (config.hasPassphrase) {
+                                "Configured (Android Keystore encrypted) — tap to change"
+                            } else {
+                                "Not set yet — tap to configure"
+                            },
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (config.hasPassphrase) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.error
+                            }
+                        )
+                    }
+                }
+            }
+
+            when (driveState) {
+                DriveSyncState.Idle,
+                is DriveSyncState.NeedsPassphrase,
+                is DriveSyncState.NeedsConsent -> Unit
+
+                DriveSyncState.Authorizing -> {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        KansoAnimatedProgressBar(progress = 0.35f, height = 7.dp)
+                        Text("Authorizing with Google Drive...", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+
+                is DriveSyncState.Syncing -> {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        KansoAnimatedProgressBar(progress = 0.72f, height = 7.dp)
+                        Text(driveState.label, style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+
+                is DriveSyncState.Synced -> {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer
+                    ) {
+                        Text(
+                            text = driveState.message,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                }
+
+                is DriveSyncState.Conflict -> {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = kansoColors.warning.copy(alpha = 0.14f)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "Both this device and Google Drive have changes. Choose which copy to keep.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            KansoOutlinedButton(
+                                text = "Resolve Conflict",
+                                size = KansoButtonSize.COMPACT,
+                                onClick = onOpenConflictDialog
+                            )
+                        }
+                    }
+                }
+
+                is DriveSyncState.Error -> {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.errorContainer
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = driveState.message,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                            if (driveState.isPassphraseError) {
+                                KansoOutlinedButton(
+                                    text = "Update Sync Passphrase",
+                                    size = KansoButtonSize.COMPACT,
+                                    onClick = onEditPassphrase
+                                )
+                            } else if (driveState.isConfigError) {
+                                Text(
+                                    text = "In Google Cloud Console: enable Google Drive API, configure OAuth consent screen (drive.appdata + test user), and create an Android OAuth 2.0 Client ID for com.kanso.app using this APK's SHA-1 certificate fingerprint.",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (!config.isConnected) {
+                KansoPrimaryButton(
+                    text = "Connect Google Drive",
+                    leadingIcon = Icons.Outlined.CloudSync,
+                    size = KansoButtonSize.LARGE,
+                    enabled = !busy,
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = onConnectOrSync
+                )
+            } else {
+                KansoPrimaryButton(
+                    text = "Sync Now",
+                    leadingIcon = Icons.Outlined.CloudSync,
+                    size = KansoButtonSize.LARGE,
+                    enabled = !busy,
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = onConnectOrSync
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    KansoTonalButton(
+                        text = "Upload",
+                        leadingIcon = Icons.Outlined.CloudUpload,
+                        size = KansoButtonSize.COMPACT,
+                        enabled = !busy,
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(horizontal = 10.dp),
+                        onClick = onForceUpload
+                    )
+                    KansoOutlinedButton(
+                        text = "Restore",
+                        leadingIcon = Icons.Outlined.CloudDownload,
+                        size = KansoButtonSize.COMPACT,
+                        enabled = !busy,
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(horizontal = 10.dp),
+                        onClick = onRequestForceRestore
+                    )
+                }
+
+                TextButton(
+                    onClick = onRequestDisconnect,
+                    enabled = !busy,
+                    modifier = Modifier.align(Alignment.End)
+                ) {
+                    Text(
+                        text = "Disconnect Google Drive",
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DrivePassphraseDialog(
+    hasExisting: Boolean,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit
+) {
+    var passphrase by remember { mutableStateOf("") }
+    var confirm by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(if (hasExisting) "Update Sync Passphrase" else "Set Sync Encryption Passphrase")
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = "All Google Drive sync data is end-to-end encrypted with this passphrase before leaving your device. Use the exact same passphrase on all your devices (min ${EncryptedBackupCrypto.MIN_PASSPHRASE_LENGTH} chars). Stored locally via Android Keystore.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedTextField(
+                    value = passphrase,
+                    onValueChange = {
+                        passphrase = it
+                        error = null
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Sync passphrase") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+                )
+                OutlinedTextField(
+                    value = confirm,
+                    onValueChange = {
+                        confirm = it
+                        error = null
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Confirm passphrase") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+                )
+                if (error != null) {
+                    Text(error.orEmpty(), color = MaterialTheme.colorScheme.error)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                when {
+                    passphrase.length < EncryptedBackupCrypto.MIN_PASSPHRASE_LENGTH ->
+                        error = "Passphrase must be at least ${EncryptedBackupCrypto.MIN_PASSPHRASE_LENGTH} characters."
+                    passphrase != confirm ->
+                        error = "Passphrases do not match."
+                    else -> onSave(passphrase)
+                }
+            }) {
+                Text("Save & Encrypt")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+
+@Composable
+private fun DriveConflictDialog(
+    conflict: DriveSyncState.Conflict,
+    onKeepCloud: () -> Unit,
+    onKeepDevice: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val remote = conflict.remoteFile
+    val remoteTime = if (remote.modifiedTimeMillis > 0L) {
+        KansoDateFormatters.formatFullDateTime(remote.modifiedTimeMillis)
+    } else {
+        "Unknown time"
+    }
+    val remoteItemsLabel = remote.itemCount?.let { "$it items" } ?: "Encrypted backup"
+    val remoteDeviceLabel = remote.deviceModel?.let { " from $it" }.orEmpty()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Sync Conflict Detected") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = "Both this device and Google Drive contain different changes. Choose which snapshot should become the source of truth:",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = "This device: ${conflict.localItemCount} items",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium)
+                        )
+                        Text(
+                            text = "Google Drive: $remoteItemsLabel$remoteDeviceLabel",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium)
+                        )
+                        Text(
+                            text = "Cloud updated: $remoteTime",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onKeepCloud) {
+                Text("Keep Cloud")
+            }
+        },
+        dismissButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                TextButton(onClick = onDismiss) {
+                    Text("Cancel")
+                }
+                TextButton(onClick = onKeepDevice) {
+                    Text("Keep This Device")
+                }
+            }
+        }
+    )
 }
 
 @Composable

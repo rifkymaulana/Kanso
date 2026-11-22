@@ -14,14 +14,20 @@ import com.kanso.app.navigation.KansoAppRoot
 import com.kanso.app.navigation.LaunchCommand
 import com.kanso.app.navigation.LaunchCommandParser
 import com.kanso.app.notifications.KansoReminderScheduler
+import com.kanso.app.sync.DriveSyncScheduler
 import com.kanso.app.widget.KansoWidgetUpdater
+import com.kanso.core.database.preferences.PreferencesRepository
 import com.kanso.core.ui.theme.KansoTheme
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : FragmentActivity() {
+
+    @Inject
+    lateinit var preferencesRepository: PreferencesRepository
 
     private val pendingCommandFlow = MutableStateFlow<LaunchCommand?>(null)
 
@@ -33,10 +39,18 @@ class MainActivity : FragmentActivity() {
         setContent {
             val mainViewModel: MainViewModel = hiltViewModel()
             val prefs by mainViewModel.preferences.collectAsStateWithLifecycle()
+            val driveConfig by mainViewModel.driveSyncConfig.collectAsStateWithLifecycle()
             val pendingCommand by pendingCommandFlow.collectAsStateWithLifecycle()
 
             LaunchedEffect(prefs.remindersEnabled) {
                 KansoReminderScheduler.syncSchedule(this@MainActivity, prefs.remindersEnabled)
+            }
+
+            LaunchedEffect(driveConfig.isConnected, driveConfig.autoSyncEnabled, driveConfig.hasPassphrase) {
+                DriveSyncScheduler.syncPeriodicSchedule(
+                    context = this@MainActivity,
+                    enabled = driveConfig.isConnected && driveConfig.autoSyncEnabled && driveConfig.hasPassphrase
+                )
             }
 
             KansoTheme(
@@ -62,6 +76,10 @@ class MainActivity : FragmentActivity() {
         super.onStop()
         lifecycleScope.launch {
             KansoWidgetUpdater.updateAll(applicationContext)
+            val driveConfig = preferencesRepository.getDriveSyncConfig()
+            if (driveConfig.isConnected && driveConfig.autoSyncEnabled && driveConfig.hasPassphrase) {
+                DriveSyncScheduler.enqueueBackgroundSync(applicationContext)
+            }
         }
     }
 

@@ -6,10 +6,12 @@ import androidx.lifecycle.viewModelScope
 import com.kanso.app.update.AppReleaseInfo
 import com.kanso.app.update.AppUpdateManager
 import com.kanso.app.update.AppUpdateState
+import com.kanso.core.backup.drive.GoogleDriveSyncManager
 import com.kanso.core.database.preferences.PreferencesRepository
 import com.kanso.core.database.repository.BrainRepository
 import com.kanso.core.database.repository.LifeAdminRepository
 import com.kanso.core.database.repository.MoneyRepository
+import com.kanso.core.model.DriveSyncConfig
 import com.kanso.core.model.ExpenseCategory
 import com.kanso.core.model.ExpiryCategory
 import com.kanso.core.model.ExpiryItem
@@ -36,7 +38,8 @@ class MainViewModel @Inject constructor(
     private val moneyRepository: MoneyRepository,
     private val brainRepository: BrainRepository,
     private val lifeAdminRepository: LifeAdminRepository,
-    private val appUpdateManager: AppUpdateManager
+    private val appUpdateManager: AppUpdateManager,
+    private val googleDriveSyncManager: GoogleDriveSyncManager
 ) : ViewModel() {
 
     val preferences: StateFlow<UserPreferences> = preferencesRepository.preferences
@@ -46,12 +49,25 @@ class MainViewModel @Inject constructor(
             initialValue = UserPreferences()
         )
 
+    val driveSyncConfig: StateFlow<DriveSyncConfig> = preferencesRepository.driveSyncConfig
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = DriveSyncConfig()
+        )
+
     val updateState: StateFlow<AppUpdateState> = appUpdateManager.state
     val dismissedUpdateTag: StateFlow<String?> = appUpdateManager.dismissedTag
 
     fun triggerAutoUpdateCheck() {
         viewModelScope.launch {
             appUpdateManager.checkForUpdates(isAutomatic = true)
+        }
+    }
+
+    fun triggerAutoDriveSync() {
+        viewModelScope.launch {
+            googleDriveSyncManager.syncSilentlyIfReady(ignoreThrottle = false)
         }
     }
 

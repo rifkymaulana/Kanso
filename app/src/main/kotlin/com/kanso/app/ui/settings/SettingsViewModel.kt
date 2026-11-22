@@ -8,8 +8,12 @@ import com.kanso.app.update.AppReleaseInfo
 import com.kanso.app.update.AppUpdateManager
 import com.kanso.app.update.AppUpdateState
 import com.kanso.core.backup.BackupManager
+import com.kanso.core.backup.drive.DriveSyncForceMode
+import com.kanso.core.backup.drive.DriveSyncState
+import com.kanso.core.backup.drive.GoogleDriveSyncManager
 import com.kanso.core.database.preferences.PreferencesRepository
 import com.kanso.core.model.AppCurrency
+import com.kanso.core.model.DriveSyncConfig
 import com.kanso.core.model.ThemeMode
 import com.kanso.core.model.UserPreferences
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -33,19 +37,22 @@ data class SettingsUiState(
     val preferences: UserPreferences = UserPreferences(),
     val backupStatus: BackupOperationStatus = BackupOperationStatus.Idle,
     val hasGithubToken: Boolean = false,
-    val updateState: AppUpdateState = AppUpdateState.Idle
+    val updateState: AppUpdateState = AppUpdateState.Idle,
+    val driveSyncConfig: DriveSyncConfig = DriveSyncConfig(),
+    val driveSyncState: DriveSyncState = DriveSyncState.Idle
 )
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val preferencesRepository: PreferencesRepository,
     private val backupManager: BackupManager,
-    private val appUpdateManager: AppUpdateManager
+    private val appUpdateManager: AppUpdateManager,
+    private val googleDriveSyncManager: GoogleDriveSyncManager
 ) : ViewModel() {
 
     private val backupStatusFlow = MutableStateFlow<BackupOperationStatus>(BackupOperationStatus.Idle)
 
-    val uiState: StateFlow<SettingsUiState> = combine(
+    private val baseStateFlow = combine(
         preferencesRepository.preferences,
         backupStatusFlow,
         preferencesRepository.hasGithubToken,
@@ -56,6 +63,17 @@ class SettingsViewModel @Inject constructor(
             backupStatus = status,
             hasGithubToken = hasToken,
             updateState = updateState
+        )
+    }
+
+    val uiState: StateFlow<SettingsUiState> = combine(
+        baseStateFlow,
+        preferencesRepository.driveSyncConfig,
+        googleDriveSyncManager.state
+    ) { base, driveConfig, driveState ->
+        base.copy(
+            driveSyncConfig = driveConfig,
+            driveSyncState = driveState
         )
     }.stateIn(
         scope = viewModelScope,
@@ -97,6 +115,71 @@ class SettingsViewModel @Inject constructor(
 
     fun setGithubToken(token: String?) {
         viewModelScope.launch { preferencesRepository.setGithubToken(token) }
+    }
+
+    fun connectOrSyncDrive() {
+        viewModelScope.launch {
+            googleDriveSyncManager.startSync(
+                forceMode = DriveSyncForceMode.SMART,
+                interactive = true
+            )
+        }
+    }
+
+    fun forceUploadToDrive() {
+        viewModelScope.launch {
+            googleDriveSyncManager.startSync(
+                forceMode = DriveSyncForceMode.FORCE_UPLOAD,
+                interactive = true
+            )
+        }
+    }
+
+    fun forceRestoreFromDrive() {
+        viewModelScope.launch {
+            googleDriveSyncManager.startSync(
+                forceMode = DriveSyncForceMode.FORCE_DOWNLOAD,
+                interactive = true
+            )
+        }
+    }
+
+    fun resolveDriveConflict(keepCloud: Boolean) {
+        viewModelScope.launch {
+            googleDriveSyncManager.resolveConflict(keepCloud)
+        }
+    }
+
+    fun onDriveConsentResult(resultOk: Boolean, data: Intent?) {
+        viewModelScope.launch {
+            googleDriveSyncManager.onConsentActivityResult(resultOk, data)
+        }
+    }
+
+    fun consumeDriveConsentPrompt() {
+        googleDriveSyncManager.consumeConsentPrompt()
+    }
+
+    fun saveDriveSyncPassphrase(passphrase: String, resumeSync: Boolean) {
+        viewModelScope.launch {
+            googleDriveSyncManager.saveSyncPassphrase(passphrase, resumeSync)
+        }
+    }
+
+    fun setDriveAutoSync(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesRepository.setDriveAutoSyncEnabled(enabled)
+        }
+    }
+
+    fun disconnectDrive() {
+        viewModelScope.launch {
+            googleDriveSyncManager.disconnect()
+        }
+    }
+
+    fun clearDriveSyncStatus() {
+        googleDriveSyncManager.clearStatus()
     }
 
     fun checkForUpdates() {

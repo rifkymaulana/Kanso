@@ -150,6 +150,7 @@ fun KansoAppRoot(
 
     LaunchedEffect(Unit) {
         mainViewModel.triggerAutoUpdateCheck()
+        mainViewModel.triggerAutoDriveSync()
     }
 
     LaunchedEffect(updateState) {

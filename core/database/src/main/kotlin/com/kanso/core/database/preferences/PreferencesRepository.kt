@@ -10,6 +10,7 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.kanso.core.model.AppCurrency
+import com.kanso.core.model.DriveSyncConfig
 import com.kanso.core.model.ThemeMode
 import com.kanso.core.model.UserPreferences
 import com.kanso.core.security.VaultCrypto
@@ -42,6 +43,15 @@ class PreferencesRepository @Inject constructor(
         val AUTO_CHECK_UPDATES = booleanPreferencesKey("auto_check_updates")
         val LAST_UPDATE_CHECK_MILLIS = longPreferencesKey("last_update_check_millis")
         val GITHUB_TOKEN_ENCRYPTED = stringPreferencesKey("github_token_encrypted")
+
+        val DRIVE_SYNC_CONNECTED = booleanPreferencesKey("drive_sync_connected")
+        val DRIVE_AUTO_SYNC = booleanPreferencesKey("drive_auto_sync")
+        val DRIVE_ACCOUNT_EMAIL = stringPreferencesKey("drive_account_email")
+        val DRIVE_REMOTE_FILE_ID = stringPreferencesKey("drive_remote_file_id")
+        val DRIVE_LAST_SYNC_MILLIS = longPreferencesKey("drive_last_sync_millis")
+        val DRIVE_LAST_REMOTE_MODIFIED_MILLIS = longPreferencesKey("drive_last_remote_modified_millis")
+        val DRIVE_LAST_SYNCED_CONTENT_HASH = stringPreferencesKey("drive_last_synced_content_hash")
+        val DRIVE_SYNC_PASSPHRASE_ENCRYPTED = stringPreferencesKey("drive_sync_passphrase_encrypted")
     }
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -72,7 +82,90 @@ class PreferencesRepository @Inject constructor(
         !prefs[Keys.GITHUB_TOKEN_ENCRYPTED].isNullOrBlank()
     }
 
+    val driveSyncConfig: Flow<DriveSyncConfig> = context.kansoDataStore.data.map { prefs ->
+        DriveSyncConfig(
+            isConnected = prefs[Keys.DRIVE_SYNC_CONNECTED] ?: false,
+            autoSyncEnabled = prefs[Keys.DRIVE_AUTO_SYNC] ?: true,
+            accountEmail = prefs[Keys.DRIVE_ACCOUNT_EMAIL]?.takeIf { it.isNotBlank() },
+            remoteFileId = prefs[Keys.DRIVE_REMOTE_FILE_ID]?.takeIf { it.isNotBlank() },
+            lastSyncMillis = prefs[Keys.DRIVE_LAST_SYNC_MILLIS],
+            lastRemoteModifiedMillis = prefs[Keys.DRIVE_LAST_REMOTE_MODIFIED_MILLIS],
+            lastSyncedContentHash = prefs[Keys.DRIVE_LAST_SYNCED_CONTENT_HASH]?.takeIf { it.isNotBlank() },
+            hasPassphrase = !prefs[Keys.DRIVE_SYNC_PASSPHRASE_ENCRYPTED].isNullOrBlank()
+        )
+    }
+
     suspend fun getCurrentPreferences(): UserPreferences = preferences.first()
+
+    suspend fun getDriveSyncConfig(): DriveSyncConfig = driveSyncConfig.first()
+
+    suspend fun getDriveSyncPassphrase(): String? {
+        val encrypted = context.kansoDataStore.data.first()[Keys.DRIVE_SYNC_PASSPHRASE_ENCRYPTED]
+        if (encrypted.isNullOrBlank()) return null
+        return runCatching { vaultCrypto.decrypt(encrypted) }.getOrNull()?.takeIf { it.isNotBlank() }
+    }
+
+    suspend fun setDriveSyncPassphrase(passphrase: String?) {
+        val normalized = passphrase.orEmpty()
+        context.kansoDataStore.edit { prefs ->
+            if (normalized.isEmpty()) {
+                prefs.remove(Keys.DRIVE_SYNC_PASSPHRASE_ENCRYPTED)
+            } else {
+                prefs[Keys.DRIVE_SYNC_PASSPHRASE_ENCRYPTED] = vaultCrypto.encrypt(normalized)
+            }
+        }
+    }
+
+    suspend fun setDriveAutoSyncEnabled(enabled: Boolean) {
+        context.kansoDataStore.edit { it[Keys.DRIVE_AUTO_SYNC] = enabled }
+    }
+
+    suspend fun updateDriveSyncConnected(accountEmail: String?) {
+        context.kansoDataStore.edit { prefs ->
+            prefs[Keys.DRIVE_SYNC_CONNECTED] = true
+            if (!accountEmail.isNullOrBlank()) {
+                prefs[Keys.DRIVE_ACCOUNT_EMAIL] = accountEmail.trim()
+            }
+        }
+    }
+
+    suspend fun updateDriveSyncMetadata(
+        fileId: String?,
+        syncedAtMillis: Long,
+        remoteModifiedMillis: Long?,
+        contentHash: String,
+        accountEmail: String? = null
+    ) {
+        context.kansoDataStore.edit { prefs ->
+            prefs[Keys.DRIVE_SYNC_CONNECTED] = true
+            if (!fileId.isNullOrBlank()) {
+                prefs[Keys.DRIVE_REMOTE_FILE_ID] = fileId
+            }
+            prefs[Keys.DRIVE_LAST_SYNC_MILLIS] = syncedAtMillis
+            if (remoteModifiedMillis != null && remoteModifiedMillis > 0L) {
+                prefs[Keys.DRIVE_LAST_REMOTE_MODIFIED_MILLIS] = remoteModifiedMillis
+            } else {
+                prefs.remove(Keys.DRIVE_LAST_REMOTE_MODIFIED_MILLIS)
+            }
+            prefs[Keys.DRIVE_LAST_SYNCED_CONTENT_HASH] = contentHash
+            if (!accountEmail.isNullOrBlank()) {
+                prefs[Keys.DRIVE_ACCOUNT_EMAIL] = accountEmail.trim()
+            }
+        }
+    }
+
+    suspend fun clearDriveSyncState() {
+        context.kansoDataStore.edit { prefs ->
+            prefs.remove(Keys.DRIVE_SYNC_CONNECTED)
+            prefs.remove(Keys.DRIVE_AUTO_SYNC)
+            prefs.remove(Keys.DRIVE_ACCOUNT_EMAIL)
+            prefs.remove(Keys.DRIVE_REMOTE_FILE_ID)
+            prefs.remove(Keys.DRIVE_LAST_SYNC_MILLIS)
+            prefs.remove(Keys.DRIVE_LAST_REMOTE_MODIFIED_MILLIS)
+            prefs.remove(Keys.DRIVE_LAST_SYNCED_CONTENT_HASH)
+            prefs.remove(Keys.DRIVE_SYNC_PASSPHRASE_ENCRYPTED)
+        }
+    }
 
     suspend fun getGithubToken(): String? {
         val encrypted = context.kansoDataStore.data.first()[Keys.GITHUB_TOKEN_ENCRYPTED]

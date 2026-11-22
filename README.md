@@ -10,7 +10,23 @@ Kanso is a modular, 100% offline-first Android super app built with Kotlin, Jetp
 - **Habits & Health (`:feature:habits`)**: Daily habit streaks, interactive 30-day completion heatmap, hydration/sleep/weight/mood/workout check-ins, and 7-day averages.
 - **Life Admin & Private Vault (`:feature:lifeadmin`)**: Expiry alerts (IDs, passport, vehicle tax, warranties), asset maintenance logs, and a Biometric/PIN-gated private vault backed by Android Keystore AES-256-GCM + `FLAG_SECURE`.
 - **Pocket Utilities (`:feature:utilities`)**: Offline QR code generator (including Wi-Fi QR) & CameraX scanner, unit & offline currency converter, Pomodoro focus timer, and date countdowns.
-- **Android OS Integrations (`:app`)**: Jetpack Glance home widget (`KansoTodayWidget`), long-press launcher shortcuts, Quick Settings tile (`Kanso Capture`), WorkManager local daily reminders, and passphrase-encrypted `.kanso.enc` backup/restore (`:core:backup`).
+- **Android OS Integrations (`:app`)**: Jetpack Glance home widget (`KansoTodayWidget`), long-press launcher shortcuts, Quick Settings tile (`Kanso Capture`), WorkManager local daily reminders, passphrase-encrypted `.kanso.enc` backup/restore, and end-to-end encrypted Google Drive cross-device sync (`:core:backup`).
+
+## Google Drive Cross-Device Sync (One-Time Setup)
+
+Kanso syncs your database end-to-end encrypted (`AES-256-GCM`) to your Google Drive **App Data Folder** (`drive.appdata` scope — hidden from My Drive and unreadable without your Sync Passphrase).
+
+Because Kanso is self-hosted/signed with your release key rather than published on Google Play, complete this one-time setup in **Google Cloud Console** so Google Play Services authorizes `com.kanso.app`:
+
+1. Open [Google Cloud Console](https://console.cloud.google.com/) and create/select a project.
+2. Go to **APIs & Services → Library** and enable **Google Drive API**.
+3. Go to **Google Auth Platform → Branding / Audience / Data Access** (or **OAuth consent screen**):
+   - Choose **External** (Testing mode is fine for personal use) and add your Google account(s) under **Test users**.
+   - Add the scope `https://www.googleapis.com/auth/drive.appdata`.
+4. Go to **Clients → Create Client → Android**:
+   - **Package name**: `com.kanso.app`
+   - **SHA-1 certificate fingerprint**: add the release certificate SHA-1 (or debug SHA-1 for local debug builds).
+5. In Kanso on any device: **Hub → Backup & Settings → Google Drive Sync → Connect Google Drive**, set the **same Sync Passphrase** across devices, and enable **Auto-sync across devices**.
 
 ## Local Development & Testing
 

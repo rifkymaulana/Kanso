@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.kanso.core.database.preferences.PreferencesRepository
 import com.kanso.core.database.repository.StorageStatsRepository
+import com.kanso.core.model.DriveSyncConfig
 import com.kanso.core.model.StorageStats
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
@@ -14,7 +15,8 @@ import javax.inject.Inject
 
 data class HubUiState(
     val stats: StorageStats = StorageStats(0, 0, 0, 0),
-    val lastBackupMillis: Long? = null
+    val lastBackupMillis: Long? = null,
+    val driveSyncConfig: DriveSyncConfig = DriveSyncConfig()
 )
 
 @HiltViewModel
@@ -25,11 +27,13 @@ class HubViewModel @Inject constructor(
 
     val uiState: StateFlow<HubUiState> = combine(
         storageStatsRepository.observeStats(),
-        preferencesRepository.preferences
-    ) { stats, prefs ->
+        preferencesRepository.preferences,
+        preferencesRepository.driveSyncConfig
+    ) { stats, prefs, driveConfig ->
         HubUiState(
             stats = stats,
-            lastBackupMillis = prefs.lastBackupMillis
+            lastBackupMillis = prefs.lastBackupMillis,
+            driveSyncConfig = driveConfig
         )
     }.stateIn(
         scope = viewModelScope,

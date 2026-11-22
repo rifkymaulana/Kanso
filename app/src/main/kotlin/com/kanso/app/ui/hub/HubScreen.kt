@@ -14,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.Backup
 import androidx.compose.material.icons.outlined.Build
+import androidx.compose.material.icons.outlined.CloudDone
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Psychology
@@ -67,6 +68,7 @@ fun HubRoute(
     val items = remember(
         stats,
         uiState.lastBackupMillis,
+        uiState.driveSyncConfig.isConnected,
         kansoColors,
         onOpenMoney,
         onOpenBrain,
@@ -118,10 +120,14 @@ fun HubRoute(
             ),
             HubMiniAppItem(
                 title = "Backup & Settings",
-                subtitle = "AES-256 export, theme & updates",
+                subtitle = "Google Drive sync, export & updates",
                 icon = Icons.Outlined.Backup,
                 accent = kansoColors.settingsAccent,
-                badgeText = if (uiState.lastBackupMillis != null) "Backed up" else "Setup",
+                badgeText = when {
+                    uiState.driveSyncConfig.isConnected -> "Cloud Sync"
+                    uiState.lastBackupMillis != null -> "Backed up"
+                    else -> "Setup"
+                },
                 onClick = onOpenSettings
             )
         )
@@ -201,8 +207,28 @@ fun HubRoute(
         }
 
         item {
-            val hasBackup = uiState.lastBackupMillis != null
-            val backupAccent = if (hasBackup) kansoColors.income else kansoColors.warning
+            val driveConfig = uiState.driveSyncConfig
+            val hasBackupOrSync = driveConfig.isConnected || uiState.lastBackupMillis != null
+            val backupAccent = if (hasBackupOrSync) kansoColors.income else kansoColors.warning
+            val statusIcon = if (driveConfig.isConnected) Icons.Outlined.CloudDone else Icons.Outlined.Shield
+            val statusTitle = when {
+                driveConfig.isConnected -> "Google Drive Sync Active"
+                uiState.lastBackupMillis != null -> "Encrypted Backup Ready"
+                else -> "Create an Encrypted Backup"
+            }
+            val statusSubtitle = when {
+                driveConfig.isConnected && driveConfig.lastSyncMillis != null -> {
+                    val syncedAt = driveConfig.lastSyncMillis ?: 0L
+                    "Last synced: ${KansoDateFormatters.formatFullDateTime(syncedAt)}"
+                }
+                driveConfig.isConnected ->
+                    driveConfig.accountEmail ?: "Connected — tap to sync across devices"
+                uiState.lastBackupMillis != null -> {
+                    val backedUpAt = uiState.lastBackupMillis ?: 0L
+                    "Last backup: ${KansoDateFormatters.formatFullDateTime(backedUpAt)}"
+                }
+                else -> "Tap to set up Drive sync or export your database"
+            }
             KansoBentoCard(
                 modifier = Modifier.fillMaxWidth(),
                 onClick = onOpenSettings,
@@ -215,7 +241,7 @@ fun HubRoute(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     KansoAccentIconBadge(
-                        icon = Icons.Outlined.Shield,
+                        icon = statusIcon,
                         accent = backupAccent,
                         size = 40.dp,
                         iconSize = 20.dp
@@ -225,13 +251,11 @@ fun HubRoute(
                         verticalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
                         Text(
-                            text = if (hasBackup) "Encrypted Backup Ready" else "Create an Encrypted Backup",
+                            text = statusTitle,
                             style = MaterialTheme.typography.titleSmall
                         )
                         Text(
-                            text = uiState.lastBackupMillis?.let {
-                                "Last backup: ${KansoDateFormatters.formatFullDateTime(it)}"
-                            } ?: "Tap to export your local database securely",
+                            text = statusSubtitle,
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,

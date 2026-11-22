@@ -23,3 +23,14 @@ data class UserPreferences(
     val autoCheckUpdates: Boolean = true,
     val lastUpdateCheckMillis: Long? = null
 )
+
+data class DriveSyncConfig(
+    val isConnected: Boolean = false,
+    val autoSyncEnabled: Boolean = true,
+    val accountEmail: String? = null,
+    val remoteFileId: String? = null,
+    val lastSyncMillis: Long? = null,
+    val lastRemoteModifiedMillis: Long? = null,
+    val lastSyncedContentHash: String? = null,
+    val hasPassphrase: Boolean = false
+)

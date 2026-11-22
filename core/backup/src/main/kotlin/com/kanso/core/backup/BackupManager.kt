@@ -36,40 +36,87 @@ class BackupManager @Inject constructor(
     private val vaultCrypto: VaultCrypto,
     private val preferencesRepository: PreferencesRepository
 ) {
-    suspend fun exportToUri(uri: Uri, passphrase: String): Result<Long> = withContext(Dispatchers.IO) {
+    data class LocalSnapshotSummary(
+        val contentHash: String,
+        val itemCount: Int,
+        val isEmpty: Boolean
+    )
+
+    data class PreparedEncryptedSnapshot(
+        val encryptedBytes: ByteArray,
+        val contentHash: String,
+        val itemCount: Int,
+        val exportedAtMillis: Long,
+        val schemaVersion: Int
+    )
+
+    data class RestoredSnapshotResult(
+        val summary: RestoreSummary,
+        val contentHash: String,
+        val itemCount: Int
+    )
+
+    private suspend fun buildSnapshot(
+        timestampMillis: Long,
+        includeBackupTimestamp: Boolean
+    ): KansoBackupSnapshot {
+        val prefs = preferencesRepository.getCurrentPreferences()
+        val decryptedVault = lifeAdminDao.getAllVaultItems().map { entity ->
+            VaultItem(
+                id = entity.id,
+                title = entity.title,
+                category = entity.parseCategory(),
+                secretContent = vaultCrypto.decrypt(entity.encryptedContent),
+                updatedAtMillis = entity.updatedAtMillis
+            )
+        }
+
+        return KansoBackupSnapshot(
+            schemaVersion = KansoBackupSnapshot.CURRENT_SCHEMA_VERSION,
+            exportedAtMillis = timestampMillis,
+            preferences = if (includeBackupTimestamp) prefs.copy(lastBackupMillis = timestampMillis) else prefs,
+            transactions = moneyDao.getAllTransactions().map { it.toDomain() },
+            budgets = moneyDao.getAllBudgets().map { it.toDomain() },
+            recurringBills = moneyDao.getAllBills().map { it.toDomain() },
+            ious = moneyDao.getAllIous().map { it.toDomain() },
+            notes = brainDao.getAllNotes().map { it.toDomain() },
+            tasks = brainDao.getAllTasks().map { it.toDomain() },
+            snippets = brainDao.getAllSnippets().map { it.toDomain() },
+            habits = habitsDao.getAllHabits().map { it.toDomain() },
+            habitCompletions = habitsDao.getAllCompletions().map { it.toDomain() },
+            healthLogs = habitsDao.getAllHealthLogs().map { it.toDomain() },
+            expiries = lifeAdminDao.getAllExpiries().map { it.toDomain() },
+            maintenanceLogs = lifeAdminDao.getAllMaintenanceLogs().map { it.toDomain() },
+            vaultItems = decryptedVault,
+            countdowns = utilitiesDao.getAllCountdowns().map { it.toDomain() }
+        )
+    }
+
+    suspend fun inspectLocalState(): LocalSnapshotSummary = withContext(Dispatchers.IO) {
+        val snapshot = buildSnapshot(
+            timestampMillis = 0L,
+            includeBackupTimestamp = false
+        )
+        val count = BackupSerializer.totalItemCount(snapshot)
+        LocalSnapshotSummary(
+            contentHash = BackupSerializer.computeContentHash(snapshot),
+            itemCount = count,
+            isEmpty = count == 0
+        )
+    }
+
+    suspend fun createEncryptedSnapshot(
+        passphrase: String,
+        includeBackupTimestamp: Boolean = false
+    ): Result<PreparedEncryptedSnapshot> = withContext(Dispatchers.IO) {
         runCatching {
             val now = System.currentTimeMillis()
-            val prefs = preferencesRepository.getCurrentPreferences()
-            val decryptedVault = lifeAdminDao.getAllVaultItems().map { entity ->
-                VaultItem(
-                    id = entity.id,
-                    title = entity.title,
-                    category = entity.parseCategory(),
-                    secretContent = vaultCrypto.decrypt(entity.encryptedContent),
-                    updatedAtMillis = entity.updatedAtMillis
-                )
-            }
-
-            val snapshot = KansoBackupSnapshot(
-                schemaVersion = KansoBackupSnapshot.CURRENT_SCHEMA_VERSION,
-                exportedAtMillis = now,
-                preferences = prefs.copy(lastBackupMillis = now),
-                transactions = moneyDao.getAllTransactions().map { it.toDomain() },
-                budgets = moneyDao.getAllBudgets().map { it.toDomain() },
-                recurringBills = moneyDao.getAllBills().map { it.toDomain() },
-                ious = moneyDao.getAllIous().map { it.toDomain() },
-                notes = brainDao.getAllNotes().map { it.toDomain() },
-                tasks = brainDao.getAllTasks().map { it.toDomain() },
-                snippets = brainDao.getAllSnippets().map { it.toDomain() },
-                habits = habitsDao.getAllHabits().map { it.toDomain() },
-                habitCompletions = habitsDao.getAllCompletions().map { it.toDomain() },
-                healthLogs = habitsDao.getAllHealthLogs().map { it.toDomain() },
-                expiries = lifeAdminDao.getAllExpiries().map { it.toDomain() },
-                maintenanceLogs = lifeAdminDao.getAllMaintenanceLogs().map { it.toDomain() },
-                vaultItems = decryptedVault,
-                countdowns = utilitiesDao.getAllCountdowns().map { it.toDomain() }
+            val snapshot = buildSnapshot(
+                timestampMillis = now,
+                includeBackupTimestamp = includeBackupTimestamp
             )
-
+            val contentHash = BackupSerializer.computeContentHash(snapshot)
+            val itemCount = BackupSerializer.totalItemCount(snapshot)
             val plainBytes = BackupSerializer.encode(snapshot)
             val passChars = passphrase.toCharArray()
             val encryptedBytes = try {
@@ -77,22 +124,21 @@ class BackupManager @Inject constructor(
             } finally {
                 passChars.fill('\u0000')
             }
-
-            val outputStream = context.contentResolver.openOutputStream(uri)
-                ?: throw IllegalStateException("Unable to open destination file for writing.")
-            outputStream.use { it.write(encryptedBytes) }
-
-            preferencesRepository.setLastBackupMillis(now)
-            now
+            PreparedEncryptedSnapshot(
+                encryptedBytes = encryptedBytes,
+                contentHash = contentHash,
+                itemCount = itemCount,
+                exportedAtMillis = now,
+                schemaVersion = snapshot.schemaVersion
+            )
         }
     }
 
-    suspend fun importFromUri(uri: Uri, passphrase: String): Result<RestoreSummary> = withContext(Dispatchers.IO) {
+    suspend fun restoreFromEncryptedBytes(
+        payload: ByteArray,
+        passphrase: String
+    ): Result<RestoredSnapshotResult> = withContext(Dispatchers.IO) {
         runCatching {
-            val inputStream = context.contentResolver.openInputStream(uri)
-                ?: throw IllegalStateException("Unable to open backup file for reading.")
-            val payload = inputStream.use { it.readBytes() }
-
             val passChars = passphrase.toCharArray()
             val plainBytes = try {
                 EncryptedBackupCrypto.decrypt(payload, passChars)
@@ -173,7 +219,7 @@ class BackupManager @Inject constructor(
 
             preferencesRepository.restorePreferences(snapshot.preferences)
 
-            RestoreSummary(
+            val summary = RestoreSummary(
                 transactionsCount = snapshot.transactions.size,
                 budgetsCount = snapshot.budgets.size,
                 billsCount = snapshot.recurringBills.size,
@@ -187,6 +233,36 @@ class BackupManager @Inject constructor(
                 vaultCount = snapshot.vaultItems.size,
                 countdownsCount = snapshot.countdowns.size
             )
+            RestoredSnapshotResult(
+                summary = summary,
+                contentHash = BackupSerializer.computeContentHash(snapshot),
+                itemCount = BackupSerializer.totalItemCount(snapshot)
+            )
+        }
+    }
+
+    suspend fun exportToUri(uri: Uri, passphrase: String): Result<Long> = withContext(Dispatchers.IO) {
+        runCatching {
+            val prepared = createEncryptedSnapshot(
+                passphrase = passphrase,
+                includeBackupTimestamp = true
+            ).getOrThrow()
+
+            val outputStream = context.contentResolver.openOutputStream(uri)
+                ?: throw IllegalStateException("Unable to open destination file for writing.")
+            outputStream.use { it.write(prepared.encryptedBytes) }
+
+            preferencesRepository.setLastBackupMillis(prepared.exportedAtMillis)
+            prepared.exportedAtMillis
+        }
+    }
+
+    suspend fun importFromUri(uri: Uri, passphrase: String): Result<RestoreSummary> = withContext(Dispatchers.IO) {
+        runCatching {
+            val inputStream = context.contentResolver.openInputStream(uri)
+                ?: throw IllegalStateException("Unable to open backup file for reading.")
+            val payload = inputStream.use { it.readBytes() }
+            restoreFromEncryptedBytes(payload, passphrase).getOrThrow().summary
         }
     }
 }
