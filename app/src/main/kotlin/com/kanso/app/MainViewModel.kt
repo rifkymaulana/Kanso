@@ -1,7 +1,11 @@
 package com.kanso.app
 
+import android.content.Intent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.kanso.app.update.AppReleaseInfo
+import com.kanso.app.update.AppUpdateManager
+import com.kanso.app.update.AppUpdateState
 import com.kanso.core.database.preferences.PreferencesRepository
 import com.kanso.core.database.repository.BrainRepository
 import com.kanso.core.database.repository.LifeAdminRepository
@@ -23,6 +27,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.io.File
 import javax.inject.Inject
 
 @HiltViewModel
@@ -30,7 +35,8 @@ class MainViewModel @Inject constructor(
     preferencesRepository: PreferencesRepository,
     private val moneyRepository: MoneyRepository,
     private val brainRepository: BrainRepository,
-    private val lifeAdminRepository: LifeAdminRepository
+    private val lifeAdminRepository: LifeAdminRepository,
+    private val appUpdateManager: AppUpdateManager
 ) : ViewModel() {
 
     val preferences: StateFlow<UserPreferences> = preferencesRepository.preferences
@@ -39,6 +45,31 @@ class MainViewModel @Inject constructor(
             started = SharingStarted.WhileSubscribed(5_000),
             initialValue = UserPreferences()
         )
+
+    val updateState: StateFlow<AppUpdateState> = appUpdateManager.state
+    val dismissedUpdateTag: StateFlow<String?> = appUpdateManager.dismissedTag
+
+    fun triggerAutoUpdateCheck() {
+        viewModelScope.launch {
+            appUpdateManager.checkForUpdates(isAutomatic = true)
+        }
+    }
+
+    fun downloadUpdate(release: AppReleaseInfo) {
+        viewModelScope.launch {
+            appUpdateManager.downloadAndVerify(release)
+        }
+    }
+
+    fun dismissUpdateBanner(tagName: String) {
+        appUpdateManager.dismissBanner(tagName)
+    }
+
+    fun canInstallPackages(): Boolean = appUpdateManager.canInstallPackages()
+
+    fun createInstallIntent(apkFile: File): Intent = appUpdateManager.createInstallIntent(apkFile)
+
+    fun createUnknownSourcesIntent(): Intent = appUpdateManager.createUnknownSourcesIntent()
 
     fun saveQuickTransaction(
         type: TransactionType,

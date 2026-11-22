@@ -12,6 +12,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.kanso.core.model.AppCurrency
 import com.kanso.core.model.ThemeMode
 import com.kanso.core.model.UserPreferences
+import com.kanso.core.security.VaultCrypto
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -25,7 +26,8 @@ private val Context.kansoDataStore: DataStore<Preferences> by preferencesDataSto
 
 @Singleton
 class PreferencesRepository @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val vaultCrypto: VaultCrypto
 ) {
     private object Keys {
         val DISPLAY_NAME = stringPreferencesKey("display_name")
@@ -37,6 +39,9 @@ class PreferencesRepository @Inject constructor(
         val WATER_GOAL_ML = intPreferencesKey("water_goal_ml")
         val REMINDERS_ENABLED = booleanPreferencesKey("reminders_enabled")
         val CUSTOM_RATES_JSON = stringPreferencesKey("custom_rates_vs_usd_json")
+        val AUTO_CHECK_UPDATES = booleanPreferencesKey("auto_check_updates")
+        val LAST_UPDATE_CHECK_MILLIS = longPreferencesKey("last_update_check_millis")
+        val GITHUB_TOKEN_ENCRYPTED = stringPreferencesKey("github_token_encrypted")
     }
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -57,11 +62,34 @@ class PreferencesRepository @Inject constructor(
             lastBackupMillis = prefs[Keys.LAST_BACKUP_MILLIS],
             waterGoalMl = (prefs[Keys.WATER_GOAL_ML] ?: 2000).coerceAtLeast(250),
             remindersEnabled = prefs[Keys.REMINDERS_ENABLED] ?: true,
-            customRatesVsUsd = customRates
+            customRatesVsUsd = customRates,
+            autoCheckUpdates = prefs[Keys.AUTO_CHECK_UPDATES] ?: true,
+            lastUpdateCheckMillis = prefs[Keys.LAST_UPDATE_CHECK_MILLIS]
         )
     }
 
+    val hasGithubToken: Flow<Boolean> = context.kansoDataStore.data.map { prefs ->
+        !prefs[Keys.GITHUB_TOKEN_ENCRYPTED].isNullOrBlank()
+    }
+
     suspend fun getCurrentPreferences(): UserPreferences = preferences.first()
+
+    suspend fun getGithubToken(): String? {
+        val encrypted = context.kansoDataStore.data.first()[Keys.GITHUB_TOKEN_ENCRYPTED]
+        if (encrypted.isNullOrBlank()) return null
+        return runCatching { vaultCrypto.decrypt(encrypted) }.getOrNull()?.takeIf { it.isNotBlank() }
+    }
+
+    suspend fun setGithubToken(token: String?) {
+        val trimmed = token?.trim().orEmpty()
+        context.kansoDataStore.edit { prefs ->
+            if (trimmed.isEmpty()) {
+                prefs.remove(Keys.GITHUB_TOKEN_ENCRYPTED)
+            } else {
+                prefs[Keys.GITHUB_TOKEN_ENCRYPTED] = vaultCrypto.encrypt(trimmed)
+            }
+        }
+    }
 
     suspend fun setDisplayName(name: String) {
         context.kansoDataStore.edit { it[Keys.DISPLAY_NAME] = name.trim() }
@@ -105,6 +133,14 @@ class PreferencesRepository @Inject constructor(
         }
     }
 
+    suspend fun setAutoCheckUpdates(enabled: Boolean) {
+        context.kansoDataStore.edit { it[Keys.AUTO_CHECK_UPDATES] = enabled }
+    }
+
+    suspend fun setLastUpdateCheckMillis(timestampMillis: Long) {
+        context.kansoDataStore.edit { it[Keys.LAST_UPDATE_CHECK_MILLIS] = timestampMillis }
+    }
+
     suspend fun restorePreferences(userPreferences: UserPreferences) {
         context.kansoDataStore.edit { prefs ->
             prefs[Keys.DISPLAY_NAME] = userPreferences.displayName
@@ -114,6 +150,7 @@ class PreferencesRepository @Inject constructor(
             prefs[Keys.OVERALL_MONTHLY_BUDGET_CENTS] = userPreferences.overallMonthlyBudgetCents
             prefs[Keys.WATER_GOAL_ML] = userPreferences.waterGoalMl.coerceIn(250, 10_000)
             prefs[Keys.REMINDERS_ENABLED] = userPreferences.remindersEnabled
+            prefs[Keys.AUTO_CHECK_UPDATES] = userPreferences.autoCheckUpdates
             if (userPreferences.customRatesVsUsd.isEmpty()) {
                 prefs.remove(Keys.CUSTOM_RATES_JSON)
             } else {

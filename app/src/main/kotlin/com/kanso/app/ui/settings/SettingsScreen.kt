@@ -25,7 +25,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.CloudUpload
+import androidx.compose.material.icons.outlined.InstallMobile
 import androidx.compose.material.icons.outlined.Restore
+import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material.icons.outlined.Widgets
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -47,6 +49,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -62,7 +65,11 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.kanso.app.BuildConfig
 import com.kanso.app.notifications.KansoReminderScheduler
+import com.kanso.app.update.AppUpdateManager
+import com.kanso.app.update.AppUpdateState
+import com.kanso.app.update.launchApkInstall
 import com.kanso.app.widget.KansoTodayWidgetReceiver
 import com.kanso.core.backup.EncryptedBackupCrypto
 import com.kanso.core.model.AppCurrency
@@ -78,6 +85,7 @@ import java.time.format.DateTimeFormatter
 @Composable
 fun SettingsRoute(
     onBack: () -> Unit,
+    onShowMessage: (String) -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -88,10 +96,27 @@ fun SettingsRoute(
     var showCurrencyDialog by remember { mutableStateOf(false) }
     var showBudgetDialog by remember { mutableStateOf(false) }
     var showWaterGoalDialog by remember { mutableStateOf(false) }
+    var showGithubTokenDialog by remember { mutableStateOf(false) }
+    var autoInstallPending by remember { mutableStateOf(false) }
 
     var showExportPassphraseDialog by remember { mutableStateOf(false) }
     var pendingExportPassphrase by remember { mutableStateOf<String?>(null) }
     var pendingRestoreUri by remember { mutableStateOf<Uri?>(null) }
+
+    LaunchedEffect(uiState.updateState) {
+        val ready = uiState.updateState as? AppUpdateState.ReadyToInstall
+        if (ready != null && autoInstallPending) {
+            autoInstallPending = false
+            launchApkInstall(
+                context = context,
+                apkFile = ready.apkFile,
+                canInstallPackages = viewModel::canInstallPackages,
+                createInstallIntent = viewModel::createInstallIntent,
+                createUnknownSourcesIntent = viewModel::createUnknownSourcesIntent,
+                onMessage = onShowMessage
+            )
+        }
+    }
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
@@ -342,6 +367,32 @@ fun SettingsRoute(
             }
 
             item {
+                AppUpdatesCard(
+                    uiState = uiState,
+                    onToggleAutoCheck = viewModel::setAutoCheckUpdates,
+                    onEditGithubToken = { showGithubTokenDialog = true },
+                    onCheckUpdates = viewModel::checkForUpdates,
+                    onDownloadAndInstall = { release ->
+                        autoInstallPending = true
+                        viewModel.downloadUpdate(release)
+                    },
+                    onInstallApk = { apkFile ->
+                        launchApkInstall(
+                            context = context,
+                            apkFile = apkFile,
+                            canInstallPackages = viewModel::canInstallPackages,
+                            createInstallIntent = viewModel::createInstallIntent,
+                            createUnknownSourcesIntent = viewModel::createUnknownSourcesIntent,
+                            onMessage = onShowMessage
+                        )
+                    },
+                    onOpenReleasesPage = {
+                        runCatching { context.startActivity(viewModel.createReleasesPageIntent()) }
+                    }
+                )
+            }
+
+            item {
                 var widgetPinMessage by remember { mutableStateOf<String?>(null) }
                 val appWidgetManager = remember(context) { AppWidgetManager.getInstance(context) }
 
@@ -393,7 +444,7 @@ fun SettingsRoute(
 
             item {
                 Text(
-                    text = "Kanso v1.0.0 • 100% Offline-First",
+                    text = "Kanso v${BuildConfig.VERSION_NAME} • Offline-First + GitHub Updates",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -447,6 +498,18 @@ fun SettingsRoute(
         )
     }
 
+    if (showGithubTokenDialog) {
+        GithubTokenDialog(
+            hasExistingToken = uiState.hasGithubToken,
+            onDismiss = { showGithubTokenDialog = false },
+            onSave = { token ->
+                viewModel.setGithubToken(token)
+                showGithubTokenDialog = false
+                onShowMessage(if (token.isNullOrBlank()) "GitHub token cleared" else "GitHub token saved (Keystore encrypted)")
+            }
+        )
+    }
+
     if (showExportPassphraseDialog) {
         ExportPassphraseDialog(
             onDismiss = { showExportPassphraseDialog = false },
@@ -468,6 +531,316 @@ fun SettingsRoute(
             }
         )
     }
+}
+
+@Composable
+private fun AppUpdatesCard(
+    uiState: SettingsUiState,
+    onToggleAutoCheck: (Boolean) -> Unit,
+    onEditGithubToken: () -> Unit,
+    onCheckUpdates: () -> Unit,
+    onDownloadAndInstall: (com.kanso.app.update.AppReleaseInfo) -> Unit,
+    onInstallApk: (java.io.File) -> Unit,
+    onOpenReleasesPage: () -> Unit
+) {
+    val prefs = uiState.preferences
+    Card(
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("App Updates", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        text = "Installed: v${BuildConfig.VERSION_NAME} • ${AppUpdateManager.REPO_OWNER}/${AppUpdateManager.REPO_NAME}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Icon(
+                    imageVector = Icons.Outlined.SystemUpdate,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Auto-check on launch", style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        text = prefs.lastUpdateCheckMillis?.let {
+                            "Last checked: ${KansoDateFormatters.formatFullDateTime(it)}"
+                        } ?: "Checks every 6h when GitHub token is configured",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = prefs.autoCheckUpdates,
+                    onCheckedChange = onToggleAutoCheck
+                )
+            }
+
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onEditGithubToken),
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Text(
+                        text = "GitHub Access Token (Private Repo)",
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium)
+                    )
+                    Text(
+                        text = if (uiState.hasGithubToken) {
+                            "Configured (Android Keystore encrypted) — tap to update"
+                        } else {
+                            "Not set — tap to add a read-only token for rifkymaulana/Kanso"
+                        },
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (uiState.hasGithubToken) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+                }
+            }
+
+            when (val status = uiState.updateState) {
+                AppUpdateState.Idle -> Unit
+                AppUpdateState.Checking -> {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        Text("Checking GitHub Releases...", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+
+                is AppUpdateState.UpToDate -> {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer
+                    ) {
+                        Text(
+                            text = "You are on the latest version (v${status.currentVersion}).",
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                }
+
+                is AppUpdateState.UpdateAvailable -> {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "New version ${status.release.tagName} available",
+                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            if (status.release.releaseNotes.isNotBlank()) {
+                                Text(
+                                    text = status.release.releaseNotes.take(280),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                            Button(
+                                onClick = { onDownloadAndInstall(status.release) },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Outlined.InstallMobile, contentDescription = null)
+                                Text("  Download & Install ${status.release.tagName}")
+                            }
+                        }
+                    }
+                }
+
+                is AppUpdateState.Downloading -> {
+                    val total = status.totalBytes
+                    val progress = if (total > 0L) {
+                        (status.downloadedBytes.toFloat() / total.toFloat()).coerceIn(0f, 1f)
+                    } else null
+                    val mbDownloaded = String.format(java.util.Locale.US, "%.1f", status.downloadedBytes / 1_048_576.0)
+                    val mbTotal = if (total > 0L) {
+                        String.format(java.util.Locale.US, "%.1f MB", total / 1_048_576.0)
+                    } else "—"
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        if (progress != null) {
+                            LinearProgressIndicator(
+                                progress = { progress },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        } else {
+                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        }
+                        Text(
+                            text = "Downloading ${status.release.tagName}: $mbDownloaded / $mbTotal",
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                    }
+                }
+
+                is AppUpdateState.Verifying -> {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        Text(
+                            text = "Verifying ${status.release.tagName} SHA-256 checksum...",
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                    }
+                }
+
+                is AppUpdateState.ReadyToInstall -> {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "${status.release.tagName} verified and ready to install.",
+                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            Button(
+                                onClick = { onInstallApk(status.apkFile) },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Outlined.InstallMobile, contentDescription = null)
+                                Text("  Install APK")
+                            }
+                        }
+                    }
+                }
+
+                is AppUpdateState.Error -> {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.errorContainer
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = status.message,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                            if (status.needsToken) {
+                                OutlinedButton(onClick = onEditGithubToken) {
+                                    Text("Set GitHub Token")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            val busy = uiState.updateState is AppUpdateState.Checking ||
+                uiState.updateState is AppUpdateState.Downloading ||
+                uiState.updateState is AppUpdateState.Verifying
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = onCheckUpdates,
+                    enabled = !busy,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Check for Updates")
+                }
+                OutlinedButton(
+                    onClick = onOpenReleasesPage,
+                    modifier = Modifier.weight(0.9f)
+                ) {
+                    Text("Open Releases")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GithubTokenDialog(
+    hasExistingToken: Boolean,
+    onDismiss: () -> Unit,
+    onSave: (String?) -> Unit
+) {
+    var tokenText by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("GitHub Access Token") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = "Because rifkymaulana/Kanso is private, create a Fine-Grained Personal Access Token on GitHub scoped only to Repository: Kanso with Contents: Read-only. It is stored locally encrypted with Android Keystore and never included in backups.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedTextField(
+                    value = tokenText,
+                    onValueChange = { tokenText = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text(if (hasExistingToken) "New token (leave blank to clear)" else "github_pat_...") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                onSave(tokenText.trim().ifEmpty { null })
+            }) {
+                Text(if (tokenText.isBlank() && hasExistingToken) "Clear Token" else "Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
 }
 
 @Composable

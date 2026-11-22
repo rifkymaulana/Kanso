@@ -1,6 +1,8 @@
 package com.kanso.app.navigation
 
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalanceWallet
@@ -44,6 +46,9 @@ import com.kanso.app.MainViewModel
 import com.kanso.app.ui.hub.HubRoute
 import com.kanso.app.ui.search.GlobalSearchRoute
 import com.kanso.app.ui.settings.SettingsRoute
+import com.kanso.app.update.AppUpdateState
+import com.kanso.app.update.KansoUpdateBanner
+import com.kanso.app.update.launchApkInstall
 import com.kanso.app.widget.KansoWidgetUpdater
 import com.kanso.core.ui.components.QuickCaptureMode
 import com.kanso.core.ui.components.QuickCaptureSheet
@@ -101,12 +106,16 @@ fun KansoAppRoot(
         currentRoute == Routes.HUB
 
     val prefs by mainViewModel.preferences.collectAsStateWithLifecycle()
+    val updateState by mainViewModel.updateState.collectAsStateWithLifecycle()
+    val dismissedUpdateTag by mainViewModel.dismissedUpdateTag.collectAsStateWithLifecycle()
+
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
     var showQuickCapture by remember { mutableStateOf(false) }
     var quickCaptureInitialMode by remember { mutableStateOf(QuickCaptureMode.EXPENSE) }
+    var autoLaunchInstallOnReady by remember { mutableStateOf(false) }
 
     val showMessage: (String) -> Unit = remember(scope, snackbarHostState) {
         { message ->
@@ -114,6 +123,25 @@ fun KansoAppRoot(
                 snackbarHostState.currentSnackbarData?.dismiss()
                 snackbarHostState.showSnackbar(message)
             }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        mainViewModel.triggerAutoUpdateCheck()
+    }
+
+    LaunchedEffect(updateState) {
+        val ready = updateState as? AppUpdateState.ReadyToInstall
+        if (ready != null && autoLaunchInstallOnReady) {
+            autoLaunchInstallOnReady = false
+            launchApkInstall(
+                context = context,
+                apkFile = ready.apkFile,
+                canInstallPackages = mainViewModel::canInstallPackages,
+                createInstallIntent = mainViewModel::createInstallIntent,
+                createUnknownSourcesIntent = mainViewModel::createUnknownSourcesIntent,
+                onMessage = showMessage
+            )
         }
     }
 
@@ -207,113 +235,142 @@ fun KansoAppRoot(
             }
         }
     ) { innerPadding ->
-        NavHost(
-            navController = navController,
-            startDestination = Routes.TODAY,
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            composable(Routes.TODAY) {
-                TodayRoute(
-                    onOpenQuickCapture = openDefaultQuickCapture,
-                    onOpenSearch = { navController.navigate(Routes.SEARCH) },
-                    onOpenSettings = { navController.navigate(Routes.SETTINGS) },
-                    onOpenMoney = { navigateTopTab(Routes.MONEY) },
-                    onOpenBrainTab = openBrainTab,
-                    onOpenHabits = { navController.navigate(Routes.HABITS) },
-                    onOpenExpiries = { navController.navigate(Routes.lifeAdmin(0)) },
-                    onShowMessage = showMessage
+            if (isTopLevel) {
+                KansoUpdateBanner(
+                    updateState = updateState,
+                    dismissedTag = dismissedUpdateTag,
+                    onDownload = { release ->
+                        autoLaunchInstallOnReady = true
+                        mainViewModel.downloadUpdate(release)
+                    },
+                    onInstall = { apkFile ->
+                        launchApkInstall(
+                            context = context,
+                            apkFile = apkFile,
+                            canInstallPackages = mainViewModel::canInstallPackages,
+                            createInstallIntent = mainViewModel::createInstallIntent,
+                            createUnknownSourcesIntent = mainViewModel::createUnknownSourcesIntent,
+                            onMessage = showMessage
+                        )
+                    },
+                    onDismiss = mainViewModel::dismissUpdateBanner
                 )
             }
 
-            composable(Routes.MONEY) {
-                MoneyRoute(onShowMessage = showMessage)
-            }
+            NavHost(
+                navController = navController,
+                startDestination = Routes.TODAY,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+            ) {
+                composable(Routes.TODAY) {
+                    TodayRoute(
+                        onOpenQuickCapture = openDefaultQuickCapture,
+                        onOpenSearch = { navController.navigate(Routes.SEARCH) },
+                        onOpenSettings = { navController.navigate(Routes.SETTINGS) },
+                        onOpenMoney = { navigateTopTab(Routes.MONEY) },
+                        onOpenBrainTab = openBrainTab,
+                        onOpenHabits = { navController.navigate(Routes.HABITS) },
+                        onOpenExpiries = { navController.navigate(Routes.lifeAdmin(0)) },
+                        onShowMessage = showMessage
+                    )
+                }
 
-            composable(
-                route = Routes.BRAIN_PATTERN,
-                arguments = listOf(
-                    navArgument("tab") {
-                        type = NavType.IntType
-                        defaultValue = 0
-                    }
-                )
-            ) { entry ->
-                val initialTab = entry.arguments?.getInt("tab") ?: 0
-                BrainRoute(
-                    initialTab = initialTab,
-                    onShowMessage = showMessage
-                )
-            }
+                composable(Routes.MONEY) {
+                    MoneyRoute(onShowMessage = showMessage)
+                }
 
-            composable(Routes.HUB) {
-                HubRoute(
-                    onOpenMoney = { navigateTopTab(Routes.MONEY) },
-                    onOpenBrain = { navigateTopTab(Routes.brain(0)) },
-                    onOpenSearch = { navController.navigate(Routes.SEARCH) },
-                    onOpenSettings = { navController.navigate(Routes.SETTINGS) },
-                    onOpenHabits = { navController.navigate(Routes.HABITS) },
-                    onOpenLifeAdmin = { navController.navigate(Routes.lifeAdmin(0)) },
-                    onOpenUtilities = { navController.navigate(Routes.utilities(0)) }
-                )
-            }
+                composable(
+                    route = Routes.BRAIN_PATTERN,
+                    arguments = listOf(
+                        navArgument("tab") {
+                            type = NavType.IntType
+                            defaultValue = 0
+                        }
+                    )
+                ) { entry ->
+                    val initialTab = entry.arguments?.getInt("tab") ?: 0
+                    BrainRoute(
+                        initialTab = initialTab,
+                        onShowMessage = showMessage
+                    )
+                }
 
-            composable(Routes.HABITS) {
-                HabitsRoute(
-                    onBack = { navController.popBackStack() },
-                    onShowMessage = showMessage
-                )
-            }
+                composable(Routes.HUB) {
+                    HubRoute(
+                        onOpenMoney = { navigateTopTab(Routes.MONEY) },
+                        onOpenBrain = { navigateTopTab(Routes.brain(0)) },
+                        onOpenSearch = { navController.navigate(Routes.SEARCH) },
+                        onOpenSettings = { navController.navigate(Routes.SETTINGS) },
+                        onOpenHabits = { navController.navigate(Routes.HABITS) },
+                        onOpenLifeAdmin = { navController.navigate(Routes.lifeAdmin(0)) },
+                        onOpenUtilities = { navController.navigate(Routes.utilities(0)) }
+                    )
+                }
 
-            composable(
-                route = Routes.LIFEADMIN_PATTERN,
-                arguments = listOf(
-                    navArgument("tab") {
-                        type = NavType.IntType
-                        defaultValue = 0
-                    }
-                )
-            ) { entry ->
-                val initialTab = entry.arguments?.getInt("tab") ?: 0
-                LifeAdminRoute(
-                    initialTab = initialTab,
-                    onBack = { navController.popBackStack() },
-                    onShowMessage = showMessage
-                )
-            }
+                composable(Routes.HABITS) {
+                    HabitsRoute(
+                        onBack = { navController.popBackStack() },
+                        onShowMessage = showMessage
+                    )
+                }
 
-            composable(
-                route = Routes.UTILITIES_PATTERN,
-                arguments = listOf(
-                    navArgument("tab") {
-                        type = NavType.IntType
-                        defaultValue = 0
-                    }
-                )
-            ) { entry ->
-                val initialTab = entry.arguments?.getInt("tab") ?: 0
-                UtilitiesRoute(
-                    initialTab = initialTab,
-                    onBack = { navController.popBackStack() },
-                    onShowMessage = showMessage
-                )
-            }
+                composable(
+                    route = Routes.LIFEADMIN_PATTERN,
+                    arguments = listOf(
+                        navArgument("tab") {
+                            type = NavType.IntType
+                            defaultValue = 0
+                        }
+                    )
+                ) { entry ->
+                    val initialTab = entry.arguments?.getInt("tab") ?: 0
+                    LifeAdminRoute(
+                        initialTab = initialTab,
+                        onBack = { navController.popBackStack() },
+                        onShowMessage = showMessage
+                    )
+                }
 
-            composable(Routes.SEARCH) {
-                GlobalSearchRoute(
-                    onBack = { navController.popBackStack() },
-                    onOpenMoney = { navigateTopTab(Routes.MONEY) },
-                    onOpenBrainTab = openBrainTab,
-                    onOpenLifeAdminTab = { tab -> navController.navigate(Routes.lifeAdmin(tab)) },
-                    onShowMessage = showMessage
-                )
-            }
+                composable(
+                    route = Routes.UTILITIES_PATTERN,
+                    arguments = listOf(
+                        navArgument("tab") {
+                            type = NavType.IntType
+                            defaultValue = 0
+                        }
+                    )
+                ) { entry ->
+                    val initialTab = entry.arguments?.getInt("tab") ?: 0
+                    UtilitiesRoute(
+                        initialTab = initialTab,
+                        onBack = { navController.popBackStack() },
+                        onShowMessage = showMessage
+                    )
+                }
 
-            composable(Routes.SETTINGS) {
-                SettingsRoute(
-                    onBack = { navController.popBackStack() }
-                )
+                composable(Routes.SEARCH) {
+                    GlobalSearchRoute(
+                        onBack = { navController.popBackStack() },
+                        onOpenMoney = { navigateTopTab(Routes.MONEY) },
+                        onOpenBrainTab = openBrainTab,
+                        onOpenLifeAdminTab = { tab -> navController.navigate(Routes.lifeAdmin(tab)) },
+                        onShowMessage = showMessage
+                    )
+                }
+
+                composable(Routes.SETTINGS) {
+                    SettingsRoute(
+                        onBack = { navController.popBackStack() },
+                        onShowMessage = showMessage
+                    )
+                }
             }
         }
     }

@@ -19,5 +19,7 @@ data class UserPreferences(
     val lastBackupMillis: Long? = null,
     val waterGoalMl: Int = 2000,
     val remindersEnabled: Boolean = true,
-    val customRatesVsUsd: Map<String, Double> = emptyMap()
+    val customRatesVsUsd: Map<String, Double> = emptyMap(),
+    val autoCheckUpdates: Boolean = true,
+    val lastUpdateCheckMillis: Long? = null
 )

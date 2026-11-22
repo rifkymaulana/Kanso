@@ -2,6 +2,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
 }
@@ -14,8 +15,8 @@ android {
         applicationId = "com.kanso.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = System.getenv("KANSO_VERSION_CODE")?.toIntOrNull() ?: 3
-        versionName = System.getenv("KANSO_VERSION_NAME")?.takeIf { it.isNotBlank() } ?: "1.0.0"
+        versionCode = System.getenv("KANSO_VERSION_CODE")?.toIntOrNull() ?: 4
+        versionName = System.getenv("KANSO_VERSION_NAME")?.takeIf { it.isNotBlank() } ?: "1.1.0"
     }
 
     signingConfigs {
@@ -58,6 +59,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     compileOptions {
@@ -94,6 +96,7 @@ dependencies {
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.androidx.glance.appwidget)
     implementation(libs.androidx.glance.material3)
+    implementation(libs.kotlinx.serialization.json)
 
     implementation(libs.hilt.android)
     ksp(libs.hilt.android.compiler)
