@@ -1,6 +1,7 @@
 package com.kanso.feature.money
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -68,6 +69,8 @@ import com.kanso.core.model.TransactionType
 import com.kanso.core.model.WalletType
 import com.kanso.core.ui.components.DonutSlice
 import com.kanso.core.ui.components.KansoAccentIconBadge
+import com.kanso.core.ui.components.KansoAnimatedCurrencyText
+import com.kanso.core.ui.components.KansoAnimatedIntText
 import com.kanso.core.ui.components.KansoAnimatedProgressBar
 import com.kanso.core.ui.components.KansoBentoCard
 import com.kanso.core.ui.components.KansoButtonSize
@@ -75,6 +78,7 @@ import com.kanso.core.ui.components.KansoCategoryDonutChart
 import com.kanso.core.ui.components.KansoDateFormatters
 import com.kanso.core.ui.components.KansoEmptyState
 import com.kanso.core.ui.components.KansoHeroCard
+import com.kanso.core.ui.components.KansoMotion
 import com.kanso.core.ui.components.KansoPillBadge
 import com.kanso.core.ui.components.KansoProgressRing
 import com.kanso.core.ui.components.KansoSegmentedRow
@@ -332,7 +336,7 @@ fun MoneyScreenContent(
 
         AnimatedContent(
             targetState = selectedTab,
-            transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
+            transitionSpec = { KansoMotion.directionalTabTransition(targetState, initialState) },
             label = "moneyTab"
         ) { tab ->
             when (tab) {
@@ -397,11 +401,17 @@ private fun MonthPillSelector(
                     modifier = Modifier.size(18.dp)
                 )
             }
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelLarge,
-                modifier = Modifier.padding(horizontal = 6.dp)
-            )
+            AnimatedContent(
+                targetState = label,
+                transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
+                label = "moneyMonthLabel"
+            ) { currentLabel ->
+                Text(
+                    text = currentLabel,
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.padding(horizontal = 6.dp)
+                )
+            }
             Box(
                 modifier = Modifier
                     .size(34.dp)
@@ -448,7 +458,17 @@ private fun LogTabContent(
     ) {
         item {
             val isPositive = uiState.summary.netCents >= 0L
-            KansoHeroCard(glowColor = kansoColors.moneyAccent) {
+            val statusBg by animateColorAsState(
+                targetValue = (if (isPositive) Color(0xFF34D399) else Color(0xFFF87171)).copy(alpha = 0.18f),
+                animationSpec = tween(250),
+                label = "netBadgeBg"
+            )
+            val statusFg by animateColorAsState(
+                targetValue = if (isPositive) Color(0xFF6EE7B7) else Color(0xFFFCA5A5),
+                animationSpec = tween(250),
+                label = "netBadgeFg"
+            )
+            KansoHeroCard(glowColor = if (isPositive) kansoColors.moneyAccent else kansoColors.expense) {
                 Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -462,19 +482,21 @@ private fun LogTabContent(
                         )
                         Surface(
                             shape = RoundedCornerShape(50),
-                            color = (if (isPositive) Color(0xFF34D399) else Color(0xFFF87171)).copy(alpha = 0.18f)
+                            color = statusBg
                         ) {
                             Text(
                                 text = if (isPositive) "Positive" else "Deficit",
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                                 style = MaterialTheme.typography.labelMedium,
-                                color = if (isPositive) Color(0xFF6EE7B7) else Color(0xFFFCA5A5)
+                                color = statusFg
                             )
                         }
                     }
 
-                    Text(
-                        text = CurrencyFormatter.format(uiState.summary.netCents, uiState.currency, showSign = true),
+                    KansoAnimatedCurrencyText(
+                        amountCents = uiState.summary.netCents,
+                        currency = uiState.currency,
+                        showSign = true,
                         style = MaterialTheme.typography.displaySmall,
                         color = kansoColors.heroOnSurface
                     )
@@ -485,13 +507,15 @@ private fun LogTabContent(
                     ) {
                         HeroCashPill(
                             label = "Spent",
-                            value = CurrencyFormatter.format(uiState.summary.expenseCents, uiState.currency),
+                            amountCents = uiState.summary.expenseCents,
+                            currency = uiState.currency,
                             dotColor = Color(0xFFF87171),
                             modifier = Modifier.weight(1f)
                         )
                         HeroCashPill(
                             label = "Income",
-                            value = CurrencyFormatter.format(uiState.summary.incomeCents, uiState.currency),
+                            amountCents = uiState.summary.incomeCents,
+                            currency = uiState.currency,
                             dotColor = Color(0xFF34D399),
                             modifier = Modifier.weight(1f)
                         )
@@ -519,8 +543,9 @@ private fun LogTabContent(
                                 strokeWidth = 15.dp
                             ) {
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text(
-                                        text = "${uiState.summary.byCategory.size}",
+                                    KansoAnimatedIntText(
+                                        value = uiState.summary.byCategory.size,
+                                        format = { "$it" },
                                         style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
@@ -598,6 +623,7 @@ private fun LogTabContent(
                 TransactionRowCard(
                     transaction = tx,
                     currency = uiState.currency,
+                    modifier = Modifier.animateItem(),
                     onClick = { onEditTransaction(tx) }
                 )
             }
@@ -608,7 +634,8 @@ private fun LogTabContent(
 @Composable
 private fun HeroCashPill(
     label: String,
-    value: String,
+    amountCents: Long,
+    currency: AppCurrency,
     dotColor: Color,
     modifier: Modifier = Modifier
 ) {
@@ -638,15 +665,14 @@ private fun HeroCashPill(
                     color = MaterialTheme.kansoColors.heroOnSurfaceMuted
                 )
             }
-            Text(
-                text = value,
+            KansoAnimatedCurrencyText(
+                amountCents = amountCents,
+                currency = currency,
                 style = MaterialTheme.typography.titleSmall.copy(
                     fontWeight = FontWeight.SemiBold,
                     fontFeatureSettings = "tnum"
                 ),
-                color = MaterialTheme.kansoColors.heroOnSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                color = MaterialTheme.kansoColors.heroOnSurface
             )
         }
     }
@@ -656,10 +682,11 @@ private fun HeroCashPill(
 private fun TransactionRowCard(
     transaction: MoneyTransaction,
     currency: AppCurrency,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     KansoBentoCard(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         onClick = onClick,
         cornerRadius = 18.dp,
         contentPadding = PaddingValues(14.dp)
@@ -737,8 +764,9 @@ private fun BudgetsTabContent(
                             size = 72.dp,
                             strokeWidth = 7.dp
                         ) {
-                            Text(
-                                text = "${(ratio * 100).toInt()}%",
+                            KansoAnimatedIntText(
+                                value = (ratio * 100).toInt(),
+                                format = { "$it%" },
                                 style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
                                 color = ringColor
                             )
@@ -805,7 +833,9 @@ private fun BudgetsTabContent(
                     else -> status.category.accentColor()
                 }
                 KansoBentoCard(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .animateItem(),
                     onClick = { onEditCategoryBudget(status.category) },
                     cornerRadius = 18.dp,
                     contentPadding = PaddingValues(14.dp)
@@ -901,7 +931,9 @@ private fun BillsTabContent(
             items(uiState.bills, key = { it.id }) { bill ->
                 val isPaid = MoneyCalculations.isBillPaidForMonth(bill, currentMonth)
                 KansoBentoCard(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .animateItem(),
                     onClick = { onEditBill(bill) },
                     cornerRadius = 18.dp,
                     contentPadding = PaddingValues(14.dp)
@@ -987,12 +1019,11 @@ private fun IousTabContent(
                         color = incomeSemanticColor()
                     )
                     Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = CurrencyFormatter.format(uiState.owesMeTotalCents, uiState.currency),
+                    KansoAnimatedCurrencyText(
+                        amountCents = uiState.owesMeTotalCents,
+                        currency = uiState.currency,
                         style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                        color = incomeSemanticColor(),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        color = incomeSemanticColor()
                     )
                 }
                 KansoBentoCard(
@@ -1007,12 +1038,11 @@ private fun IousTabContent(
                         color = expenseSemanticColor()
                     )
                     Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = CurrencyFormatter.format(uiState.iOweTotalCents, uiState.currency),
+                    KansoAnimatedCurrencyText(
+                        amountCents = uiState.iOweTotalCents,
+                        currency = uiState.currency,
                         style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                        color = expenseSemanticColor(),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        color = expenseSemanticColor()
                     )
                 }
             }
@@ -1064,7 +1094,9 @@ private fun IousTabContent(
                     expenseSemanticColor()
                 }
                 KansoBentoCard(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .animateItem(),
                     onClick = { onEditIou(iou) },
                     cornerRadius = 18.dp,
                     contentPadding = PaddingValues(14.dp)

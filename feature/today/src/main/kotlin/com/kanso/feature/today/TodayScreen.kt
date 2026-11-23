@@ -1,5 +1,6 @@
 package com.kanso.feature.today
 
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -69,15 +70,20 @@ import com.kanso.core.model.TaskItem
 import com.kanso.core.model.TaskPriority
 import com.kanso.core.model.WalletType
 import com.kanso.core.ui.components.KansoAccentIconBadge
+import com.kanso.core.ui.components.KansoAnimatedCurrencyText
+import com.kanso.core.ui.components.KansoAnimatedIntText
 import com.kanso.core.ui.components.KansoAnimatedProgressBar
 import com.kanso.core.ui.components.KansoBentoCard
+import com.kanso.core.ui.components.KansoBounceOnChange
 import com.kanso.core.ui.components.KansoButtonSize
 import com.kanso.core.ui.components.KansoCheckCircle
 import com.kanso.core.ui.components.KansoCompactEmptyHint
 import com.kanso.core.ui.components.KansoDateFormatters
 import com.kanso.core.ui.components.KansoHeroCard
+import com.kanso.core.ui.components.KansoMotion
 import com.kanso.core.ui.components.KansoPillBadge
 import com.kanso.core.ui.components.KansoProgressRing
+import com.kanso.core.ui.components.KansoStaggeredEntrance
 import com.kanso.core.ui.components.KansoTonalButton
 import com.kanso.core.ui.components.SectionHeader
 import com.kanso.core.ui.components.expenseSemanticColor
@@ -156,62 +162,64 @@ fun TodayScreenContent(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
+            KansoStaggeredEntrance(index = 0) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = uiState.formattedDate.uppercase(),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = uiState.greeting,
-                        style = MaterialTheme.typography.headlineMedium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Surface(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .clickable(onClick = onOpenSearch),
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.surface,
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Outlined.Search,
-                                contentDescription = "Global Search",
-                                modifier = Modifier.size(20.dp),
-                                tint = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
+                        Text(
+                            text = uiState.formattedDate.uppercase(),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = uiState.greeting,
+                            style = MaterialTheme.typography.headlineMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
-                    Surface(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .clickable(onClick = onOpenSettings),
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.surface,
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Outlined.Settings,
-                                contentDescription = "Settings",
-                                modifier = Modifier.size(20.dp),
-                                tint = MaterialTheme.colorScheme.onSurface
-                            )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Surface(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .clickable(onClick = onOpenSearch),
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surface,
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Search,
+                                    contentDescription = "Global Search",
+                                    modifier = Modifier.size(20.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                        Surface(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .clickable(onClick = onOpenSettings),
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surface,
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Settings,
+                                    contentDescription = "Settings",
+                                    modifier = Modifier.size(20.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
                         }
                     }
                 }
@@ -219,74 +227,83 @@ fun TodayScreenContent(
         }
 
         item {
-            MoneyHeroPulseCard(
-                uiState = uiState,
-                onClick = onOpenMoney
-            )
-        }
-
-        if (uiState.hasAttentionItems) {
-            item {
-                AttentionBentoCard(
+            KansoStaggeredEntrance(index = 1) {
+                MoneyHeroPulseCard(
                     uiState = uiState,
-                    onPayBill = {
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        onPayBill(it)
-                    },
-                    onOpenMoney = onOpenMoney,
-                    onOpenTasks = { onOpenBrainTab(1) },
-                    onOpenExpiries = onOpenExpiries
+                    onClick = onOpenMoney
                 )
             }
         }
 
-        item {
-            BentoPulseRow(
-                uiState = uiState,
-                onOpenHabits = onOpenHabits,
-                onAddWater250 = {
-                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    onAddWater250()
+        if (uiState.hasAttentionItems) {
+            item {
+                KansoStaggeredEntrance(index = 2) {
+                    AttentionBentoCard(
+                        uiState = uiState,
+                        onPayBill = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onPayBill(it)
+                        },
+                        onOpenMoney = onOpenMoney,
+                        onOpenTasks = { onOpenBrainTab(1) },
+                        onOpenExpiries = onOpenExpiries
+                    )
                 }
-            )
+            }
+        }
+
+        item {
+            KansoStaggeredEntrance(index = 3) {
+                BentoPulseRow(
+                    uiState = uiState,
+                    onOpenHabits = onOpenHabits,
+                    onAddWater250 = {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onAddWater250()
+                    }
+                )
+            }
         }
 
         if (uiState.pendingTodayHabits.isNotEmpty()) {
             item {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SectionHeader(
-                        title = "Quick Habits",
-                        actionLabel = "All",
-                        onAction = onOpenHabits
-                    )
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(uiState.pendingTodayHabits, key = { it.id }) { habit ->
-                            Surface(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(14.dp))
-                                    .clickable {
-                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        onToggleHabit(habit)
-                                    },
-                                shape = RoundedCornerShape(14.dp),
-                                color = MaterialTheme.colorScheme.surface,
-                                border = BorderStroke(1.dp, kansoColors.habitsAccent.copy(alpha = 0.35f))
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                KansoStaggeredEntrance(index = 4) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SectionHeader(
+                            title = "Quick Habits",
+                            actionLabel = "All",
+                            onAction = onOpenHabits
+                        )
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(uiState.pendingTodayHabits, key = { it.id }) { habit ->
+                                Surface(
+                                    modifier = Modifier
+                                        .animateItem()
+                                        .clip(RoundedCornerShape(14.dp))
+                                        .clickable {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            onToggleHabit(habit)
+                                        },
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = MaterialTheme.colorScheme.surface,
+                                    border = BorderStroke(1.dp, kansoColors.habitsAccent.copy(alpha = 0.35f))
                                 ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(14.dp)
-                                            .border(1.75.dp, kansoColors.habitsAccent, CircleShape)
-                                    )
-                                    Text(
-                                        text = habit.name,
-                                        style = MaterialTheme.typography.labelLarge,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(14.dp)
+                                                .border(1.75.dp, kansoColors.habitsAccent, CircleShape)
+                                        )
+                                        Text(
+                                            text = habit.name,
+                                            style = MaterialTheme.typography.labelLarge,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -296,37 +313,41 @@ fun TodayScreenContent(
         }
 
         item {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                SectionHeader(
-                    title = "Focus Tasks",
-                    actionLabel = "See all",
-                    onAction = { onOpenBrainTab(1) }
-                )
-                if (uiState.focusTasks.isEmpty()) {
-                    KansoCompactEmptyHint(
-                        icon = Icons.Outlined.TaskAlt,
-                        title = "All clear for today",
-                        subtitle = "Tap + below anytime to add a task.",
-                        accentColor = kansoColors.brainAccent,
-                        actionLabel = "Add",
-                        onAction = onOpenQuickCapture
+            KansoStaggeredEntrance(index = 5) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SectionHeader(
+                        title = "Focus Tasks",
+                        actionLabel = "See all",
+                        onAction = { onOpenBrainTab(1) }
                     )
-                } else {
-                    KansoBentoCard(
-                        contentPadding = PaddingValues(vertical = 4.dp)
-                    ) {
-                        uiState.focusTasks.forEachIndexed { index, task ->
-                            FocusTaskRow(
-                                task = task,
-                                accentColor = kansoColors.brainAccent,
-                                onToggle = { onToggleTask(task) },
-                                onOpenTasks = { onOpenBrainTab(1) }
-                            )
-                            if (index < uiState.focusTasks.lastIndex) {
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 16.dp),
-                                    color = MaterialTheme.colorScheme.outlineVariant
-                                )
+                    if (uiState.focusTasks.isEmpty()) {
+                        KansoCompactEmptyHint(
+                            icon = Icons.Outlined.TaskAlt,
+                            title = "All clear for today",
+                            subtitle = "Tap + below anytime to add a task.",
+                            accentColor = kansoColors.brainAccent,
+                            actionLabel = "Add",
+                            onAction = onOpenQuickCapture
+                        )
+                    } else {
+                        KansoBentoCard(
+                            contentPadding = PaddingValues(vertical = 4.dp)
+                        ) {
+                            Column(modifier = Modifier.animateContentSize(animationSpec = KansoMotion.SizeSpring)) {
+                                uiState.focusTasks.forEachIndexed { index, task ->
+                                    FocusTaskRow(
+                                        task = task,
+                                        accentColor = kansoColors.brainAccent,
+                                        onToggle = { onToggleTask(task) },
+                                        onOpenTasks = { onOpenBrainTab(1) }
+                                    )
+                                    if (index < uiState.focusTasks.lastIndex) {
+                                        HorizontalDivider(
+                                            modifier = Modifier.padding(horizontal = 16.dp),
+                                            color = MaterialTheme.colorScheme.outlineVariant
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -336,23 +357,26 @@ fun TodayScreenContent(
 
         if (uiState.pinnedSnippets.isNotEmpty()) {
             item {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SectionHeader(
-                        title = "1-Tap Snippets",
-                        actionLabel = "All",
-                        onAction = { onOpenBrainTab(2) }
-                    )
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        items(uiState.pinnedSnippets, key = { it.id }) { snippet ->
-                            SnippetQuickCard(
-                                snippet = snippet,
-                                onCopy = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    onCopySnippet(snippet)
-                                }
-                            )
+                KansoStaggeredEntrance(index = 6) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SectionHeader(
+                            title = "1-Tap Snippets",
+                            actionLabel = "All",
+                            onAction = { onOpenBrainTab(2) }
+                        )
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            items(uiState.pinnedSnippets, key = { it.id }) { snippet ->
+                                SnippetQuickCard(
+                                    snippet = snippet,
+                                    modifier = Modifier.animateItem(),
+                                    onCopy = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        onCopySnippet(snippet)
+                                    }
+                                )
+                            }
                         }
                     }
                 }
@@ -360,7 +384,8 @@ fun TodayScreenContent(
         }
 
         item {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            KansoStaggeredEntrance(index = 7) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 SectionHeader(
                     title = "Recent Notes",
                     actionLabel = "All",
@@ -436,6 +461,7 @@ fun TodayScreenContent(
                     }
                 }
             }
+            }
         }
     }
 }
@@ -467,11 +493,13 @@ private fun MoneyHeroPulseCard(
                     shape = RoundedCornerShape(50),
                     color = Color.White.copy(alpha = 0.12f)
                 ) {
-                    Text(
-                        text = "Today · ${CurrencyFormatter.format(uiState.todayExpenseCents, uiState.currency)}",
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                    KansoAnimatedCurrencyText(
+                        amountCents = uiState.todayExpenseCents,
+                        currency = uiState.currency,
+                        prefix = "Today · ",
                         style = MaterialTheme.typography.labelMedium,
-                        color = kansoColors.heroOnSurface
+                        color = kansoColors.heroOnSurface,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                     )
                 }
             }
@@ -482,8 +510,9 @@ private fun MoneyHeroPulseCard(
                     style = MaterialTheme.typography.labelMedium,
                     color = kansoColors.heroOnSurfaceMuted
                 )
-                Text(
-                    text = CurrencyFormatter.format(uiState.monthExpenseCents, uiState.currency),
+                KansoAnimatedCurrencyText(
+                    amountCents = uiState.monthExpenseCents,
+                    currency = uiState.currency,
                     style = MaterialTheme.typography.displaySmall,
                     color = kansoColors.heroOnSurface
                 )
@@ -495,13 +524,16 @@ private fun MoneyHeroPulseCard(
             ) {
                 HeroStatMiniPill(
                     label = "Income",
-                    value = CurrencyFormatter.format(uiState.monthIncomeCents, uiState.currency),
+                    amountCents = uiState.monthIncomeCents,
+                    currency = uiState.currency,
                     dotColor = Color(0xFF34D399),
                     modifier = Modifier.weight(1f)
                 )
                 HeroStatMiniPill(
                     label = "Net",
-                    value = CurrencyFormatter.format(netCents, uiState.currency, showSign = true),
+                    amountCents = netCents,
+                    currency = uiState.currency,
+                    showSign = true,
                     dotColor = if (netCents >= 0L) Color(0xFF34D399) else Color(0xFFF87171),
                     modifier = Modifier.weight(1f)
                 )
@@ -525,8 +557,9 @@ private fun MoneyHeroPulseCard(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text(
-                            text = "${(rawProgress * 100).toInt()}% of budget",
+                        KansoAnimatedIntText(
+                            value = (rawProgress * 100).toInt(),
+                            format = { "$it% of budget" },
                             style = MaterialTheme.typography.labelMedium,
                             color = kansoColors.heroOnSurfaceMuted
                         )
@@ -551,9 +584,11 @@ private fun MoneyHeroPulseCard(
 @Composable
 private fun HeroStatMiniPill(
     label: String,
-    value: String,
+    amountCents: Long,
+    currency: AppCurrency,
     dotColor: Color,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    showSign: Boolean = false
 ) {
     Surface(
         modifier = modifier,
@@ -581,15 +616,15 @@ private fun HeroStatMiniPill(
                     color = MaterialTheme.kansoColors.heroOnSurfaceMuted
                 )
             }
-            Text(
-                text = value,
+            KansoAnimatedCurrencyText(
+                amountCents = amountCents,
+                currency = currency,
+                showSign = showSign,
                 style = MaterialTheme.typography.titleSmall.copy(
                     fontWeight = FontWeight.SemiBold,
                     fontFeatureSettings = "tnum"
                 ),
-                color = MaterialTheme.kansoColors.heroOnSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                color = MaterialTheme.kansoColors.heroOnSurface
             )
         }
     }
@@ -642,25 +677,29 @@ private fun BentoPulseRow(
                         size = 46.dp,
                         strokeWidth = 5.dp
                     ) {
-                        Icon(
-                            imageVector = Icons.Outlined.WaterDrop,
-                            contentDescription = null,
-                            tint = kansoColors.hydrationAccent,
-                            modifier = Modifier.size(18.dp)
-                        )
+                        KansoBounceOnChange(trigger = uiState.todayWaterMl) {
+                            Icon(
+                                imageVector = Icons.Outlined.WaterDrop,
+                                contentDescription = null,
+                                tint = kansoColors.hydrationAccent,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
                     }
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(
-                        text = "${uiState.todayWaterMl} ml",
+                    KansoAnimatedIntText(
+                        value = uiState.todayWaterMl,
+                        format = { "$it ml" },
                         style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                         color = kansoColors.hydrationAccent
                     )
-                    Text(
-                        text = "Goal $goal ml · ${(waterProgress * 100).toInt()}%",
+                    KansoAnimatedIntText(
+                        value = (waterProgress * 100).toInt(),
+                        format = { "Goal $goal ml · $it%" },
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -706,23 +745,34 @@ private fun BentoPulseRow(
                         size = 46.dp,
                         strokeWidth = 5.dp
                     ) {
-                        Icon(
-                            imageVector = Icons.Outlined.LocalFireDepartment,
-                            contentDescription = null,
-                            tint = kansoColors.habitsAccent,
-                            modifier = Modifier.size(18.dp)
-                        )
+                        KansoBounceOnChange(trigger = uiState.todayHabitsDone) {
+                            Icon(
+                                imageVector = Icons.Outlined.LocalFireDepartment,
+                                contentDescription = null,
+                                tint = kansoColors.habitsAccent,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
                     }
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(
-                        text = if (habitTotal > 0) "${uiState.todayHabitsDone}/$habitTotal done" else "No habits",
-                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
+                    if (habitTotal > 0) {
+                        KansoAnimatedIntText(
+                            value = uiState.todayHabitsDone,
+                            format = { "$it/$habitTotal done" },
+                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    } else {
+                        Text(
+                            text = "No habits",
+                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
                     val remaining = (habitTotal - uiState.todayHabitsDone).coerceAtLeast(0)
                     Text(
                         text = when {
@@ -773,7 +823,10 @@ private fun AttentionBentoCard(
         borderColor = warning.copy(alpha = 0.30f),
         contentPadding = PaddingValues(16.dp)
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(
+            modifier = Modifier.animateContentSize(animationSpec = KansoMotion.SizeSpring),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -974,10 +1027,11 @@ private fun FocusTaskRow(
 @Composable
 private fun SnippetQuickCard(
     snippet: SnippetItem,
-    onCopy: () -> Unit
+    onCopy: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     KansoBentoCard(
-        modifier = Modifier.width(186.dp),
+        modifier = modifier.width(186.dp),
         onClick = onCopy,
         cornerRadius = 18.dp,
         contentPadding = PaddingValues(14.dp)

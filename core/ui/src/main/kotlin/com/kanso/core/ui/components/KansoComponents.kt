@@ -1,9 +1,15 @@
 package com.kanso.core.ui.components
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
@@ -17,14 +23,17 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -185,9 +194,24 @@ fun KansoHeroCard(
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
-        targetValue = if (onClick != null && pressed) 0.988f else 1f,
-        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        targetValue = if (onClick != null && pressed) 0.985f else 1f,
+        animationSpec = KansoMotion.SnappySpring,
         label = "heroScale"
+    )
+    val animatedGlowColor by animateColorAsState(
+        targetValue = glowColor,
+        animationSpec = tween(durationMillis = 450),
+        label = "heroGlowColor"
+    )
+    val ambient = rememberInfiniteTransition(label = "heroAmbient")
+    val glowDrift by ambient.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 6500, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "heroGlowDrift"
     )
 
     Box(
@@ -218,11 +242,15 @@ fun KansoHeroCard(
             )
     ) {
         Canvas(modifier = Modifier.matchParentSize()) {
-            val center = Offset(size.width * 0.88f, size.height * 0.16f)
-            val radius = size.maxDimension * 0.62f
+            val center = Offset(
+                x = size.width * (0.86f - 0.08f * glowDrift),
+                y = size.height * (0.14f + 0.10f * glowDrift)
+            )
+            val radius = size.maxDimension * (0.60f + 0.06f * glowDrift)
+            val alpha = 0.20f + 0.09f * glowDrift
             drawCircle(
                 brush = Brush.radialGradient(
-                    colors = listOf(glowColor.copy(alpha = 0.24f), Color.Transparent),
+                    colors = listOf(animatedGlowColor.copy(alpha = alpha), Color.Transparent),
                     center = center,
                     radius = radius
                 ),
@@ -247,13 +275,32 @@ fun KansoProgressRing(
     size: Dp = 64.dp,
     strokeWidth: Dp = 7.dp,
     trackColor: Color = color.copy(alpha = 0.16f),
+    isPulsing: Boolean = false,
     centerContent: @Composable BoxScope.() -> Unit = {}
 ) {
     val animatedProgress by animateFloatAsState(
         targetValue = progress.coerceIn(0f, 1f),
-        animationSpec = tween(durationMillis = 700, easing = FastOutSlowInEasing),
+        animationSpec = tween(durationMillis = 680, easing = FastOutSlowInEasing),
         label = "ringProgress"
     )
+    val animatedColor by animateColorAsState(
+        targetValue = color,
+        animationSpec = tween(durationMillis = 360),
+        label = "ringColor"
+    )
+    val pulseAlpha = if (isPulsing) {
+        val transition = rememberInfiniteTransition(label = "ringPulse")
+        val value by transition.animateFloat(
+            initialValue = 0.10f,
+            targetValue = 0.34f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 1600, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "ringPulseAlpha"
+        )
+        value
+    } else 0f
 
     Box(
         modifier = modifier.size(size),
@@ -266,6 +313,18 @@ fun KansoProgressRing(
             val topLeft = Offset(inset, inset)
             val stroke = Stroke(width = strokePx, cap = StrokeCap.Round)
 
+            if (pulseAlpha > 0f) {
+                drawArc(
+                    color = animatedColor.copy(alpha = pulseAlpha),
+                    startAngle = 0f,
+                    sweepAngle = 360f,
+                    useCenter = false,
+                    topLeft = topLeft,
+                    size = arcSize,
+                    style = Stroke(width = strokePx * 1.85f, cap = StrokeCap.Round)
+                )
+            }
+
             drawArc(
                 color = trackColor,
                 startAngle = 0f,
@@ -277,7 +336,7 @@ fun KansoProgressRing(
             )
             if (animatedProgress > 0f) {
                 drawArc(
-                    color = color,
+                    color = animatedColor,
                     startAngle = -90f,
                     sweepAngle = 360f * animatedProgress,
                     useCenter = false,
@@ -389,6 +448,11 @@ fun KansoAnimatedProgressBar(
         animationSpec = tween(durationMillis = 650, easing = FastOutSlowInEasing),
         label = "barProgress"
     )
+    val animatedColor by animateColorAsState(
+        targetValue = color,
+        animationSpec = tween(durationMillis = 360),
+        label = "barColor"
+    )
     val shape = RoundedCornerShape(50)
     Box(
         modifier = modifier
@@ -402,7 +466,7 @@ fun KansoAnimatedProgressBar(
                 modifier = Modifier
                     .fillMaxHeight()
                     .fillMaxWidth(animated)
-                    .background(color, shape)
+                    .background(animatedColor, shape)
             )
         }
     }
@@ -489,12 +553,31 @@ fun KansoCheckCircle(
     )
     val bounce by animateFloatAsState(
         targetValue = if (checked) 1f else 0.92f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMedium
-        ),
+        animationSpec = KansoMotion.BouncySpring,
         label = "checkBounce"
     )
+    val iconScale by animateFloatAsState(
+        targetValue = if (checked) 1f else 0f,
+        animationSpec = KansoMotion.BouncySpring,
+        label = "checkIconScale"
+    )
+
+    val previousChecked = remember { mutableStateOf(checked) }
+    val rippleProgress = remember { Animatable(0f) }
+
+    LaunchedEffect(checked) {
+        val prev = previousChecked.value
+        previousChecked.value = checked
+        if (!prev && checked) {
+            rippleProgress.snapTo(0f)
+            rippleProgress.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(durationMillis = 420, easing = FastOutSlowInEasing)
+            )
+        } else if (!checked) {
+            rippleProgress.snapTo(0f)
+        }
+    }
 
     Box(
         modifier = modifier
@@ -506,6 +589,18 @@ fun KansoCheckCircle(
             },
         contentAlignment = Alignment.Center
     ) {
+        if (rippleProgress.value in 0.01f..0.99f) {
+            Canvas(modifier = Modifier.size(44.dp)) {
+                val p = rippleProgress.value
+                val radius = (12.dp + 9.dp * p).toPx()
+                val strokeWidth = (2.5f * (1f - p * 0.5f)).dp.toPx()
+                drawCircle(
+                    color = accentColor.copy(alpha = (1f - p) * 0.55f),
+                    radius = radius,
+                    style = Stroke(width = strokeWidth)
+                )
+            }
+        }
         Box(
             modifier = Modifier
                 .size(24.dp)
@@ -518,12 +613,17 @@ fun KansoCheckCircle(
                 .border(1.75.dp, border, CircleShape),
             contentAlignment = Alignment.Center
         ) {
-            if (checked) {
+            if (iconScale > 0.05f) {
                 Icon(
                     imageVector = Icons.Rounded.Check,
                     contentDescription = "Done",
                     tint = Color.White,
-                    modifier = Modifier.size(15.dp)
+                    modifier = Modifier
+                        .size(15.dp)
+                        .graphicsLayer {
+                            scaleX = iconScale
+                            scaleY = iconScale
+                        }
                 )
             }
         }
@@ -635,6 +735,17 @@ fun KansoEmptyState(
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null
 ) {
+    val floatTransition = rememberInfiniteTransition(label = "emptyFloat")
+    val floatOffset by floatTransition.animateFloat(
+        initialValue = -3f,
+        targetValue = 3f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 2200, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "emptyFloatY"
+    )
+
     KansoBentoCard(
         modifier = modifier.fillMaxWidth(),
         contentPadding = PaddingValues(horizontal = 24.dp, vertical = 28.dp)
@@ -646,6 +757,7 @@ fun KansoEmptyState(
             Box(
                 modifier = Modifier
                     .size(64.dp)
+                    .graphicsLayer { translationY = floatOffset.dp.toPx() }
                     .clip(CircleShape)
                     .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)),
                 contentAlignment = Alignment.Center
@@ -735,13 +847,22 @@ fun KansoPrimaryButton(
     contentColor: Color = MaterialTheme.colorScheme.onPrimary,
     contentPadding: PaddingValues = PaddingValues(horizontal = size.horizontalPadding, vertical = 0.dp)
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val animatedContainer by animateColorAsState(
+        targetValue = containerColor,
+        animationSpec = tween(durationMillis = 240),
+        label = "primaryBtnColor"
+    )
     Button(
         onClick = onClick,
-        modifier = modifier.height(size.height),
+        modifier = modifier
+            .kansoPressScale(interactionSource, pressedScale = 0.96f)
+            .height(size.height),
         enabled = enabled,
+        interactionSource = interactionSource,
         shape = RoundedCornerShape(size.cornerRadius),
         colors = ButtonDefaults.buttonColors(
-            containerColor = containerColor,
+            containerColor = animatedContainer,
             contentColor = contentColor
         ),
         contentPadding = contentPadding
@@ -762,10 +883,14 @@ fun KansoTonalButton(
     contentColor: Color = MaterialTheme.colorScheme.onPrimaryContainer,
     contentPadding: PaddingValues = PaddingValues(horizontal = size.horizontalPadding, vertical = 0.dp)
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
     FilledTonalButton(
         onClick = onClick,
-        modifier = modifier.height(size.height),
+        modifier = modifier
+            .kansoPressScale(interactionSource, pressedScale = 0.96f)
+            .height(size.height),
         enabled = enabled,
+        interactionSource = interactionSource,
         shape = RoundedCornerShape(size.cornerRadius),
         colors = ButtonDefaults.filledTonalButtonColors(
             containerColor = containerColor,
@@ -789,10 +914,14 @@ fun KansoOutlinedButton(
     borderColor: Color = MaterialTheme.colorScheme.outline,
     contentPadding: PaddingValues = PaddingValues(horizontal = size.horizontalPadding, vertical = 0.dp)
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
     OutlinedButton(
         onClick = onClick,
-        modifier = modifier.height(size.height),
+        modifier = modifier
+            .kansoPressScale(interactionSource, pressedScale = 0.96f)
+            .height(size.height),
         enabled = enabled,
+        interactionSource = interactionSource,
         shape = RoundedCornerShape(size.cornerRadius),
         colors = ButtonDefaults.outlinedButtonColors(contentColor = contentColor),
         border = BorderStroke(1.dp, if (enabled) borderColor else borderColor.copy(alpha = 0.35f)),
@@ -811,10 +940,14 @@ fun KansoSmallIconButton(
     enabled: Boolean = true,
     tint: Color = LocalContentColor.current
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
     IconButton(
         onClick = onClick,
-        modifier = modifier.size(36.dp),
-        enabled = enabled
+        modifier = modifier
+            .kansoPressScale(interactionSource, pressedScale = 0.90f)
+            .size(36.dp),
+        enabled = enabled,
+        interactionSource = interactionSource
     ) {
         Icon(
             imageVector = icon,
@@ -864,57 +997,87 @@ fun KansoSegmentedRow(
 ) {
     val haptic = LocalHapticFeedback.current
     val trackShape = RoundedCornerShape(16.dp)
+    val safeOptions = options.ifEmpty { return }
+    val safeIndex = selectedIndex.coerceIn(0, safeOptions.lastIndex)
+
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = trackShape,
         color = MaterialTheme.colorScheme.surfaceVariant,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
-        Row(
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(4.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                .padding(4.dp)
         ) {
-            options.forEachIndexed { index, label ->
-                val selected = index == selectedIndex
-                val pillColor by animateColorAsState(
-                    targetValue = if (selected) MaterialTheme.colorScheme.surface else Color.Transparent,
-                    animationSpec = tween(180),
-                    label = "segPillColor"
-                )
-                val pillTextColor by animateColorAsState(
-                    targetValue = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
-                    animationSpec = tween(180),
-                    label = "segTextColor"
-                )
+            val segmentWidth = maxWidth / safeOptions.size
+            val indicatorOffset by animateDpAsState(
+                targetValue = segmentWidth * safeIndex,
+                animationSpec = spring(
+                    dampingRatio = 0.78f,
+                    stiffness = Spring.StiffnessMediumLow
+                ),
+                label = "segmentedIndicatorOffset"
+            )
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(IntrinsicSize.Min)
+            ) {
                 Surface(
                     modifier = Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable {
-                            if (!selected) {
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                onSelect(index)
-                            }
-                        },
+                        .offset(x = indicatorOffset)
+                        .width(segmentWidth)
+                        .fillMaxHeight(),
                     shape = RoundedCornerShape(12.dp),
-                    color = pillColor,
-                    shadowElevation = if (selected) 1.dp else 0.dp
-                ) {
-                    Text(
-                        text = label,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 9.dp, horizontal = 6.dp),
-                        textAlign = TextAlign.Center,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        style = MaterialTheme.typography.labelLarge.copy(
-                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
-                        ),
-                        color = pillTextColor
-                    )
+                    color = MaterialTheme.colorScheme.surface,
+                    shadowElevation = 1.dp
+                ) {}
+
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    safeOptions.forEachIndexed { index, label ->
+                        val selected = index == safeIndex
+                        val pillTextColor by animateColorAsState(
+                            targetValue = if (selected) {
+                                MaterialTheme.colorScheme.onSurface
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            animationSpec = tween(180),
+                            label = "segTextColor"
+                        )
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null
+                                ) {
+                                    if (!selected) {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        onSelect(index)
+                                    }
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = label,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 9.dp, horizontal = 6.dp),
+                                textAlign = TextAlign.Center,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                style = MaterialTheme.typography.labelLarge.copy(
+                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
+                                ),
+                                color = pillTextColor
+                            )
+                        }
+                    }
                 }
             }
         }

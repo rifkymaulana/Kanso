@@ -39,6 +39,7 @@ import com.kanso.core.ui.components.KansoAccentIconBadge
 import com.kanso.core.ui.components.KansoBentoCard
 import com.kanso.core.ui.components.KansoDateFormatters
 import com.kanso.core.ui.components.KansoPillBadge
+import com.kanso.core.ui.components.KansoStaggeredEntrance
 import com.kanso.core.ui.theme.kansoColors
 
 private data class HubMiniAppItem(
@@ -139,49 +140,53 @@ fun HubRoute(
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(
-                    text = "Hub",
-                    style = MaterialTheme.typography.headlineMedium
-                )
-                Text(
-                    text = "Your personal offline-first workspace",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            KansoStaggeredEntrance(index = 0) {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        text = "Hub",
+                        style = MaterialTheme.typography.headlineMedium
+                    )
+                    Text(
+                        text = "Your personal offline-first workspace",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
 
         item {
-            KansoBentoCard(
-                modifier = Modifier.fillMaxWidth(),
-                onClick = onOpenSearch,
-                cornerRadius = 18.dp,
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 13.dp)
-            ) {
-                Row(
+            KansoStaggeredEntrance(index = 1) {
+                KansoBentoCard(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    onClick = onOpenSearch,
+                    cornerRadius = 18.dp,
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 13.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Search,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        text = "Search notes, expenses, tasks, expiries...",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.weight(1f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Icon(
-                        imageVector = Icons.Rounded.ChevronRight,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Search,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = "Search notes, expenses, tasks, expiries...",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Icon(
+                            imageVector = Icons.Rounded.ChevronRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }
@@ -193,12 +198,17 @@ fun HubRoute(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                pair.forEach { appItem ->
-                    MiniAppCard(
-                        item = appItem,
-                        modifier = Modifier.weight(1f),
-                        onClick = appItem.onClick
-                    )
+                pair.forEachIndexed { colIndex, appItem ->
+                    KansoStaggeredEntrance(
+                        index = 2 + rowIndex * 2 + colIndex,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        MiniAppCard(
+                            item = appItem,
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = appItem.onClick
+                        )
+                    }
                 }
                 if (pair.size == 1) {
                     Spacer(modifier = Modifier.weight(1f))
@@ -229,44 +239,46 @@ fun HubRoute(
                 }
                 else -> "Tap to set up Drive sync or export your database"
             }
-            KansoBentoCard(
-                modifier = Modifier.fillMaxWidth(),
-                onClick = onOpenSettings,
-                cornerRadius = 18.dp,
-                contentPadding = PaddingValues(14.dp)
-            ) {
-                Row(
+            KansoStaggeredEntrance(index = 8) {
+                KansoBentoCard(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    onClick = onOpenSettings,
+                    cornerRadius = 18.dp,
+                    contentPadding = PaddingValues(14.dp)
                 ) {
-                    KansoAccentIconBadge(
-                        icon = statusIcon,
-                        accent = backupAccent,
-                        size = 40.dp,
-                        iconSize = 20.dp
-                    )
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Text(
-                            text = statusTitle,
-                            style = MaterialTheme.typography.titleSmall
+                        KansoAccentIconBadge(
+                            icon = statusIcon,
+                            accent = backupAccent,
+                            size = 40.dp,
+                            iconSize = 20.dp
                         )
-                        Text(
-                            text = statusSubtitle,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Text(
+                                text = statusTitle,
+                                style = MaterialTheme.typography.titleSmall
+                            )
+                            Text(
+                                text = statusSubtitle,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.Rounded.ChevronRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    Icon(
-                        imageVector = Icons.Rounded.ChevronRight,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
                 }
             }
         }

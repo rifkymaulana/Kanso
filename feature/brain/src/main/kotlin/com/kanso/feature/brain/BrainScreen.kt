@@ -1,6 +1,7 @@
 package com.kanso.feature.brain
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -79,6 +80,7 @@ import com.kanso.core.ui.components.KansoButtonSize
 import com.kanso.core.ui.components.KansoCheckCircle
 import com.kanso.core.ui.components.KansoDateFormatters
 import com.kanso.core.ui.components.KansoEmptyState
+import com.kanso.core.ui.components.KansoMotion
 import com.kanso.core.ui.components.KansoPillBadge
 import com.kanso.core.ui.components.KansoSegmentedRow
 import com.kanso.core.ui.components.KansoSmallIconButton
@@ -266,7 +268,7 @@ fun BrainScreenContent(
 
         AnimatedContent(
             targetState = selectedTab,
-            transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
+            transitionSpec = { KansoMotion.directionalTabTransition(targetState, initialState) },
             label = "brainTab"
         ) { tab ->
             when (tab) {
@@ -374,7 +376,9 @@ private fun NotesTabContent(
         } else {
             items(uiState.notes, key = { it.id }) { note ->
                 KansoBentoCard(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .animateItem(),
                     onClick = { onEditNote(note) },
                     cornerRadius = 18.dp,
                     contentPadding = PaddingValues(14.dp)
@@ -503,7 +507,9 @@ private fun TasksTabContent(
                 val dueLabel = KansoDateFormatters.formatEpochDayLabel(dueDay)
 
                 KansoBentoCard(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .animateItem(),
                     onClick = { onEditTask(task) },
                     cornerRadius = 18.dp,
                     contentPadding = PaddingValues(start = 6.dp, end = 14.dp, top = 8.dp, bottom = 8.dp)
@@ -626,7 +632,9 @@ private fun SnippetsTabContent(
                 }
 
                 KansoBentoCard(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .animateItem(),
                     onClick = {
                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         onCopySnippet(snippet)
@@ -634,7 +642,10 @@ private fun SnippetsTabContent(
                     cornerRadius = 18.dp,
                     contentPadding = PaddingValues(14.dp)
                 ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(
+                        modifier = Modifier.animateContentSize(animationSpec = KansoMotion.SizeSpring),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
@@ -689,16 +700,22 @@ private fun SnippetsTabContent(
                             shape = RoundedCornerShape(10.dp),
                             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
                         ) {
-                            Text(
-                                text = displayValue,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 10.dp, vertical = 8.dp),
-                                style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
-                                color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                            AnimatedContent(
+                                targetState = displayValue,
+                                transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
+                                label = "snippetValueReveal"
+                            ) { shown ->
+                                Text(
+                                    text = shown,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         }
                     }
                 }

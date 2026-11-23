@@ -3,9 +3,15 @@ package com.kanso.feature.utilities
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -67,6 +73,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -91,6 +98,7 @@ import com.kanso.core.ui.components.KansoDateFormatters
 import com.kanso.core.ui.components.KansoDatePickerDialog
 import com.kanso.core.ui.components.KansoEmptyState
 import com.kanso.core.ui.components.KansoHeroCard
+import com.kanso.core.ui.components.KansoMotion
 import com.kanso.core.ui.components.KansoOutlinedButton
 import com.kanso.core.ui.components.KansoPillBadge
 import com.kanso.core.ui.components.KansoPrimaryButton
@@ -229,7 +237,7 @@ fun UtilitiesScreenContent(
 
             AnimatedContent(
                 targetState = selectedTab,
-                transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
+                transitionSpec = { KansoMotion.directionalTabTransition(targetState, initialState) },
                 label = "utilitiesTab"
             ) { tab ->
                 when (tab) {
@@ -325,33 +333,46 @@ private fun QrTabContent(
             }
             item {
                 val bitmap = remember(qrInput) { QrCodeUtils.generateQrBitmap(qrInput, 560) }
-                if (bitmap != null) {
-                    KansoBentoCard(contentPadding = PaddingValues(20.dp)) {
-                        Box(
-                            modifier = Modifier.fillMaxWidth(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(14.dp))
-                                    .background(Color.White)
-                                    .padding(14.dp)
-                            ) {
-                                Image(
-                                    bitmap = bitmap.asImageBitmap(),
-                                    contentDescription = "Generated QR code",
-                                    modifier = Modifier.size(220.dp)
-                                )
+                Column(modifier = Modifier.animateContentSize(animationSpec = KansoMotion.SizeSpring)) {
+                    AnimatedVisibility(
+                        visible = bitmap != null,
+                        enter = scaleIn(initialScale = 0.92f, animationSpec = tween(220)) + fadeIn(tween(220)),
+                        exit = scaleOut(targetScale = 0.92f, animationSpec = tween(160)) + fadeOut(tween(160))
+                    ) {
+                        if (bitmap != null) {
+                            KansoBentoCard(contentPadding = PaddingValues(20.dp)) {
+                                Box(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(14.dp))
+                                            .background(Color.White)
+                                            .padding(14.dp)
+                                    ) {
+                                        Image(
+                                            bitmap = bitmap.asImageBitmap(),
+                                            contentDescription = "Generated QR code",
+                                            modifier = Modifier.size(220.dp)
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
-                } else {
-                    KansoBentoCard(contentPadding = PaddingValues(18.dp)) {
-                        Text(
-                            text = "Type text or tap Wi-Fi QR above to generate a crisp offline QR code.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                    AnimatedVisibility(
+                        visible = bitmap == null,
+                        enter = fadeIn(tween(180)),
+                        exit = fadeOut(tween(120))
+                    ) {
+                        KansoBentoCard(contentPadding = PaddingValues(18.dp)) {
+                            Text(
+                                text = "Type text or tap Wi-Fi QR above to generate a crisp offline QR code.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }
@@ -434,10 +455,22 @@ private fun ConverterTabContent(
     var fromUnitId by remember(domain) { mutableStateOf(domainUnits.first().id) }
     var toUnitId by remember(domain) { mutableStateOf(domainUnits.getOrElse(1) { domainUnits.first() }.id) }
     var unitInput by rememberSaveable { mutableStateOf("1") }
+    var unitSwapCount by remember { mutableIntStateOf(0) }
+    val unitSwapRotation by animateFloatAsState(
+        targetValue = unitSwapCount * 180f,
+        animationSpec = KansoMotion.BouncySpring,
+        label = "unitSwapSpin"
+    )
 
     var fromCurrency by remember { mutableStateOf(AppCurrency.USD) }
     var toCurrency by remember { mutableStateOf(uiState.defaultCurrency) }
     var currencyInput by rememberSaveable { mutableStateOf("100") }
+    var currencySwapCount by remember { mutableIntStateOf(0) }
+    val currencySwapRotation by animateFloatAsState(
+        targetValue = currencySwapCount * 180f,
+        animationSpec = KansoMotion.BouncySpring,
+        label = "currencySwapSpin"
+    )
 
     val numberFormat = remember { DecimalFormat("#,##0.####") }
 
@@ -501,8 +534,10 @@ private fun ConverterTabContent(
                             KansoSmallIconButton(
                                 icon = Icons.Outlined.SwapHoriz,
                                 contentDescription = "Swap",
+                                modifier = Modifier.graphicsLayer { rotationZ = unitSwapRotation },
                                 onClick = {
                                     haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    unitSwapCount++
                                     val prevFrom = fromUnit.id
                                     fromUnitId = toUnit.id
                                     toUnitId = prevFrom
@@ -602,8 +637,10 @@ private fun ConverterTabContent(
                             KansoSmallIconButton(
                                 icon = Icons.Outlined.SwapHoriz,
                                 contentDescription = "Swap",
+                                modifier = Modifier.graphicsLayer { rotationZ = currencySwapRotation },
                                 onClick = {
                                     haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    currencySwapCount++
                                     val prev = fromCurrency
                                     fromCurrency = toCurrency
                                     toCurrency = prev
@@ -676,7 +713,11 @@ private fun FocusTabContent(
 ) {
     val haptic = LocalHapticFeedback.current
     val kansoColors = MaterialTheme.kansoColors
-    val ringColor = if (pomodoro.mode == PomodoroMode.FOCUS) Color(0xFF22D3EE) else Color(0xFF34D399)
+    val ringColor by animateColorAsState(
+        targetValue = if (pomodoro.mode == PomodoroMode.FOCUS) Color(0xFF22D3EE) else Color(0xFF34D399),
+        animationSpec = tween(360),
+        label = "focusRingColor"
+    )
     val mins = pomodoro.remainingSeconds / 60
     val secs = pomodoro.remainingSeconds % 60
     val timeLabel = String.format(Locale.US, "%02d:%02d", mins, secs)
@@ -718,12 +759,18 @@ private fun FocusTabContent(
                         shape = RoundedCornerShape(50),
                         color = Color.White.copy(alpha = 0.12f)
                     ) {
-                        Text(
-                            text = if (pomodoro.isRunning) "Running · ${pomodoro.mode.label}" else "Ready · ${pomodoro.mode.label}",
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = kansoColors.heroOnSurface
-                        )
+                        AnimatedContent(
+                            targetState = if (pomodoro.isRunning) "Running · ${pomodoro.mode.label}" else "Ready · ${pomodoro.mode.label}",
+                            transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
+                            label = "focusStatusPill"
+                        ) { statusLabel ->
+                            Text(
+                                text = statusLabel,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = kansoColors.heroOnSurface
+                            )
+                        }
                     }
 
                     KansoProgressRing(
@@ -731,7 +778,8 @@ private fun FocusTabContent(
                         color = ringColor,
                         trackColor = Color.White.copy(alpha = 0.14f),
                         size = 220.dp,
-                        strokeWidth = 12.dp
+                        strokeWidth = 12.dp,
+                        isPulsing = pomodoro.isRunning
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(
@@ -826,7 +874,9 @@ private fun CountdownsTabContent(
                 val deltaText = CountdownCalculations.formatDelta(delta)
 
                 KansoBentoCard(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .animateItem(),
                     onClick = { onEditCountdown(item) },
                     cornerRadius = 18.dp,
                     contentPadding = PaddingValues(14.dp)

@@ -1,12 +1,18 @@
 package com.kanso.app.navigation
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -48,6 +54,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
@@ -72,6 +79,7 @@ import com.kanso.app.update.AppUpdateState
 import com.kanso.app.update.KansoUpdateBanner
 import com.kanso.app.update.launchApkInstall
 import com.kanso.app.widget.KansoWidgetUpdater
+import com.kanso.core.ui.components.KansoMotion
 import com.kanso.core.ui.components.QuickCaptureMode
 import com.kanso.core.ui.components.QuickCaptureSheet
 import com.kanso.feature.brain.BrainRoute
@@ -96,6 +104,10 @@ private object Routes {
     fun brain(tab: Int = 0): String = "brain?tab=$tab"
     fun lifeAdmin(tab: Int = 0): String = "lifeadmin?tab=$tab"
     fun utilities(tab: Int = 0): String = "utilities?tab=$tab"
+
+    fun isTopLevel(route: String?): Boolean {
+        return route == TODAY || route == MONEY || route == BRAIN_PATTERN || route == HUB
+    }
 }
 
 private data class TopLevelTab(
@@ -226,6 +238,7 @@ fun KansoAppRoot(
             if (isTopLevel) {
                 KansoBottomDock(
                     hierarchy = backStackEntry?.destination?.hierarchy,
+                    isQuickCaptureOpen = showQuickCapture,
                     onSelectTab = navigateTopTab,
                     onQuickCapture = openDefaultQuickCapture
                 )
@@ -262,10 +275,42 @@ fun KansoAppRoot(
             NavHost(
                 navController = navController,
                 startDestination = Routes.TODAY,
-                enterTransition = { fadeIn(tween(200)) },
-                exitTransition = { fadeOut(tween(150)) },
-                popEnterTransition = { fadeIn(tween(200)) },
-                popExitTransition = { fadeOut(tween(150)) },
+                enterTransition = {
+                    if (Routes.isTopLevel(targetState.destination.route) &&
+                        Routes.isTopLevel(initialState.destination.route)
+                    ) {
+                        fadeIn(tween(220)) + scaleIn(initialScale = 0.97f, animationSpec = tween(220))
+                    } else {
+                        slideInHorizontally(tween(240)) { it / 5 } + fadeIn(tween(220))
+                    }
+                },
+                exitTransition = {
+                    if (Routes.isTopLevel(targetState.destination.route) &&
+                        Routes.isTopLevel(initialState.destination.route)
+                    ) {
+                        fadeOut(tween(150))
+                    } else {
+                        slideOutHorizontally(tween(200)) { -it / 10 } + fadeOut(tween(160))
+                    }
+                },
+                popEnterTransition = {
+                    if (Routes.isTopLevel(targetState.destination.route) &&
+                        Routes.isTopLevel(initialState.destination.route)
+                    ) {
+                        fadeIn(tween(220)) + scaleIn(initialScale = 0.97f, animationSpec = tween(220))
+                    } else {
+                        slideInHorizontally(tween(220)) { -it / 10 } + fadeIn(tween(200))
+                    }
+                },
+                popExitTransition = {
+                    if (Routes.isTopLevel(targetState.destination.route) &&
+                        Routes.isTopLevel(initialState.destination.route)
+                    ) {
+                        fadeOut(tween(150))
+                    } else {
+                        slideOutHorizontally(tween(220)) { it / 5 } + fadeOut(tween(180))
+                    }
+                },
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
@@ -413,10 +458,23 @@ fun KansoAppRoot(
 @Composable
 private fun KansoBottomDock(
     hierarchy: Sequence<NavDestination>?,
+    isQuickCaptureOpen: Boolean,
     onSelectTab: (String) -> Unit,
     onQuickCapture: () -> Unit
 ) {
     val haptic = LocalHapticFeedback.current
+    val fabInteraction = remember { MutableInteractionSource() }
+    val fabPressed by fabInteraction.collectIsPressedAsState()
+    val fabScale by animateFloatAsState(
+        targetValue = if (fabPressed) 0.90f else 1f,
+        animationSpec = KansoMotion.BouncySpring,
+        label = "fabScale"
+    )
+    val fabRotation by animateFloatAsState(
+        targetValue = if (isQuickCaptureOpen) 45f else 0f,
+        animationSpec = KansoMotion.BouncySpring,
+        label = "fabRotation"
+    )
     Surface(
         color = MaterialTheme.colorScheme.surface,
         shadowElevation = 0.dp
@@ -452,10 +510,17 @@ private fun KansoBottomDock(
                 ) {
                     Surface(
                         modifier = Modifier
+                            .graphicsLayer {
+                                scaleX = fabScale
+                                scaleY = fabScale
+                            }
                             .width(52.dp)
                             .height(42.dp)
                             .clip(RoundedCornerShape(16.dp))
-                            .clickable {
+                            .clickable(
+                                interactionSource = fabInteraction,
+                                indication = null
+                            ) {
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 onQuickCapture()
                             },
@@ -468,7 +533,9 @@ private fun KansoBottomDock(
                                 imageVector = Icons.Rounded.Add,
                                 contentDescription = "Quick Capture",
                                 tint = MaterialTheme.colorScheme.onPrimary,
-                                modifier = Modifier.size(26.dp)
+                                modifier = Modifier
+                                    .size(26.dp)
+                                    .graphicsLayer { rotationZ = fabRotation }
                             )
                         }
                     }
@@ -505,8 +572,18 @@ private fun DockTabItem(
         } else {
             Color.Transparent
         },
-        animationSpec = tween(180),
+        animationSpec = tween(200),
         label = "dockPill"
+    )
+    val pillWidth by animateDpAsState(
+        targetValue = if (selected) 50.dp else 28.dp,
+        animationSpec = KansoMotion.DpSpring,
+        label = "dockPillWidth"
+    )
+    val iconScale by animateFloatAsState(
+        targetValue = if (selected) 1.10f else 1.0f,
+        animationSpec = KansoMotion.BouncySpring,
+        label = "dockIconScale"
     )
     val contentColor by animateColorAsState(
         targetValue = if (selected) {
@@ -532,7 +609,7 @@ private fun DockTabItem(
     ) {
         Box(
             modifier = Modifier
-                .width(46.dp)
+                .width(pillWidth)
                 .height(28.dp)
                 .clip(RoundedCornerShape(50))
                 .background(pillColor),
@@ -542,7 +619,12 @@ private fun DockTabItem(
                 imageVector = if (selected) tab.selectedIcon else tab.unselectedIcon,
                 contentDescription = tab.label,
                 tint = contentColor,
-                modifier = Modifier.size(21.dp)
+                modifier = Modifier
+                    .size(21.dp)
+                    .graphicsLayer {
+                        scaleX = iconScale
+                        scaleY = iconScale
+                    }
             )
         }
         Text(

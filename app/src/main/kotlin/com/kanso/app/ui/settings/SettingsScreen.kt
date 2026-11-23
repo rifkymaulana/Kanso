@@ -12,6 +12,12 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -89,6 +95,7 @@ import com.kanso.core.ui.components.KansoAnimatedProgressBar
 import com.kanso.core.ui.components.KansoBentoCard
 import com.kanso.core.ui.components.KansoButtonSize
 import com.kanso.core.ui.components.KansoDateFormatters
+import com.kanso.core.ui.components.KansoMotion
 import com.kanso.core.ui.components.KansoOutlinedButton
 import com.kanso.core.ui.components.KansoPillBadge
 import com.kanso.core.ui.components.KansoPrimaryButton
@@ -348,7 +355,10 @@ fun SettingsRoute(
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     SettingsSectionOverline("BACKUP & RESTORE")
                     KansoBentoCard(contentPadding = PaddingValues(16.dp)) {
-                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Column(
+                            modifier = Modifier.animateContentSize(animationSpec = KansoMotion.SizeSpring),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
                             Text("Encrypted Backup & Restore", style = MaterialTheme.typography.titleMedium)
                             Text(
                                 text = "Exports your entire database (including Vault secrets and preferences) into a single AES-256-GCM passphrase-encrypted .kanso.enc file.",
@@ -363,42 +373,48 @@ fun SettingsRoute(
                                 color = MaterialTheme.colorScheme.primary
                             )
 
-                            when (val status = uiState.backupStatus) {
-                                BackupOperationStatus.Idle -> Unit
-                                is BackupOperationStatus.InProgress -> {
-                                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        KansoAnimatedProgressBar(progress = 0.65f, height = 7.dp)
-                                        Text(status.label, style = MaterialTheme.typography.labelMedium)
+                            AnimatedContent(
+                                targetState = uiState.backupStatus,
+                                transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
+                                label = "backupStatus"
+                            ) { status ->
+                                when (status) {
+                                    BackupOperationStatus.Idle -> Unit
+                                    is BackupOperationStatus.InProgress -> {
+                                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            KansoAnimatedProgressBar(progress = 0.65f, height = 7.dp)
+                                            Text(status.label, style = MaterialTheme.typography.labelMedium)
+                                        }
                                     }
-                                }
-                                is BackupOperationStatus.Success -> {
-                                    Surface(
-                                        shape = RoundedCornerShape(12.dp),
-                                        color = MaterialTheme.colorScheme.primaryContainer
-                                    ) {
-                                        Text(
-                                            text = status.message,
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(12.dp),
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                                        )
+                                    is BackupOperationStatus.Success -> {
+                                        Surface(
+                                            shape = RoundedCornerShape(12.dp),
+                                            color = MaterialTheme.colorScheme.primaryContainer
+                                        ) {
+                                            Text(
+                                                text = status.message,
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(12.dp),
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                                            )
+                                        }
                                     }
-                                }
-                                is BackupOperationStatus.Error -> {
-                                    Surface(
-                                        shape = RoundedCornerShape(12.dp),
-                                        color = MaterialTheme.colorScheme.errorContainer
-                                    ) {
-                                        Text(
-                                            text = status.message,
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(12.dp),
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = MaterialTheme.colorScheme.onErrorContainer
-                                        )
+                                    is BackupOperationStatus.Error -> {
+                                        Surface(
+                                            shape = RoundedCornerShape(12.dp),
+                                            color = MaterialTheme.colorScheme.errorContainer
+                                        ) {
+                                            Text(
+                                                text = status.message,
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(12.dp),
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.onErrorContainer
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -671,7 +687,10 @@ private fun GoogleDriveSyncCard(
     val busy = driveState is DriveSyncState.Authorizing || driveState is DriveSyncState.Syncing
 
     KansoBentoCard(contentPadding = PaddingValues(16.dp)) {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(
+            modifier = Modifier.animateContentSize(animationSpec = KansoMotion.SizeSpring),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -768,94 +787,100 @@ private fun GoogleDriveSyncCard(
                 }
             }
 
-            when (driveState) {
-                DriveSyncState.Idle,
-                is DriveSyncState.NeedsPassphrase,
-                is DriveSyncState.NeedsConsent -> Unit
+            AnimatedContent(
+                targetState = driveState,
+                transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
+                label = "driveSyncStatus"
+            ) { currentDriveState ->
+                when (currentDriveState) {
+                    DriveSyncState.Idle,
+                    is DriveSyncState.NeedsPassphrase,
+                    is DriveSyncState.NeedsConsent -> Unit
 
-                DriveSyncState.Authorizing -> {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        KansoAnimatedProgressBar(progress = 0.35f, height = 7.dp)
-                        Text("Authorizing with Google Drive...", style = MaterialTheme.typography.labelMedium)
+                    DriveSyncState.Authorizing -> {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            KansoAnimatedProgressBar(progress = 0.35f, height = 7.dp)
+                            Text("Authorizing with Google Drive...", style = MaterialTheme.typography.labelMedium)
+                        }
                     }
-                }
 
-                is DriveSyncState.Syncing -> {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        KansoAnimatedProgressBar(progress = 0.72f, height = 7.dp)
-                        Text(driveState.label, style = MaterialTheme.typography.labelMedium)
+                    is DriveSyncState.Syncing -> {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            KansoAnimatedProgressBar(progress = 0.72f, height = 7.dp)
+                            Text(currentDriveState.label, style = MaterialTheme.typography.labelMedium)
+                        }
                     }
-                }
 
-                is DriveSyncState.Synced -> {
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer
-                    ) {
-                        Text(
-                            text = driveState.message,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                    }
-                }
-
-                is DriveSyncState.Conflict -> {
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = kansoColors.warning.copy(alpha = 0.14f)
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                    is DriveSyncState.Synced -> {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer
                         ) {
                             Text(
-                                text = "Both this device and Google Drive have changes. Choose which copy to keep.",
+                                text = currentDriveState.message,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            KansoOutlinedButton(
-                                text = "Resolve Conflict",
-                                size = KansoButtonSize.COMPACT,
-                                onClick = onOpenConflictDialog
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
                         }
                     }
-                }
 
-                is DriveSyncState.Error -> {
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.errorContainer
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                    is DriveSyncState.Conflict -> {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = kansoColors.warning.copy(alpha = 0.14f)
                         ) {
-                            Text(
-                                text = driveState.message,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onErrorContainer
-                            )
-                            if (driveState.isPassphraseError) {
-                                KansoOutlinedButton(
-                                    text = "Update Sync Passphrase",
-                                    size = KansoButtonSize.COMPACT,
-                                    onClick = onEditPassphrase
-                                )
-                            } else if (driveState.isConfigError) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
                                 Text(
-                                    text = "In Google Cloud Console: enable Google Drive API, configure OAuth consent screen (drive.appdata + test user), and create an Android OAuth 2.0 Client ID for com.kanso.app using this APK's SHA-1 certificate fingerprint.",
-                                    style = MaterialTheme.typography.labelMedium,
+                                    text = "Both this device and Google Drive have changes. Choose which copy to keep.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                KansoOutlinedButton(
+                                    text = "Resolve Conflict",
+                                    size = KansoButtonSize.COMPACT,
+                                    onClick = onOpenConflictDialog
+                                )
+                            }
+                        }
+                    }
+
+                    is DriveSyncState.Error -> {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.errorContainer
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = currentDriveState.message,
+                                    style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onErrorContainer
                                 )
+                                if (currentDriveState.isPassphraseError) {
+                                    KansoOutlinedButton(
+                                        text = "Update Sync Passphrase",
+                                        size = KansoButtonSize.COMPACT,
+                                        onClick = onEditPassphrase
+                                    )
+                                } else if (currentDriveState.isConfigError) {
+                                    Text(
+                                        text = "In Google Cloud Console: enable Google Drive API, configure OAuth consent screen (drive.appdata + test user), and create an Android OAuth 2.0 Client ID for com.kanso.app using this APK's SHA-1 certificate fingerprint.",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                }
                             }
                         }
                     }
@@ -1083,7 +1108,10 @@ private fun AppUpdatesCard(
 ) {
     val prefs = uiState.preferences
     KansoBentoCard(contentPadding = PaddingValues(16.dp)) {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(
+            modifier = Modifier.animateContentSize(animationSpec = KansoMotion.SizeSpring),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -1159,142 +1187,148 @@ private fun AppUpdatesCard(
                 }
             }
 
-            when (val status = uiState.updateState) {
-                AppUpdateState.Idle -> Unit
-                AppUpdateState.Checking -> {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        KansoAnimatedProgressBar(progress = 0.45f, height = 7.dp)
-                        Text("Checking GitHub Releases...", style = MaterialTheme.typography.labelMedium)
+            AnimatedContent(
+                targetState = uiState.updateState,
+                transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
+                label = "appUpdateStatus"
+            ) { status ->
+                when (status) {
+                    AppUpdateState.Idle -> Unit
+                    AppUpdateState.Checking -> {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            KansoAnimatedProgressBar(progress = 0.45f, height = 7.dp)
+                            Text("Checking GitHub Releases...", style = MaterialTheme.typography.labelMedium)
+                        }
                     }
-                }
 
-                is AppUpdateState.UpToDate -> {
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer
-                    ) {
-                        Text(
-                            text = "You are on the latest version (v${status.currentVersion}).",
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                    }
-                }
-
-                is AppUpdateState.UpdateAvailable -> {
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                    is AppUpdateState.UpToDate -> {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer
                         ) {
                             Text(
-                                text = "New version ${status.release.tagName} available",
-                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                                text = "You are on the latest version (v${status.currentVersion}).",
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
-                            if (status.release.releaseNotes.isNotBlank()) {
+                        }
+                    }
+
+                    is AppUpdateState.UpdateAvailable -> {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
                                 Text(
-                                    text = status.release.releaseNotes.take(280),
-                                    style = MaterialTheme.typography.bodyMedium,
+                                    text = "New version ${status.release.tagName} available",
+                                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
                                     color = MaterialTheme.colorScheme.onPrimaryContainer
                                 )
-                            }
-                            KansoPrimaryButton(
-                                text = "Download & Install ${status.release.tagName}",
-                                leadingIcon = Icons.Outlined.InstallMobile,
-                                size = KansoButtonSize.LARGE,
-                                modifier = Modifier.fillMaxWidth(),
-                                onClick = { onDownloadAndInstall(status.release) }
-                            )
-                        }
-                    }
-                }
-
-                is AppUpdateState.Downloading -> {
-                    val total = status.totalBytes
-                    val progress = if (total > 0L) {
-                        (status.downloadedBytes.toFloat() / total.toFloat()).coerceIn(0f, 1f)
-                    } else 0.15f
-                    val mbDownloaded = String.format(java.util.Locale.US, "%.1f", status.downloadedBytes / 1_048_576.0)
-                    val mbTotal = if (total > 0L) {
-                        String.format(java.util.Locale.US, "%.1f MB", total / 1_048_576.0)
-                    } else "—"
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        KansoAnimatedProgressBar(progress = progress, height = 7.dp)
-                        Text(
-                            text = "Downloading ${status.release.tagName}: $mbDownloaded / $mbTotal",
-                            style = MaterialTheme.typography.labelMedium
-                        )
-                    }
-                }
-
-                is AppUpdateState.Verifying -> {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        KansoAnimatedProgressBar(progress = 0.95f, height = 7.dp)
-                        Text(
-                            text = "Verifying ${status.release.tagName} SHA-256 checksum...",
-                            style = MaterialTheme.typography.labelMedium
-                        )
-                    }
-                }
-
-                is AppUpdateState.ReadyToInstall -> {
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text(
-                                text = "${status.release.tagName} verified and ready to install.",
-                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                            KansoPrimaryButton(
-                                text = "Install APK",
-                                leadingIcon = Icons.Outlined.InstallMobile,
-                                size = KansoButtonSize.LARGE,
-                                modifier = Modifier.fillMaxWidth(),
-                                onClick = { onInstallApk(status.apkFile) }
-                            )
-                        }
-                    }
-                }
-
-                is AppUpdateState.Error -> {
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.errorContainer
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text(
-                                text = status.message,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onErrorContainer
-                            )
-                            if (status.needsToken) {
-                                KansoOutlinedButton(
-                                    text = "Set GitHub Token",
-                                    size = KansoButtonSize.COMPACT,
-                                    onClick = onEditGithubToken
+                                if (status.release.releaseNotes.isNotBlank()) {
+                                    Text(
+                                        text = status.release.releaseNotes.take(280),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                }
+                                KansoPrimaryButton(
+                                    text = "Download & Install ${status.release.tagName}",
+                                    leadingIcon = Icons.Outlined.InstallMobile,
+                                    size = KansoButtonSize.LARGE,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    onClick = { onDownloadAndInstall(status.release) }
                                 )
+                            }
+                        }
+                    }
+
+                    is AppUpdateState.Downloading -> {
+                        val total = status.totalBytes
+                        val progress = if (total > 0L) {
+                            (status.downloadedBytes.toFloat() / total.toFloat()).coerceIn(0f, 1f)
+                        } else 0.15f
+                        val mbDownloaded = String.format(java.util.Locale.US, "%.1f", status.downloadedBytes / 1_048_576.0)
+                        val mbTotal = if (total > 0L) {
+                            String.format(java.util.Locale.US, "%.1f MB", total / 1_048_576.0)
+                        } else "—"
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            KansoAnimatedProgressBar(progress = progress, height = 7.dp)
+                            Text(
+                                text = "Downloading ${status.release.tagName}: $mbDownloaded / $mbTotal",
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                        }
+                    }
+
+                    is AppUpdateState.Verifying -> {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            KansoAnimatedProgressBar(progress = 0.95f, height = 7.dp)
+                            Text(
+                                text = "Verifying ${status.release.tagName} SHA-256 checksum...",
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                        }
+                    }
+
+                    is AppUpdateState.ReadyToInstall -> {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = "${status.release.tagName} verified and ready to install.",
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                                KansoPrimaryButton(
+                                    text = "Install APK",
+                                    leadingIcon = Icons.Outlined.InstallMobile,
+                                    size = KansoButtonSize.LARGE,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    onClick = { onInstallApk(status.apkFile) }
+                                )
+                            }
+                        }
+                    }
+
+                    is AppUpdateState.Error -> {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.errorContainer
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = status.message,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                                if (status.needsToken) {
+                                    KansoOutlinedButton(
+                                        text = "Set GitHub Token",
+                                        size = KansoButtonSize.COMPACT,
+                                        onClick = onEditGithubToken
+                                    )
+                                }
                             }
                         }
                     }

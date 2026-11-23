@@ -2,6 +2,13 @@ package com.kanso.app.update
 
 import android.content.Context
 import android.content.Intent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -26,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import com.kanso.core.ui.components.KansoAccentIconBadge
 import com.kanso.core.ui.components.KansoAnimatedProgressBar
 import com.kanso.core.ui.components.KansoButtonSize
+import com.kanso.core.ui.components.KansoMotion
 import com.kanso.core.ui.components.KansoPrimaryButton
 import java.io.File
 
@@ -67,23 +75,29 @@ fun KansoUpdateBanner(
         is AppUpdateState.ReadyToInstall -> updateState.release.tagName
         else -> null
     }
-    if (activeTag == null || activeTag == dismissedTag) return
+    val visible = activeTag != null && activeTag != dismissedTag
 
     val accent = MaterialTheme.colorScheme.primary
-    Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        shape = RoundedCornerShape(18.dp),
-        color = accent.copy(alpha = 0.10f),
-        border = BorderStroke(1.dp, accent.copy(alpha = 0.28f))
+    AnimatedVisibility(
+        visible = visible,
+        enter = expandVertically(KansoMotion.SizeSpring) + fadeIn(tween(220)),
+        exit = shrinkVertically() + fadeOut(tween(160))
     ) {
-        Column(
-            modifier = Modifier
+        Surface(
+            modifier = modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            shape = RoundedCornerShape(18.dp),
+            color = accent.copy(alpha = 0.10f),
+            border = BorderStroke(1.dp, accent.copy(alpha = 0.28f))
         ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .animateContentSize(animationSpec = KansoMotion.SizeSpring)
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
             when (updateState) {
                 is AppUpdateState.UpdateAvailable -> {
                     Row(
@@ -214,5 +228,6 @@ fun KansoUpdateBanner(
                 else -> Unit
             }
         }
+    }
     }
 }

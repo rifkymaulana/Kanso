@@ -1,6 +1,8 @@
 package com.kanso.feature.habits
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -62,6 +64,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -74,11 +77,14 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.kanso.core.model.DailyHealthLog
 import com.kanso.core.model.HabitItem
+import com.kanso.core.ui.components.KansoAnimatedIntText
 import com.kanso.core.ui.components.KansoBentoCard
+import com.kanso.core.ui.components.KansoBounceOnChange
 import com.kanso.core.ui.components.KansoButtonSize
 import com.kanso.core.ui.components.KansoCheckCircle
 import com.kanso.core.ui.components.KansoDateFormatters
 import com.kanso.core.ui.components.KansoEmptyState
+import com.kanso.core.ui.components.KansoMotion
 import com.kanso.core.ui.components.KansoOutlinedButton
 import com.kanso.core.ui.components.KansoPillBadge
 import com.kanso.core.ui.components.KansoPrimaryButton
@@ -206,7 +212,7 @@ fun HabitsScreenContent(
 
             AnimatedContent(
                 targetState = selectedTab,
-                transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
+                transitionSpec = { KansoMotion.directionalTabTransition(targetState, initialState) },
                 label = "habitsTab"
             ) { tab ->
                 when (tab) {
@@ -264,8 +270,9 @@ private fun HabitsTabContent(
                         size = 64.dp,
                         strokeWidth = 6.dp
                     ) {
-                        Text(
-                            text = "${(ratio * 100).toInt()}%",
+                        KansoAnimatedIntText(
+                            value = (ratio * 100).toInt(),
+                            format = { "$it%" },
                             style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
                             color = habitsAccent
                         )
@@ -275,8 +282,9 @@ private fun HabitsTabContent(
                         verticalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
                         Text("Today's Habits", style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            text = "${uiState.completedTodayCount} of ${uiState.totalHabitsCount} completed",
+                        KansoAnimatedIntText(
+                            value = uiState.completedTodayCount,
+                            format = { "$it of ${uiState.totalHabitsCount} completed" },
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -304,7 +312,9 @@ private fun HabitsTabContent(
         } else {
             items(uiState.habits, key = { it.habit.id }) { row ->
                 KansoBentoCard(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .animateItem(),
                     onClick = { onOpenHeatmap(row) },
                     cornerRadius = 18.dp,
                     contentPadding = PaddingValues(start = 6.dp, end = 6.dp, top = 10.dp, bottom = 10.dp)
@@ -337,13 +347,16 @@ private fun HabitsTabContent(
                                 )
                                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                     row.last30DaysGrid.takeLast(7).forEach { (_, done) ->
+                                        val tileColor by animateColorAsState(
+                                            targetValue = if (done) habitsAccent else MaterialTheme.colorScheme.surfaceVariant,
+                                            animationSpec = tween(260),
+                                            label = "habitSquareColor"
+                                        )
                                         Box(
                                             modifier = Modifier
                                                 .size(10.dp)
                                                 .clip(RoundedCornerShape(3.dp))
-                                                .background(
-                                                    if (done) habitsAccent else MaterialTheme.colorScheme.surfaceVariant
-                                                )
+                                                .background(tileColor)
                                         )
                                     }
                                 }
@@ -435,11 +448,17 @@ private fun HealthTabContent(
                         ) {
                             Icon(Icons.Outlined.ChevronLeft, contentDescription = "Previous day")
                         }
-                        Text(
-                            text = uiState.selectedDateLabel,
-                            style = MaterialTheme.typography.titleSmall,
-                            modifier = Modifier.padding(horizontal = 12.dp)
-                        )
+                        AnimatedContent(
+                            targetState = uiState.selectedDateLabel,
+                            transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
+                            label = "healthDateLabel"
+                        ) { dateLabel ->
+                            Text(
+                                text = dateLabel,
+                                style = MaterialTheme.typography.titleSmall,
+                                modifier = Modifier.padding(horizontal = 12.dp)
+                            )
+                        }
                         Box(
                             modifier = Modifier
                                 .size(34.dp)
@@ -481,7 +500,9 @@ private fun HealthTabContent(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Icon(Icons.Outlined.WaterDrop, contentDescription = null, tint = hydrationAccent)
+                            KansoBounceOnChange(trigger = waterMl) {
+                                Icon(Icons.Outlined.WaterDrop, contentDescription = null, tint = hydrationAccent)
+                            }
                             Text("Hydration", style = MaterialTheme.typography.titleMedium)
                         }
                         KansoPillBadge(text = "${(progress * 100).toInt()}% of goal", color = hydrationAccent)
@@ -494,8 +515,9 @@ private fun HealthTabContent(
                         strokeWidth = 10.dp
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                text = "$waterMl",
+                            KansoAnimatedIntText(
+                                value = waterMl,
+                                format = { "$it" },
                                 style = MaterialTheme.typography.headlineMedium,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
@@ -563,20 +585,40 @@ private fun HealthTabContent(
                     ) {
                         moodOptions.forEach { mood ->
                             val selected = selectedMood == mood.score
+                            val moodScale by animateFloatAsState(
+                                targetValue = if (selected) 1.06f else 1f,
+                                animationSpec = KansoMotion.BouncySpring,
+                                label = "moodScale"
+                            )
+                            val moodBg by animateColorAsState(
+                                targetValue = if (selected) {
+                                    mood.color.copy(alpha = 0.16f)
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                },
+                                animationSpec = tween(200),
+                                label = "moodBg"
+                            )
+                            val moodBorder by animateColorAsState(
+                                targetValue = if (selected) mood.color else MaterialTheme.colorScheme.outlineVariant,
+                                animationSpec = tween(200),
+                                label = "moodBorder"
+                            )
                             Surface(
                                 modifier = Modifier
                                     .weight(1f)
+                                    .graphicsLayer {
+                                        scaleX = moodScale
+                                        scaleY = moodScale
+                                    }
                                     .clip(RoundedCornerShape(14.dp))
                                     .clickable {
                                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                         selectedMood = if (selected) null else mood.score
                                     },
                                 shape = RoundedCornerShape(14.dp),
-                                color = if (selected) mood.color.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                                border = BorderStroke(
-                                    1.dp,
-                                    if (selected) mood.color else MaterialTheme.colorScheme.outlineVariant
-                                )
+                                color = moodBg,
+                                border = BorderStroke(1.dp, moodBorder)
                             ) {
                                 Column(
                                     modifier = Modifier.padding(vertical = 10.dp, horizontal = 2.dp),
@@ -711,6 +753,7 @@ private fun InsightsTabContent(uiState: HabitsUiState) {
         } else {
             items(uiState.recentHealthLogs, key = { it.epochDay }) { item ->
                 KansoBentoCard(
+                    modifier = Modifier.animateItem(),
                     cornerRadius = 18.dp,
                     contentPadding = PaddingValues(14.dp)
                 ) {

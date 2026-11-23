@@ -6,9 +6,12 @@ import android.content.Intent
 import android.provider.Settings
 import android.view.WindowManager
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -99,6 +102,7 @@ import com.kanso.core.ui.components.KansoButtonSize
 import com.kanso.core.ui.components.KansoDateFormatters
 import com.kanso.core.ui.components.KansoEmptyState
 import com.kanso.core.ui.components.KansoHeroCard
+import com.kanso.core.ui.components.KansoMotion
 import com.kanso.core.ui.components.KansoOutlinedButton
 import com.kanso.core.ui.components.KansoPillBadge
 import com.kanso.core.ui.components.KansoPrimaryButton
@@ -348,7 +352,7 @@ fun LifeAdminScreenContent(
 
             AnimatedContent(
                 targetState = selectedTab,
-                transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
+                transitionSpec = { KansoMotion.directionalTabTransition(targetState, initialState) },
                 label = "lifeAdminTab"
             ) { tab ->
                 when (tab) {
@@ -449,7 +453,9 @@ private fun ExpiriesTabContent(
                 }
 
                 KansoBentoCard(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .animateItem(),
                     onClick = { onEditExpiry(item) },
                     cornerRadius = 18.dp,
                     contentPadding = PaddingValues(14.dp)
@@ -577,7 +583,9 @@ private fun MaintenanceTabContent(
                 val nextOdo = log.nextDueOdometerKm
 
                 KansoBentoCard(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .animateItem(),
                     onClick = { onEditMaintenance(log) },
                     cornerRadius = 18.dp,
                     contentPadding = PaddingValues(14.dp)
@@ -653,99 +661,6 @@ private fun VaultTabContent(
     val haptic = LocalHapticFeedback.current
     val kansoColors = MaterialTheme.kansoColors
 
-    if (!uiState.isVaultUnlocked) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(vertical = 16.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            KansoHeroCard(
-                glowColor = kansoColors.lifeAdminAccent,
-                contentPadding = PaddingValues(24.dp)
-            ) {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(64.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFFFBBF24).copy(alpha = 0.16f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Lock,
-                            contentDescription = null,
-                            modifier = Modifier.size(30.dp),
-                            tint = Color(0xFFFBBF24)
-                        )
-                    }
-
-                    Text(
-                        text = "Private Vault Locked",
-                        style = MaterialTheme.typography.headlineMedium,
-                        color = kansoColors.heroOnSurface
-                    )
-
-                    Surface(
-                        shape = RoundedCornerShape(50),
-                        color = Color.White.copy(alpha = 0.12f)
-                    ) {
-                        Text(
-                            text = "${uiState.vaultItemCount} encrypted secret(s) · AES-256-GCM",
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = kansoColors.heroOnSurface
-                        )
-                    }
-
-                    Text(
-                        text = "Backed by Android Keystore hardware encryption. Screenshots & screen recording are blocked while unlocked.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = kansoColors.heroOnSurfaceMuted,
-                        textAlign = TextAlign.Center
-                    )
-
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    if (availability == BiometricAvailability.AVAILABLE) {
-                        KansoPrimaryButton(
-                            text = "Unlock with Biometrics / PIN",
-                            leadingIcon = Icons.Outlined.Fingerprint,
-                            size = KansoButtonSize.LARGE,
-                            containerColor = Color(0xFF2DD4BF),
-                            contentColor = Color(0xFF042F2E),
-                            modifier = Modifier.fillMaxWidth(),
-                            onClick = {
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                onRequestUnlockVault()
-                            }
-                        )
-                    } else {
-                        Text(
-                            text = "Set a device PIN, pattern, or biometric lock in Android Settings to unlock the Private Vault.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = Color(0xFFFCA5A5),
-                            textAlign = TextAlign.Center
-                        )
-                        KansoOutlinedButton(
-                            text = "Open Security Settings",
-                            size = KansoButtonSize.LARGE,
-                            contentColor = kansoColors.heroOnSurface,
-                            borderColor = Color.White.copy(alpha = 0.35f),
-                            modifier = Modifier.fillMaxWidth(),
-                            onClick = onOpenSecuritySettings
-                        )
-                    }
-                }
-            }
-        }
-        return
-    }
-
     val revealedIds = remember { mutableStateMapOf<Long, Boolean>() }
     var categoryFilter by remember { mutableStateOf<VaultCategory?>(null) }
     val filtered = remember(uiState.vaultItems, categoryFilter) {
@@ -756,148 +671,259 @@ private fun VaultTabContent(
         }
     }
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 32.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        item {
-            KansoBentoCard(
-                containerColor = kansoColors.income.copy(alpha = 0.08f),
-                borderColor = kansoColors.income.copy(alpha = 0.28f),
-                cornerRadius = 18.dp,
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp)
+    AnimatedContent(
+        targetState = uiState.isVaultUnlocked,
+        transitionSpec = {
+            (fadeIn(tween(240)) + scaleIn(initialScale = 0.96f, animationSpec = tween(240))) togetherWith
+                (fadeOut(tween(160)) + scaleOut(targetScale = 0.96f, animationSpec = tween(160)))
+        },
+        label = "vaultLockState"
+    ) { unlocked ->
+        if (!unlocked) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(vertical = 16.dp),
+                contentAlignment = Alignment.Center
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                KansoHeroCard(
+                    glowColor = kansoColors.lifeAdminAccent,
+                    contentPadding = PaddingValues(24.dp)
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.weight(1f)
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Icon(
-                            Icons.Outlined.Shield,
-                            contentDescription = null,
-                            tint = kansoColors.income
-                        )
+                        Box(
+                            modifier = Modifier
+                                .size(64.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFFFBBF24).copy(alpha = 0.16f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Lock,
+                                contentDescription = null,
+                                modifier = Modifier.size(30.dp),
+                                tint = Color(0xFFFBBF24)
+                            )
+                        }
+
                         Text(
-                            text = "Unlocked · Screenshots blocked",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = kansoColors.income
+                            text = "Private Vault Locked",
+                            style = MaterialTheme.typography.headlineMedium,
+                            color = kansoColors.heroOnSurface
                         )
+
+                        Surface(
+                            shape = RoundedCornerShape(50),
+                            color = Color.White.copy(alpha = 0.12f)
+                        ) {
+                            Text(
+                                text = "${uiState.vaultItemCount} encrypted secret(s) · AES-256-GCM",
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = kansoColors.heroOnSurface
+                            )
+                        }
+
+                        Text(
+                            text = "Backed by Android Keystore hardware encryption. Screenshots & screen recording are blocked while unlocked.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = kansoColors.heroOnSurfaceMuted,
+                            textAlign = TextAlign.Center
+                        )
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        if (availability == BiometricAvailability.AVAILABLE) {
+                            KansoPrimaryButton(
+                                text = "Unlock with Biometrics / PIN",
+                                leadingIcon = Icons.Outlined.Fingerprint,
+                                size = KansoButtonSize.LARGE,
+                                containerColor = Color(0xFF2DD4BF),
+                                contentColor = Color(0xFF042F2E),
+                                modifier = Modifier.fillMaxWidth(),
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    onRequestUnlockVault()
+                                }
+                            )
+                        } else {
+                            Text(
+                                text = "Set a device PIN, pattern, or biometric lock in Android Settings to unlock the Private Vault.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Color(0xFFFCA5A5),
+                                textAlign = TextAlign.Center
+                            )
+                            KansoOutlinedButton(
+                                text = "Open Security Settings",
+                                size = KansoButtonSize.LARGE,
+                                contentColor = kansoColors.heroOnSurface,
+                                borderColor = Color.White.copy(alpha = 0.35f),
+                                modifier = Modifier.fillMaxWidth(),
+                                onClick = onOpenSecuritySettings
+                            )
+                        }
                     }
-                    TextButton(onClick = onLockVault) {
-                        Text("Lock")
-                    }
                 }
-            }
-        }
-
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Encrypted Secrets", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
-                KansoTonalButton(
-                    text = "Add",
-                    leadingIcon = Icons.Outlined.Add,
-                    size = KansoButtonSize.COMPACT,
-                    onClick = onAddVaultItem
-                )
-            }
-        }
-
-        item {
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                item {
-                    FilterChip(
-                        selected = categoryFilter == null,
-                        onClick = { categoryFilter = null },
-                        label = { Text("All") }
-                    )
-                }
-                items(VaultCategory.entries, key = { it.name }) { cat ->
-                    FilterChip(
-                        selected = categoryFilter == cat,
-                        onClick = { categoryFilter = if (categoryFilter == cat) null else cat },
-                        label = { Text(cat.label) }
-                    )
-                }
-            }
-        }
-
-        if (filtered.isEmpty()) {
-            item {
-                KansoEmptyState(
-                    icon = Icons.Outlined.Lock,
-                    title = "Vault is empty",
-                    subtitle = "Save recovery codes, spare PINs, passport notes, or private credentials encrypted offline.",
-                    actionLabel = "Add Secret",
-                    onAction = onAddVaultItem
-                )
             }
         } else {
-            items(filtered, key = { it.id }) { item ->
-                val isRevealed = revealedIds[item.id] == true
-                KansoBentoCard(
-                    cornerRadius = 18.dp,
-                    contentPadding = PaddingValues(14.dp)
-                ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = 32.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                item {
+                    KansoBentoCard(
+                        containerColor = kansoColors.income.copy(alpha = 0.08f),
+                        borderColor = kansoColors.income.copy(alpha = 0.28f),
+                        cornerRadius = 18.dp,
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp)
+                    ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column(
-                                modifier = Modifier.weight(1f),
-                                verticalArrangement = Arrangement.spacedBy(3.dp)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.weight(1f)
                             ) {
-                                Text(item.title, style = MaterialTheme.typography.titleMedium)
-                                KansoPillBadge(text = item.category.label, color = kansoColors.lifeAdminAccent)
+                                Icon(
+                                    Icons.Outlined.Shield,
+                                    contentDescription = null,
+                                    tint = kansoColors.income
+                                )
+                                Text(
+                                    text = "Unlocked · Screenshots blocked",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = kansoColors.income
+                                )
                             }
-                            Row {
-                                KansoSmallIconButton(
-                                    icon = if (isRevealed) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
-                                    contentDescription = if (isRevealed) "Hide" else "Reveal",
-                                    onClick = { revealedIds[item.id] = !isRevealed }
-                                )
-                                KansoSmallIconButton(
-                                    icon = Icons.Outlined.ContentCopy,
-                                    contentDescription = "Copy",
-                                    onClick = {
-                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        onCopyVaultSecret(item)
-                                    }
-                                )
-                                KansoSmallIconButton(
-                                    icon = Icons.Outlined.Edit,
-                                    contentDescription = "Edit",
-                                    onClick = { onEditVaultItem(item) }
-                                )
+                            TextButton(onClick = onLockVault) {
+                                Text("Lock")
                             }
                         }
+                    }
+                }
 
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
-                        ) {
-                            Text(
-                                text = if (isRevealed) item.secretContent else "•••••••• ••••••••",
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 10.dp, vertical = 8.dp),
-                                style = MaterialTheme.typography.bodyMedium.copy(
-                                    fontFamily = FontFamily.Monospace,
-                                    fontWeight = FontWeight.Medium
-                                ),
-                                color = MaterialTheme.colorScheme.onSurface
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Encrypted Secrets", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+                        KansoTonalButton(
+                            text = "Add",
+                            leadingIcon = Icons.Outlined.Add,
+                            size = KansoButtonSize.COMPACT,
+                            onClick = onAddVaultItem
+                        )
+                    }
+                }
+
+                item {
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        item {
+                            FilterChip(
+                                selected = categoryFilter == null,
+                                onClick = { categoryFilter = null },
+                                label = { Text("All") }
                             )
+                        }
+                        items(VaultCategory.entries, key = { it.name }) { cat ->
+                            FilterChip(
+                                selected = categoryFilter == cat,
+                                onClick = { categoryFilter = if (categoryFilter == cat) null else cat },
+                                label = { Text(cat.label) }
+                            )
+                        }
+                    }
+                }
+
+                if (filtered.isEmpty()) {
+                    item {
+                        KansoEmptyState(
+                            icon = Icons.Outlined.Lock,
+                            title = "Vault is empty",
+                            subtitle = "Save recovery codes, spare PINs, passport notes, or private credentials encrypted offline.",
+                            actionLabel = "Add Secret",
+                            onAction = onAddVaultItem
+                        )
+                    }
+                } else {
+                    items(filtered, key = { it.id }) { item ->
+                        val isRevealed = revealedIds[item.id] == true
+                        KansoBentoCard(
+                            modifier = Modifier.animateItem(),
+                            cornerRadius = 18.dp,
+                            contentPadding = PaddingValues(14.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.animateContentSize(animationSpec = KansoMotion.SizeSpring),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(
+                                        modifier = Modifier.weight(1f),
+                                        verticalArrangement = Arrangement.spacedBy(3.dp)
+                                    ) {
+                                        Text(item.title, style = MaterialTheme.typography.titleMedium)
+                                        KansoPillBadge(text = item.category.label, color = kansoColors.lifeAdminAccent)
+                                    }
+                                    Row {
+                                        KansoSmallIconButton(
+                                            icon = if (isRevealed) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+                                            contentDescription = if (isRevealed) "Hide" else "Reveal",
+                                            onClick = { revealedIds[item.id] = !isRevealed }
+                                        )
+                                        KansoSmallIconButton(
+                                            icon = Icons.Outlined.ContentCopy,
+                                            contentDescription = "Copy",
+                                            onClick = {
+                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                onCopyVaultSecret(item)
+                                            }
+                                        )
+                                        KansoSmallIconButton(
+                                            icon = Icons.Outlined.Edit,
+                                            contentDescription = "Edit",
+                                            onClick = { onEditVaultItem(item) }
+                                        )
+                                    }
+                                }
+
+                                Surface(
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                                ) {
+                                    AnimatedContent(
+                                        targetState = isRevealed,
+                                        transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
+                                        label = "vaultSecretReveal"
+                                    ) { revealed ->
+                                        Text(
+                                            text = if (revealed) item.secretContent else "•••••••• ••••••••",
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                                            style = MaterialTheme.typography.bodyMedium.copy(
+                                                fontFamily = FontFamily.Monospace,
+                                                fontWeight = FontWeight.Medium
+                                            ),
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }

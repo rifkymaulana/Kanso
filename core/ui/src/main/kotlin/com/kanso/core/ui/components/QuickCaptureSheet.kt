@@ -1,5 +1,13 @@
 package com.kanso.core.ui.components
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -189,6 +197,11 @@ fun QuickCaptureSheet(
                 .padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
+            val badgeColor by animateColorAsState(
+                targetValue = mode.accentColor(),
+                animationSpec = tween(220),
+                label = "qcHeaderBadge"
+            )
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -200,7 +213,7 @@ fun QuickCaptureSheet(
                 )
                 KansoPillBadge(
                     text = mode.label,
-                    color = mode.accentColor(),
+                    color = badgeColor,
                     leadingIcon = mode.icon()
                 )
             }
@@ -211,6 +224,20 @@ fun QuickCaptureSheet(
                 items(QuickCaptureMode.entries, key = { it.name }) { item ->
                     val selected = mode == item
                     val accent = item.accentColor()
+                    val chipContainer by animateColorAsState(
+                        targetValue = if (selected) {
+                            accent.copy(alpha = 0.16f)
+                        } else {
+                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f)
+                        },
+                        animationSpec = tween(200),
+                        label = "qcChipBg"
+                    )
+                    val chipBorder by animateColorAsState(
+                        targetValue = if (selected) accent else MaterialTheme.colorScheme.outlineVariant,
+                        animationSpec = tween(200),
+                        label = "qcChipBorder"
+                    )
                     Surface(
                         modifier = Modifier
                             .clip(RoundedCornerShape(50))
@@ -225,11 +252,8 @@ fun QuickCaptureSheet(
                                 }
                             },
                         shape = RoundedCornerShape(50),
-                        color = if (selected) accent.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
-                        border = BorderStroke(
-                            1.dp,
-                            if (selected) accent else MaterialTheme.colorScheme.outlineVariant
-                        )
+                        color = chipContainer,
+                        border = BorderStroke(1.dp, chipBorder)
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 13.dp, vertical = 8.dp),
@@ -254,9 +278,17 @@ fun QuickCaptureSheet(
                 }
             }
 
-            when (mode) {
+            AnimatedContent(
+                targetState = mode,
+                transitionSpec = {
+                    KansoMotion.directionalTabTransition(targetState.ordinal, initialState.ordinal)
+                },
+                label = "quickCaptureModeContent"
+            ) { activeMode ->
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    when (activeMode) {
                 QuickCaptureMode.EXPENSE, QuickCaptureMode.INCOME -> {
-                    val amountAccent = mode.accentColor()
+                    val amountAccent = activeMode.accentColor()
                     val amountFocus = remember { FocusRequester() }
                     val placeholder = if (currency.decimalDigits == 0) "0" else "0.00"
 
@@ -277,7 +309,7 @@ fun QuickCaptureSheet(
                             verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Text(
-                                text = if (mode == QuickCaptureMode.INCOME) "INCOME AMOUNT" else "EXPENSE AMOUNT",
+                                text = if (activeMode == QuickCaptureMode.INCOME) "INCOME AMOUNT" else "EXPENSE AMOUNT",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = amountAccent
                             )
@@ -339,7 +371,7 @@ fun QuickCaptureSheet(
                         }
                     }
 
-                    val categoryPool = if (mode == QuickCaptureMode.INCOME) {
+                    val categoryPool = if (activeMode == QuickCaptureMode.INCOME) {
                         ExpenseCategory.incomeCategories
                     } else {
                         ExpenseCategory.expenseCategories
@@ -648,8 +680,14 @@ fun QuickCaptureSheet(
                     }
                 }
             }
+                }
+            }
 
-            if (errorText != null) {
+            AnimatedVisibility(
+                visible = errorText != null,
+                enter = expandVertically(KansoMotion.SizeSpring) + fadeIn(tween(180)),
+                exit = shrinkVertically() + fadeOut(tween(140))
+            ) {
                 Text(
                     text = errorText.orEmpty(),
                     style = MaterialTheme.typography.bodyMedium,
