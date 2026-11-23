@@ -1,5 +1,6 @@
 package com.kanso.app.ui.settings
 
+import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import androidx.lifecycle.ViewModel
@@ -117,42 +118,45 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { preferencesRepository.setGithubToken(token) }
     }
 
-    fun connectOrSyncDrive() {
+    fun connectOrSyncDrive(activity: Activity? = null) {
         viewModelScope.launch {
             googleDriveSyncManager.startSync(
                 forceMode = DriveSyncForceMode.SMART,
-                interactive = true
+                interactive = true,
+                activity = activity
             )
         }
     }
 
-    fun forceUploadToDrive() {
+    fun forceUploadToDrive(activity: Activity? = null) {
         viewModelScope.launch {
             googleDriveSyncManager.startSync(
                 forceMode = DriveSyncForceMode.FORCE_UPLOAD,
-                interactive = true
+                interactive = true,
+                activity = activity
             )
         }
     }
 
-    fun forceRestoreFromDrive() {
+    fun forceRestoreFromDrive(activity: Activity? = null) {
         viewModelScope.launch {
             googleDriveSyncManager.startSync(
                 forceMode = DriveSyncForceMode.FORCE_DOWNLOAD,
-                interactive = true
+                interactive = true,
+                activity = activity
             )
         }
     }
 
-    fun resolveDriveConflict(keepCloud: Boolean) {
+    fun resolveDriveConflict(keepCloud: Boolean, activity: Activity? = null) {
         viewModelScope.launch {
-            googleDriveSyncManager.resolveConflict(keepCloud)
+            googleDriveSyncManager.resolveConflict(keepCloud, activity)
         }
     }
 
-    fun onDriveConsentResult(resultOk: Boolean, data: Intent?) {
+    fun onDriveConsentResult(resultCode: Int, data: Intent?, activity: Activity? = null) {
         viewModelScope.launch {
-            googleDriveSyncManager.onConsentActivityResult(resultOk, data)
+            googleDriveSyncManager.onConsentActivityResult(resultCode, data, activity)
         }
     }
 
@@ -160,9 +164,9 @@ class SettingsViewModel @Inject constructor(
         googleDriveSyncManager.consumeConsentPrompt()
     }
 
-    fun saveDriveSyncPassphrase(passphrase: String, resumeSync: Boolean) {
+    fun saveDriveSyncPassphrase(passphrase: String, resumeSync: Boolean, activity: Activity? = null) {
         viewModelScope.launch {
-            googleDriveSyncManager.saveSyncPassphrase(passphrase, resumeSync)
+            googleDriveSyncManager.saveSyncPassphrase(passphrase, resumeSync, activity)
         }
     }
 

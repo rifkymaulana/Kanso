@@ -1,8 +1,10 @@
 package com.kanso.core.backup.drive
 
+import android.app.Activity
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import com.google.android.gms.auth.api.identity.AuthorizationClient
 import com.google.android.gms.auth.api.identity.AuthorizationRequest
 import com.google.android.gms.auth.api.identity.AuthorizationResult
 import com.google.android.gms.auth.api.identity.Identity
@@ -25,13 +27,21 @@ sealed interface DriveAuthResult {
 class GoogleDriveAuthHelper @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
-    suspend fun requestDriveAuthorization(): DriveAuthResult {
+    private fun authorizationClient(activity: Activity?): AuthorizationClient {
+        return if (activity != null) {
+            Identity.getAuthorizationClient(activity)
+        } else {
+            Identity.getAuthorizationClient(context)
+        }
+    }
+
+    suspend fun requestDriveAuthorization(activity: Activity? = null): DriveAuthResult {
         val request = AuthorizationRequest.builder()
             .setRequestedScopes(listOf(Scope(DRIVE_APP_DATA_SCOPE)))
             .build()
 
         return suspendCancellableCoroutine { continuation ->
-            Identity.getAuthorizationClient(context)
+            authorizationClient(activity)
                 .authorize(request)
                 .addOnSuccessListener { result ->
                     if (!continuation.isActive) return@addOnSuccessListener
@@ -44,12 +54,15 @@ class GoogleDriveAuthHelper @Inject constructor(
         }
     }
 
-    fun parseConsentIntent(data: Intent?): DriveAuthResult {
+    fun parseConsentIntent(data: Intent?, activity: Activity? = null): DriveAuthResult {
         if (data == null) {
-            return DriveAuthResult.Failed("Google authorization returned empty result.")
+            return DriveAuthResult.Failed(
+                message = "Google Drive authorization returned no result. Verify Google Drive API is enabled, your email is in OAuth Test users, and your APK SHA-1 matches Google Cloud Console.",
+                isConfigurationError = true
+            )
         }
         return try {
-            val result = Identity.getAuthorizationClient(context)
+            val result = authorizationClient(activity)
                 .getAuthorizationResultFromIntent(data)
             mapAuthorizationResult(result)
         } catch (error: Exception) {
@@ -73,25 +86,10 @@ class GoogleDriveAuthHelper @Inject constructor(
 
     private fun mapAuthException(error: Throwable): DriveAuthResult.Failed {
         if (error is ApiException) {
-            return when (error.statusCode) {
-                CommonStatusCodes.DEVELOPER_ERROR, 12500 -> DriveAuthResult.Failed(
-                    message = "Google OAuth client is not configured for this app signature yet (code ${error.statusCode}). Create an Android OAuth 2.0 Client ID in Google Cloud Console for com.kanso.app with your APK SHA-1 and enable Google Drive API.",
-                    isConfigurationError = true
-                )
-
-                CommonStatusCodes.NETWORK_ERROR -> DriveAuthResult.Failed(
-                    message = "No internet connection. Check your connection and try again."
-                )
-
-                CommonStatusCodes.CANCELED -> DriveAuthResult.Failed(
-                    message = "Google Drive sign-in was cancelled."
-                )
-
-                else -> DriveAuthResult.Failed(
-                    message = "Google authorization failed (code ${error.statusCode}): ${CommonStatusCodes.getStatusCodeString(error.statusCode)}",
-                    isConfigurationError = false
-                )
-            }
+            return mapStatusCode(
+                statusCode = error.statusCode,
+                rawMessage = error.message
+            )
         }
         return DriveAuthResult.Failed(
             message = error.message ?: "Failed to authorize Google Drive."
@@ -100,5 +98,32 @@ class GoogleDriveAuthHelper @Inject constructor(
 
     companion object {
         const val DRIVE_APP_DATA_SCOPE = "https://www.googleapis.com/auth/drive.appdata"
+        const val STATUS_SIGN_IN_FAILED = 12500
+        const val STATUS_SIGN_IN_CANCELLED = 12501
+
+        fun mapStatusCode(statusCode: Int, rawMessage: String? = null): DriveAuthResult.Failed {
+            return when (statusCode) {
+                CommonStatusCodes.DEVELOPER_ERROR, STATUS_SIGN_IN_FAILED -> DriveAuthResult.Failed(
+                    message = "Google OAuth configuration error (code $statusCode). Verify Android OAuth Client ID for com.kanso.app matches your APK SHA-1, Google Drive API is enabled, and your Google account is listed in Test users.",
+                    isConfigurationError = true
+                )
+
+                CommonStatusCodes.NETWORK_ERROR -> DriveAuthResult.Failed(
+                    message = "No internet connection. Check your connection and try again."
+                )
+
+                CommonStatusCodes.CANCELED, STATUS_SIGN_IN_CANCELLED -> DriveAuthResult.Failed(
+                    message = "Google Drive authorization was cancelled (code $statusCode). If you did not tap Cancel, wait 5–15 minutes after saving Google Cloud OAuth changes and verify Test users + SHA-1.",
+                    isConfigurationError = true
+                )
+
+                else -> DriveAuthResult.Failed(
+                    message = "Google authorization failed (code $statusCode): ${
+                        rawMessage?.takeIf { it.isNotBlank() } ?: CommonStatusCodes.getStatusCodeString(statusCode)
+                    }",
+                    isConfigurationError = false
+                )
+            }
+        }
     }
 }

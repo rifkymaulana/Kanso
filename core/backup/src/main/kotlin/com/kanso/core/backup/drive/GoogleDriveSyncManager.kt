@@ -1,5 +1,6 @@
 package com.kanso.core.backup.drive
 
+import android.app.Activity
 import android.app.PendingIntent
 import android.content.Intent
 import android.os.Build
@@ -69,13 +70,14 @@ class GoogleDriveSyncManager @Inject constructor(
 
     suspend fun startSync(
         forceMode: DriveSyncForceMode = DriveSyncForceMode.SMART,
-        interactive: Boolean = true
+        interactive: Boolean = true,
+        activity: Activity? = null
     ): Boolean {
         if (!syncMutex.tryLock()) {
             return false
         }
         return try {
-            runSyncLocked(forceMode = forceMode, interactive = interactive)
+            runSyncLocked(forceMode = forceMode, interactive = interactive, activity = activity)
         } finally {
             syncMutex.unlock()
         }
@@ -96,7 +98,8 @@ class GoogleDriveSyncManager @Inject constructor(
 
     suspend fun saveSyncPassphrase(
         passphrase: String,
-        resumePendingSync: Boolean
+        resumePendingSync: Boolean,
+        activity: Activity? = null
     ): Result<Unit> {
         if (passphrase.length < EncryptedBackupCrypto.MIN_PASSPHRASE_LENGTH) {
             return Result.failure(
@@ -112,14 +115,21 @@ class GoogleDriveSyncManager @Inject constructor(
             _state.value = DriveSyncState.Idle
         }
         if (resumePendingSync) {
-            startSync(forceMode = pendingForceMode, interactive = true)
+            startSync(forceMode = pendingForceMode, interactive = true, activity = activity)
         }
         return Result.success(Unit)
     }
 
-    suspend fun onConsentActivityResult(resultOk: Boolean, data: Intent?) {
-        if (!resultOk) {
-            _state.value = DriveSyncState.Error("Google Drive authorization was cancelled.")
+    suspend fun onConsentActivityResult(
+        resultCode: Int,
+        data: Intent?,
+        activity: Activity? = null
+    ) {
+        if (resultCode != Activity.RESULT_OK && data == null) {
+            _state.value = DriveSyncState.Error(
+                message = "Google Drive authorization did not complete (resultCode=$resultCode, no intent data). If you did not tap Cancel, wait 5–15 minutes after creating your Google Cloud OAuth Client ID and check Test users + SHA-1.",
+                isConfigError = true
+            )
             return
         }
         if (!syncMutex.tryLock()) return
@@ -129,7 +139,7 @@ class GoogleDriveSyncManager @Inject constructor(
                 _state.value = DriveSyncState.NeedsPassphrase(pendingForceMode)
                 return
             }
-            when (val auth = authHelper.parseConsentIntent(data)) {
+            when (val auth = authHelper.parseConsentIntent(data, activity)) {
                 is DriveAuthResult.Authorized -> {
                     performSyncWithToken(
                         accessToken = auth.accessToken,
@@ -155,13 +165,13 @@ class GoogleDriveSyncManager @Inject constructor(
         }
     }
 
-    suspend fun resolveConflict(keepCloud: Boolean) {
+    suspend fun resolveConflict(keepCloud: Boolean, activity: Activity? = null) {
         val mode = if (keepCloud) {
             DriveSyncForceMode.FORCE_DOWNLOAD
         } else {
             DriveSyncForceMode.FORCE_UPLOAD
         }
-        startSync(forceMode = mode, interactive = true)
+        startSync(forceMode = mode, interactive = true, activity = activity)
     }
 
     suspend fun disconnect() {
@@ -177,7 +187,8 @@ class GoogleDriveSyncManager @Inject constructor(
 
     private suspend fun runSyncLocked(
         forceMode: DriveSyncForceMode,
-        interactive: Boolean
+        interactive: Boolean,
+        activity: Activity?
     ): Boolean {
         val passphrase = preferencesRepository.getDriveSyncPassphrase()
         if (passphrase.isNullOrBlank()) {
@@ -192,7 +203,7 @@ class GoogleDriveSyncManager @Inject constructor(
             _state.value = DriveSyncState.Authorizing
         }
 
-        return when (val auth = authHelper.requestDriveAuthorization()) {
+        return when (val auth = authHelper.requestDriveAuthorization(activity)) {
             is DriveAuthResult.NeedsUserConsent -> {
                 if (interactive) {
                     pendingForceMode = forceMode

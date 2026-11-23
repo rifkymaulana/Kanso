@@ -4,6 +4,8 @@ import android.Manifest
 import android.app.Activity
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
+import android.content.Context
+import android.content.ContextWrapper
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -107,6 +109,7 @@ fun SettingsRoute(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val prefs = uiState.preferences
     val context = LocalContext.current
+    val activity = remember(context) { context.findActivity() }
 
     var showNameDialog by remember { mutableStateOf(false) }
     var showCurrencyDialog by remember { mutableStateOf(false) }
@@ -128,8 +131,9 @@ fun SettingsRoute(
         contract = ActivityResultContracts.StartIntentSenderForResult()
     ) { result ->
         viewModel.onDriveConsentResult(
-            resultOk = result.resultCode == Activity.RESULT_OK,
-            data = result.data
+            resultCode = result.resultCode,
+            data = result.data,
+            activity = activity
         )
     }
 
@@ -326,8 +330,8 @@ fun SettingsRoute(
                     SettingsSectionOverline("GOOGLE DRIVE SYNC")
                     GoogleDriveSyncCard(
                         uiState = uiState,
-                        onConnectOrSync = viewModel::connectOrSyncDrive,
-                        onForceUpload = viewModel::forceUploadToDrive,
+                        onConnectOrSync = { viewModel.connectOrSyncDrive(activity) },
+                        onForceUpload = { viewModel.forceUploadToDrive(activity) },
                         onRequestForceRestore = { showDriveRestoreConfirm = true },
                         onToggleAutoSync = viewModel::setDriveAutoSync,
                         onEditPassphrase = {
@@ -335,7 +339,7 @@ fun SettingsRoute(
                             showDrivePassphraseDialog = true
                         },
                         onRequestDisconnect = { showDriveDisconnectConfirm = true },
-                        onOpenConflictDialog = viewModel::connectOrSyncDrive
+                        onOpenConflictDialog = { viewModel.connectOrSyncDrive(activity) }
                     )
                 }
             }
@@ -605,7 +609,8 @@ fun SettingsRoute(
                 showDrivePassphraseDialog = false
                 viewModel.saveDriveSyncPassphrase(
                     passphrase = passphrase,
-                    resumeSync = resumeDriveAfterPassphrase
+                    resumeSync = resumeDriveAfterPassphrase,
+                    activity = activity
                 )
             }
         )
@@ -615,8 +620,8 @@ fun SettingsRoute(
     if (conflictState != null) {
         DriveConflictDialog(
             conflict = conflictState,
-            onKeepCloud = { viewModel.resolveDriveConflict(keepCloud = true) },
-            onKeepDevice = { viewModel.resolveDriveConflict(keepCloud = false) },
+            onKeepCloud = { viewModel.resolveDriveConflict(keepCloud = true, activity = activity) },
+            onKeepDevice = { viewModel.resolveDriveConflict(keepCloud = false, activity = activity) },
             onDismiss = viewModel::clearDriveSyncStatus
         )
     }
@@ -628,7 +633,7 @@ fun SettingsRoute(
             confirmLabel = "Restore Cloud Data",
             onConfirm = {
                 showDriveRestoreConfirm = false
-                viewModel.forceRestoreFromDrive()
+                viewModel.forceRestoreFromDrive(activity)
             },
             onDismiss = { showDriveRestoreConfirm = false }
         )
@@ -1618,4 +1623,10 @@ private fun RestorePassphraseDialog(
             TextButton(onClick = onDismiss) { Text("Cancel") }
         }
     )
+}
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }
