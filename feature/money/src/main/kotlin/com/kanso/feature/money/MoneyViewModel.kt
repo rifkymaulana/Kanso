@@ -7,12 +7,15 @@ import com.kanso.core.database.repository.MoneyRepository
 import com.kanso.core.model.AppCurrency
 import com.kanso.core.model.BillFrequency
 import com.kanso.core.model.CategoryBudget
+import com.kanso.core.model.CoachInsight
 import com.kanso.core.model.ExpenseCategory
 import com.kanso.core.model.IouDirection
 import com.kanso.core.model.IouEntry
 import com.kanso.core.model.MoneyCalculations
 import com.kanso.core.model.MoneyTransaction
 import com.kanso.core.model.RecurringBill
+import com.kanso.core.model.SafeToSpendReport
+import com.kanso.core.model.SmartCoachCalculations
 import com.kanso.core.model.TransactionType
 import com.kanso.core.model.WalletType
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -25,7 +28,9 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.time.LocalDate
 import java.time.YearMonth
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import javax.inject.Inject
@@ -43,7 +48,9 @@ data class MoneyUiState(
     val openIous: List<IouEntry> = emptyList(),
     val settledIous: List<IouEntry> = emptyList(),
     val owesMeTotalCents: Long = 0L,
-    val iOweTotalCents: Long = 0L
+    val iOweTotalCents: Long = 0L,
+    val safeToSpend: SafeToSpendReport? = null,
+    val coachInsights: List<CoachInsight> = emptyList()
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -57,15 +64,19 @@ class MoneyViewModel @Inject constructor(
     private val monthTransactionsFlow = selectedMonthFlow.flatMapLatest { month ->
         moneyRepository.observeTransactionsForMonth(month)
     }
+    private val previousMonthTransactionsFlow = selectedMonthFlow.flatMapLatest { month ->
+        moneyRepository.observeTransactionsForMonth(month.minusMonths(1))
+    }
 
     private val monthFormatter = DateTimeFormatter.ofPattern("MMMM yyyy", Locale.getDefault())
 
     private val coreMoneyFlow = combine(
         selectedMonthFlow,
         monthTransactionsFlow,
+        previousMonthTransactionsFlow,
         moneyRepository.observeBudgets()
-    ) { month, transactions, budgets ->
-        Triple(month, transactions, budgets)
+    ) { month, transactions, previousTransactions, budgets ->
+        CoreMoneyBundle(month, transactions, previousTransactions, budgets)
     }
 
     val uiState: StateFlow<MoneyUiState> = combine(
@@ -73,10 +84,46 @@ class MoneyViewModel @Inject constructor(
         moneyRepository.observeBills(),
         moneyRepository.observeIous(),
         preferencesRepository.preferences
-    ) { triple, bills, ious, prefs ->
-        val (month, transactions, budgets) = triple
+    ) { bundle, bills, ious, prefs ->
+        val month = bundle.month
+        val transactions = bundle.transactions
+        val budgets = bundle.budgets
+
+        val zone = ZoneId.systemDefault()
+        val today = LocalDate.now(zone)
+        val currentMonth = YearMonth.from(today)
+        val startOfTodayMillis = today.atStartOfDay(zone).toInstant().toEpochMilli()
+        val endOfTodayMillis = today.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+        val todayExpenseCents = if (month == currentMonth) {
+            transactions
+                .filter {
+                    it.type == TransactionType.EXPENSE &&
+                        it.timestampMillis in startOfTodayMillis until endOfTodayMillis
+                }
+                .sumOf { it.amountCents }
+        } else {
+            0L
+        }
+
         val summary = MoneyCalculations.summarize(transactions)
+        val prevSummary = MoneyCalculations.summarize(bundle.previousTransactions)
         val budgetStatuses = MoneyCalculations.computeBudgetStatuses(budgets, summary.byCategory)
+        val safeToSpend = SmartCoachCalculations.computeSafeToSpend(
+            targetMonth = month,
+            today = today,
+            monthlyBudgetCents = prefs.overallMonthlyBudgetCents,
+            monthIncomeCents = summary.incomeCents,
+            monthExpenseCents = summary.expenseCents,
+            todayExpenseCents = todayExpenseCents,
+            bills = bills
+        )
+        val coachInsights = SmartCoachCalculations.buildMoneyInsights(
+            report = safeToSpend,
+            currency = prefs.currency,
+            currentSummary = summary,
+            previousSummary = prevSummary,
+            budgetStatuses = budgetStatuses
+        )
         val openIous = ious.filter { !it.isSettled }
         val settledIous = ious.filter { it.isSettled }
 
@@ -93,7 +140,9 @@ class MoneyViewModel @Inject constructor(
             openIous = openIous,
             settledIous = settledIous,
             owesMeTotalCents = openIous.filter { it.direction == IouDirection.OWES_ME }.sumOf { it.amountCents },
-            iOweTotalCents = openIous.filter { it.direction == IouDirection.I_OWE }.sumOf { it.amountCents }
+            iOweTotalCents = openIous.filter { it.direction == IouDirection.I_OWE }.sumOf { it.amountCents },
+            safeToSpend = safeToSpend,
+            coachInsights = coachInsights
         )
     }.stateIn(
         scope = viewModelScope,
@@ -242,4 +291,11 @@ class MoneyViewModel @Inject constructor(
             moneyRepository.deleteIou(id)
         }
     }
+
+    private data class CoreMoneyBundle(
+        val month: YearMonth,
+        val transactions: List<MoneyTransaction>,
+        val previousTransactions: List<MoneyTransaction>,
+        val budgets: List<CategoryBudget>
+    )
 }

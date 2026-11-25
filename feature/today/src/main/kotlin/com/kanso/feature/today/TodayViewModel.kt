@@ -8,13 +8,19 @@ import com.kanso.core.database.repository.HabitsRepository
 import com.kanso.core.database.repository.LifeAdminRepository
 import com.kanso.core.database.repository.MoneyRepository
 import com.kanso.core.model.AppCurrency
+import com.kanso.core.model.CategoryBudget
+import com.kanso.core.model.CoachInsight
 import com.kanso.core.model.ExpiryItem
 import com.kanso.core.model.HabitItem
 import com.kanso.core.model.IouDirection
+import com.kanso.core.model.IouEntry
 import com.kanso.core.model.LifeAdminCalculations
 import com.kanso.core.model.MoneyCalculations
+import com.kanso.core.model.MoneyTransaction
 import com.kanso.core.model.NoteItem
 import com.kanso.core.model.RecurringBill
+import com.kanso.core.model.SafeToSpendReport
+import com.kanso.core.model.SmartCoachCalculations
 import com.kanso.core.model.SnippetItem
 import com.kanso.core.model.TaskItem
 import com.kanso.core.model.TransactionType
@@ -53,7 +59,9 @@ data class TodayUiState(
     val waterGoalMl: Int = 2000,
     val focusTasks: List<TaskItem> = emptyList(),
     val pinnedSnippets: List<SnippetItem> = emptyList(),
-    val recentNotes: List<NoteItem> = emptyList()
+    val recentNotes: List<NoteItem> = emptyList(),
+    val safeToSpend: SafeToSpendReport? = null,
+    val coachInsights: List<CoachInsight> = emptyList()
 ) {
     val hasAttentionItems: Boolean
         get() = dueBills.isNotEmpty() || expiringItems.isNotEmpty() || dueOrOverdueTasksCount > 0 || openIouCount > 0
@@ -73,10 +81,18 @@ class TodayViewModel @Inject constructor(
 
     private val moneyFlow = combine(
         moneyRepository.observeTransactionsForMonth(currentMonth),
+        moneyRepository.observeTransactionsForMonth(currentMonth.minusMonths(1)),
+        moneyRepository.observeBudgets(),
         moneyRepository.observeBills(),
         moneyRepository.observeIous()
-    ) { transactions, bills, ious ->
-        Triple(transactions, bills, ious)
+    ) { transactions, previousTransactions, budgets, bills, ious ->
+        MoneyBundle(
+            transactions = transactions,
+            previousTransactions = previousTransactions,
+            budgets = budgets,
+            bills = bills,
+            ious = ious
+        )
     }
 
     private val brainFlow = combine(
@@ -101,8 +117,10 @@ class TodayViewModel @Inject constructor(
         moneyFlow,
         brainFlow,
         lifeHabitsFlow
-    ) { prefs, moneyTriple, brainTriple, lifeHabits ->
-        val (transactions, bills, ious) = moneyTriple
+    ) { prefs, moneyBundle, brainTriple, lifeHabits ->
+        val transactions = moneyBundle.transactions
+        val bills = moneyBundle.bills
+        val ious = moneyBundle.ious
         val (tasks, notes, snippets) = brainTriple
 
         val zone = ZoneId.systemDefault()
@@ -112,6 +130,8 @@ class TodayViewModel @Inject constructor(
         val endOfTodayMillis = today.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
 
         val summary = MoneyCalculations.summarize(transactions)
+        val prevSummary = MoneyCalculations.summarize(moneyBundle.previousTransactions)
+        val budgetStatuses = MoneyCalculations.computeBudgetStatuses(moneyBundle.budgets, summary.byCategory)
         val todayExpense = transactions
             .filter {
                 it.type == TransactionType.EXPENSE &&
@@ -166,6 +186,28 @@ class TodayViewModel @Inject constructor(
 
         val dateLabel = today.format(DateTimeFormatter.ofPattern("EEEE, d MMM", Locale.getDefault()))
 
+        val safeToSpend = SmartCoachCalculations.computeSafeToSpend(
+            targetMonth = YearMonth.from(today),
+            today = today,
+            monthlyBudgetCents = prefs.overallMonthlyBudgetCents,
+            monthIncomeCents = summary.incomeCents,
+            monthExpenseCents = summary.expenseCents,
+            todayExpenseCents = todayExpense,
+            bills = bills
+        )
+        val coachInsights = SmartCoachCalculations.buildTodayInsights(
+            report = safeToSpend,
+            currency = prefs.currency,
+            currentSummary = summary,
+            previousSummary = prevSummary,
+            budgetStatuses = budgetStatuses,
+            todayWaterMl = lifeHabits.todayWaterMl,
+            waterGoalMl = prefs.waterGoalMl,
+            todayHabitsDone = doneHabitCount,
+            todayHabitsTotal = lifeHabits.habits.size,
+            hourOfDay = hour
+        )
+
         TodayUiState(
             greeting = greeting,
             formattedDate = dateLabel,
@@ -186,7 +228,9 @@ class TodayViewModel @Inject constructor(
             waterGoalMl = prefs.waterGoalMl,
             focusTasks = focusTasks,
             pinnedSnippets = pinnedSnippets,
-            recentNotes = topNotes
+            recentNotes = topNotes,
+            safeToSpend = safeToSpend,
+            coachInsights = coachInsights
         )
     }.stateIn(
         scope = viewModelScope,
@@ -223,6 +267,14 @@ class TodayViewModel @Inject constructor(
             habitsRepository.adjustWater(LocalDate.now().toEpochDay(), 250)
         }
     }
+
+    private data class MoneyBundle(
+        val transactions: List<MoneyTransaction>,
+        val previousTransactions: List<MoneyTransaction>,
+        val budgets: List<CategoryBudget>,
+        val bills: List<RecurringBill>,
+        val ious: List<IouEntry>
+    )
 
     private data class LifeHabitsBundle(
         val habits: List<HabitItem>,

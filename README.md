@@ -4,8 +4,8 @@ Kanso is a modular, 100% offline-first Android super app built with Kotlin, Jetp
 
 ## Modules
 
-- **Today (`:feature:today`)**: Daily command center with attention alerts (due bills, expiring IDs/documents, overdue tasks), monthly spend pulse, focus tasks, 1-tap pinned snippets, recent notes, and habits/hydration pulse (`+250ml`).
-- **Money (`:feature:money`)**: Fast expense & income logging, monthly category breakdown, overall & per-category budgets, recurring bills with 1-tap mark-paid, and IOUs ("Owes Me / I Owe").
+- **Today (`:feature:today`)**: Daily command center with attention alerts (due bills, expiring IDs/documents, overdue tasks), offline Smart Coach & Safe-to-Spend advice, monthly spend pulse, focus tasks, 1-tap pinned snippets, recent notes, and habits/hydration pulse (`+250ml`).
+- **Money (`:feature:money`)**: Fast expense & income logging, offline Smart Coach & Safe-to-Spend forecasts, monthly category breakdown, overall & per-category budgets, recurring bills with 1-tap mark-paid, and IOUs ("Owes Me / I Owe").
 - **Second Brain (`:feature:brain`)**: FTS4-indexed notes, prioritized tasks/checklists, and 1-tap copy snippets with privacy masking.
 - **Habits & Health (`:feature:habits`)**: Daily habit streaks, interactive 30-day completion heatmap, hydration/sleep/weight/mood/workout check-ins, and 7-day averages.
 - **Life Admin & Private Vault (`:feature:lifeadmin`)**: Expiry alerts (IDs, passport, vehicle tax, warranties), asset maintenance logs, and a Biometric/PIN-gated private vault backed by Android Keystore AES-256-GCM + `FLAG_SECURE`.

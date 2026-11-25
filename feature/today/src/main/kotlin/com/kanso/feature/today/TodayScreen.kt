@@ -25,6 +25,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.LocalFireDepartment
@@ -57,15 +58,22 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import com.kanso.core.model.AppCurrency
+import com.kanso.core.model.BudgetAnchorSource
+import com.kanso.core.model.CoachActionTarget
+import com.kanso.core.model.CoachInsight
+import com.kanso.core.model.CoachInsightTone
 import com.kanso.core.model.CurrencyFormatter
 import com.kanso.core.model.ExpenseCategory
 import com.kanso.core.model.HabitItem
 import com.kanso.core.model.LifeAdminCalculations
 import com.kanso.core.model.NoteItem
 import com.kanso.core.model.RecurringBill
+import com.kanso.core.model.SafeToSpendReport
+import com.kanso.core.model.SmartCoachCalculations
 import com.kanso.core.model.SnippetCategory
 import com.kanso.core.model.SnippetItem
 import com.kanso.core.model.SnippetMasker
+import com.kanso.core.model.SpendPaceStatus
 import com.kanso.core.model.TaskItem
 import com.kanso.core.model.TaskPriority
 import com.kanso.core.model.WalletType
@@ -87,6 +95,7 @@ import com.kanso.core.ui.components.KansoStaggeredEntrance
 import com.kanso.core.ui.components.KansoTonalButton
 import com.kanso.core.ui.components.SectionHeader
 import com.kanso.core.ui.components.expenseSemanticColor
+import com.kanso.core.ui.components.incomeSemanticColor
 import com.kanso.core.ui.components.warningSemanticColor
 import com.kanso.core.ui.theme.KansoTheme
 import com.kanso.core.ui.theme.kansoColors
@@ -247,6 +256,22 @@ fun TodayScreenContent(
                         onOpenMoney = onOpenMoney,
                         onOpenTasks = { onOpenBrainTab(1) },
                         onOpenExpiries = onOpenExpiries
+                    )
+                }
+            }
+        }
+
+        if (uiState.safeToSpend != null || uiState.coachInsights.isNotEmpty()) {
+            item {
+                KansoStaggeredEntrance(index = 2) {
+                    SmartCoachBentoCard(
+                        uiState = uiState,
+                        onOpenMoney = onOpenMoney,
+                        onOpenHabits = onOpenHabits,
+                        onAddWater250 = {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onAddWater250()
+                        }
                     )
                 }
             }
@@ -1075,9 +1100,223 @@ private fun SnippetQuickCard(
     }
 }
 
+@Composable
+private fun coachToneColor(tone: CoachInsightTone): Color = when (tone) {
+    CoachInsightTone.POSITIVE -> incomeSemanticColor()
+    CoachInsightTone.NEUTRAL -> MaterialTheme.colorScheme.primary
+    CoachInsightTone.WARNING -> warningSemanticColor()
+    CoachInsightTone.CRITICAL -> expenseSemanticColor()
+}
+
+@Composable
+private fun SmartCoachBentoCard(
+    uiState: TodayUiState,
+    onOpenMoney: () -> Unit,
+    onOpenHabits: () -> Unit,
+    onAddWater250: () -> Unit
+) {
+    val report = uiState.safeToSpend
+    val statusColor = when (report?.paceStatus) {
+        SpendPaceStatus.UNDER_PACE -> incomeSemanticColor()
+        SpendPaceStatus.ON_TRACK -> MaterialTheme.kansoColors.moneyAccent
+        SpendPaceStatus.WATCH_PACE -> warningSemanticColor()
+        SpendPaceStatus.OVER_BUDGET -> expenseSemanticColor()
+        else -> MaterialTheme.colorScheme.primary
+    }
+
+    KansoBentoCard(
+        onClick = onOpenMoney,
+        contentPadding = PaddingValues(16.dp)
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    KansoAccentIconBadge(
+                        icon = Icons.Outlined.AutoAwesome,
+                        accent = statusColor,
+                        size = 34.dp,
+                        iconSize = 18.dp,
+                        cornerRadius = 10.dp
+                    )
+                    Text(
+                        text = "Smart Coach",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+                if (report != null) {
+                    KansoPillBadge(
+                        text = report.paceStatus.badgeLabel,
+                        color = statusColor
+                    )
+                }
+            }
+
+            if (report != null && report.hasAnchor) {
+                val isExceeded = report.todayRemainingAllowanceCents < 0L
+                val usageRatio = if (report.dailySafeAllowanceCents > 0L) {
+                    (report.todayExpenseCents.toFloat() / report.dailySafeAllowanceCents.toFloat()).coerceIn(0f, 1f)
+                } else {
+                    1f
+                }
+                val ringColor = if (isExceeded) expenseSemanticColor() else statusColor
+                val anchorTag = if (report.anchorSource == BudgetAnchorSource.MONTHLY_INCOME) {
+                    " · Income-based"
+                } else {
+                    ""
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Text(
+                                text = if (isExceeded) "TODAY'S ALLOWANCE EXCEEDED" else "SAFE TO SPEND TODAY",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (isExceeded) expenseSemanticColor() else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            if (isExceeded) {
+                                Text(
+                                    text = "Over by ${CurrencyFormatter.format(-report.todayRemainingAllowanceCents, uiState.currency)}",
+                                    style = MaterialTheme.typography.titleLarge.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        fontFeatureSettings = "tnum"
+                                    ),
+                                    color = expenseSemanticColor(),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            } else {
+                                KansoAnimatedCurrencyText(
+                                    amountCents = report.todayRemainingAllowanceCents.coerceAtLeast(0L),
+                                    currency = uiState.currency,
+                                    style = MaterialTheme.typography.titleLarge.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        fontFeatureSettings = "tnum"
+                                    ),
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            Text(
+                                text = "${CurrencyFormatter.format(report.dailySafeAllowanceCents, uiState.currency)}/day · ${report.daysRemainingIncludingToday}d left$anchorTag",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        KansoProgressRing(
+                            progress = usageRatio,
+                            color = ringColor,
+                            size = 44.dp,
+                            strokeWidth = 5.dp
+                        ) {
+                            Text(
+                                text = "${(usageRatio * 100).toInt()}%",
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                color = ringColor
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (uiState.coachInsights.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    uiState.coachInsights.forEach { insight ->
+                        val toneColor = coachToneColor(insight.tone)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(7.dp)
+                                    .clip(CircleShape)
+                                    .background(toneColor)
+                            )
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                Text(
+                                    text = insight.title,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = insight.body,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            if (insight.actionLabel != null && insight.actionTarget != null) {
+                                KansoTonalButton(
+                                    text = insight.actionLabel!!,
+                                    size = KansoButtonSize.COMPACT,
+                                    onClick = {
+                                        when (insight.actionTarget) {
+                                            CoachActionTarget.ADD_WATER_250 -> onAddWater250()
+                                            CoachActionTarget.OPEN_HABITS -> onOpenHabits()
+                                            CoachActionTarget.OPEN_MONEY_BUDGETS -> onOpenMoney()
+                                            null -> Unit
+                                        }
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Preview(showBackground = true)
 @Composable
 fun TodayScreenPreview() {
+    val sampleReport = SmartCoachCalculations.computeSafeToSpend(
+        targetMonth = java.time.YearMonth.of(2026, 11),
+        today = LocalDate.of(2026, 11, 22),
+        monthlyBudgetCents = 4_000_000_00L,
+        monthIncomeCents = 8_500_000_00L,
+        monthExpenseCents = 2_450_000_00L,
+        todayExpenseCents = 65_000_00L,
+        bills = listOf(
+            RecurringBill(
+                id = 1L,
+                name = "Fiber Internet",
+                amountCents = 385_000_00L,
+                category = ExpenseCategory.BILLS,
+                wallet = WalletType.BANK,
+                dueDayOfMonth = 25
+            )
+        )
+    )
     KansoTheme {
         TodayScreenContent(
             uiState = TodayUiState(
@@ -1092,6 +1331,15 @@ fun TodayScreenPreview() {
                 waterGoalMl = 2000,
                 todayHabitsDone = 2,
                 todayHabitsTotal = 3,
+                safeToSpend = sampleReport,
+                coachInsights = listOf(
+                    CoachInsight(
+                        id = "bills_reserved",
+                        title = "Rp 385.000 reserved for 1 unpaid bill",
+                        body = "Already deducted from your Safe-to-Spend allowance.",
+                        tone = CoachInsightTone.NEUTRAL
+                    )
+                ),
                 dueBills = listOf(
                     RecurringBill(
                         id = 1L,

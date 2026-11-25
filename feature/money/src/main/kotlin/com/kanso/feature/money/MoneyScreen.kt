@@ -28,6 +28,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ReceiptLong
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.ChevronLeft
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Handshake
@@ -57,7 +58,11 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.kanso.core.model.AppCurrency
+import com.kanso.core.model.BudgetAnchorSource
 import com.kanso.core.model.CategoryBudget
+import com.kanso.core.model.CoachActionTarget
+import com.kanso.core.model.CoachInsight
+import com.kanso.core.model.CoachInsightTone
 import com.kanso.core.model.CurrencyFormatter
 import com.kanso.core.model.ExpenseCategory
 import com.kanso.core.model.IouDirection
@@ -65,6 +70,8 @@ import com.kanso.core.model.IouEntry
 import com.kanso.core.model.MoneyCalculations
 import com.kanso.core.model.MoneyTransaction
 import com.kanso.core.model.RecurringBill
+import com.kanso.core.model.SafeToSpendReport
+import com.kanso.core.model.SpendPaceStatus
 import com.kanso.core.model.TransactionType
 import com.kanso.core.model.WalletType
 import com.kanso.core.ui.components.DonutSlice
@@ -342,6 +349,7 @@ fun MoneyScreenContent(
             when (tab) {
                 0 -> LogTabContent(
                     uiState = uiState,
+                    onEditOverallBudget = onEditOverallBudget,
                     onAddTransaction = onAddTransaction,
                     onEditTransaction = onEditTransaction
                 )
@@ -432,6 +440,7 @@ private fun MonthPillSelector(
 @Composable
 private fun LogTabContent(
     uiState: MoneyUiState,
+    onEditOverallBudget: () -> Unit,
     onAddTransaction: () -> Unit,
     onEditTransaction: (MoneyTransaction) -> Unit
 ) {
@@ -521,6 +530,17 @@ private fun LogTabContent(
                         )
                     }
                 }
+            }
+        }
+
+        uiState.safeToSpend?.let { report ->
+            item {
+                MoneySmartCoachCard(
+                    report = report,
+                    currency = uiState.currency,
+                    insights = uiState.coachInsights,
+                    onEditOverallBudget = onEditOverallBudget
+                )
             }
         }
 
@@ -625,6 +645,217 @@ private fun LogTabContent(
                     currency = uiState.currency,
                     modifier = Modifier.animateItem(),
                     onClick = { onEditTransaction(tx) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MoneySmartCoachCard(
+    report: SafeToSpendReport,
+    currency: AppCurrency,
+    insights: List<CoachInsight>,
+    onEditOverallBudget: () -> Unit
+) {
+    val statusColor = when (report.paceStatus) {
+        SpendPaceStatus.UNDER_PACE -> incomeSemanticColor()
+        SpendPaceStatus.ON_TRACK -> MaterialTheme.kansoColors.moneyAccent
+        SpendPaceStatus.WATCH_PACE -> warningSemanticColor()
+        SpendPaceStatus.OVER_BUDGET -> expenseSemanticColor()
+        else -> MaterialTheme.colorScheme.primary
+    }
+
+    KansoBentoCard(contentPadding = PaddingValues(16.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    KansoAccentIconBadge(
+                        icon = Icons.Outlined.AutoAwesome,
+                        accent = statusColor,
+                        size = 34.dp,
+                        iconSize = 18.dp,
+                        cornerRadius = 10.dp
+                    )
+                    Text(
+                        text = "Smart Coach",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+                KansoPillBadge(
+                    text = report.paceStatus.badgeLabel,
+                    color = statusColor
+                )
+            }
+
+            if (report.isCurrentMonth && report.hasAnchor) {
+                val isExceeded = report.todayRemainingAllowanceCents < 0L
+                val forecastColor = if (report.projectedMonthEndCents > report.anchorAmountCents) {
+                    warningSemanticColor()
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                }
+                val anchorLabel = if (report.anchorSource == BudgetAnchorSource.MONTHLY_INCOME) {
+                    "Income ${CurrencyFormatter.format(report.anchorAmountCents, currency)}"
+                } else {
+                    "Cap ${CurrencyFormatter.format(report.anchorAmountCents, currency)}"
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Surface(
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
+                            Text(
+                                text = "SAFE TODAY",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (isExceeded) expenseSemanticColor() else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            if (isExceeded) {
+                                Text(
+                                    text = "-${CurrencyFormatter.format(-report.todayRemainingAllowanceCents, currency)}",
+                                    style = MaterialTheme.typography.titleMedium.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        fontFeatureSettings = "tnum"
+                                    ),
+                                    color = expenseSemanticColor(),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            } else {
+                                KansoAnimatedCurrencyText(
+                                    amountCents = report.todayRemainingAllowanceCents.coerceAtLeast(0L),
+                                    currency = currency,
+                                    style = MaterialTheme.typography.titleMedium.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        fontFeatureSettings = "tnum"
+                                    ),
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            Text(
+                                text = "${CurrencyFormatter.format(report.dailySafeAllowanceCents, currency)}/day · ${report.daysRemainingIncludingToday}d left",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+
+                    Surface(
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
+                            Text(
+                                text = "MONTH FORECAST",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            KansoAnimatedCurrencyText(
+                                amountCents = report.projectedMonthEndCents,
+                                currency = currency,
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontFeatureSettings = "tnum"
+                                ),
+                                color = forecastColor
+                            )
+                            Text(
+                                text = anchorLabel,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+            } else if (report.isPastMonth) {
+                Text(
+                    text = "Daily avg ${CurrencyFormatter.format(report.averageDailySpendCents, currency)}/day across ${report.daysElapsed} days",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            if (insights.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    insights.forEach { insight ->
+                        val toneColor = when (insight.tone) {
+                            CoachInsightTone.POSITIVE -> incomeSemanticColor()
+                            CoachInsightTone.NEUTRAL -> MaterialTheme.colorScheme.primary
+                            CoachInsightTone.WARNING -> warningSemanticColor()
+                            CoachInsightTone.CRITICAL -> expenseSemanticColor()
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(7.dp)
+                                    .clip(CircleShape)
+                                    .background(toneColor)
+                            )
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                Text(
+                                    text = insight.title,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = insight.body,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            if (insight.actionTarget == CoachActionTarget.OPEN_MONEY_BUDGETS ||
+                                (!report.hasAnchor && report.isCurrentMonth && insight.actionLabel != null)
+                            ) {
+                                KansoTonalButton(
+                                    text = insight.actionLabel ?: "Set Cap",
+                                    size = KansoButtonSize.COMPACT,
+                                    onClick = onEditOverallBudget
+                                )
+                            }
+                        }
+                    }
+                }
+            } else if (!report.hasAnchor && report.isCurrentMonth) {
+                KansoTonalButton(
+                    text = "Set Monthly Budget",
+                    size = KansoButtonSize.COMPACT,
+                    onClick = onEditOverallBudget
                 )
             }
         }
@@ -789,6 +1020,21 @@ private fun BudgetsTabContent(
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                            val coachReport = uiState.safeToSpend
+                            if (coachReport != null && coachReport.isCurrentMonth) {
+                                Text(
+                                    text = "Safe today: ${
+                                        CurrencyFormatter.format(
+                                            coachReport.todayRemainingAllowanceCents.coerceAtLeast(0L),
+                                            uiState.currency
+                                        )
+                                    } · Forecast ${
+                                        CurrencyFormatter.format(coachReport.projectedMonthEndCents, uiState.currency)
+                                    }",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
                         } else {
                             Text(
                                 text = "Set a monthly cap to track pace.",
