@@ -73,7 +73,110 @@ enum class AppCurrency(
     }
 }
 
+data class FormattedCurrencyInput(
+    val formatted: String,
+    val originalToTransformed: IntArray,
+    val transformedToOriginal: IntArray
+)
+
 object CurrencyFormatter {
+
+    fun sanitizeInput(
+        raw: String,
+        currency: AppCurrency,
+        maxDecimalDigits: Int = currency.decimalDigits,
+        maxIntegerDigits: Int = 15
+    ): String {
+        if (raw.isBlank()) return ""
+        if (maxDecimalDigits <= 0) {
+            val digits = raw.filter { it in '0'..'9' }
+            if (digits.isEmpty()) return ""
+            return digits.trimStart('0').ifEmpty { "0" }.take(maxIntegerDigits)
+        }
+
+        val lastDot = raw.lastIndexOf('.')
+        val lastComma = raw.lastIndexOf(',')
+        val normalized = when {
+            lastDot >= 0 && lastComma >= 0 -> {
+                if (lastDot > lastComma) raw.replace(",", "") else raw.replace(".", "").replace(',', '.')
+            }
+            lastComma >= 0 -> {
+                val afterComma = raw.length - lastComma - 1
+                if (raw.count { it == ',' } == 1 && afterComma <= maxDecimalDigits) {
+                    raw.replace(',', '.')
+                } else {
+                    raw.replace(",", "")
+                }
+            }
+            else -> raw
+        }
+
+        val intBuilder = StringBuilder()
+        val fracBuilder = StringBuilder()
+        var hasDot = false
+        for (ch in normalized) {
+            when {
+                ch in '0'..'9' -> if (hasDot) fracBuilder.append(ch) else intBuilder.append(ch)
+                ch == '.' && !hasDot -> hasDot = true
+            }
+        }
+        val intDigits = intBuilder.toString()
+        val fracDigits = fracBuilder.toString()
+        if (intDigits.isEmpty() && !hasDot) return ""
+
+        val cleanInt = if (intDigits.isEmpty()) {
+            "0"
+        } else {
+            intDigits.trimStart('0').ifEmpty { "0" }.take(maxIntegerDigits)
+        }
+        val cleanFrac = fracDigits.take(maxDecimalDigits)
+        return if (hasDot) "$cleanInt.$cleanFrac" else cleanInt
+    }
+
+    fun formatLiveInput(raw: String, currency: AppCurrency): FormattedCurrencyInput {
+        if (raw.isEmpty()) {
+            return FormattedCurrencyInput("", intArrayOf(0), intArrayOf(0))
+        }
+        val groupSep = if (currency == AppCurrency.IDR) '.' else ','
+        val dotIndex = raw.indexOf('.')
+        val intLimit = if (dotIndex >= 0) dotIndex else raw.length
+        var totalIntDigits = 0
+        for (i in 0 until intLimit) {
+            if (raw[i] in '0'..'9') totalIntDigits++
+        }
+        if (totalIntDigits <= 3) {
+            val identity = IntArray(raw.length + 1) { it }
+            return FormattedCurrencyInput(raw, identity, identity.copyOf())
+        }
+
+        val sb = StringBuilder(raw.length + totalIntDigits / 3)
+        val origToTrans = IntArray(raw.length + 1)
+        val transToOrig = ArrayList<Int>(raw.length + totalIntDigits / 3 + 1)
+        var seenIntDigits = 0
+
+        for (origIdx in 0 until raw.length) {
+            val ch = raw[origIdx]
+            val inIntPart = origIdx < intLimit
+            if (inIntPart && ch in '0'..'9') {
+                if (seenIntDigits > 0 && (totalIntDigits - seenIntDigits) % 3 == 0) {
+                    sb.append(groupSep)
+                    transToOrig.add(origIdx)
+                }
+                seenIntDigits++
+            }
+            origToTrans[origIdx] = sb.length
+            sb.append(ch)
+            transToOrig.add(origIdx)
+        }
+        origToTrans[raw.length] = sb.length
+        transToOrig.add(raw.length)
+
+        return FormattedCurrencyInput(
+            formatted = sb.toString(),
+            originalToTransformed = origToTrans,
+            transformedToOriginal = transToOrig.toIntArray()
+        )
+    }
 
     fun format(
         amountCents: Long,

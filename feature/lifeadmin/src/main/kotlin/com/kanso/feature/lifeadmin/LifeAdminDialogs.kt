@@ -35,6 +35,7 @@ import com.kanso.core.model.MaintenanceCategory
 import com.kanso.core.model.MaintenanceLog
 import com.kanso.core.model.VaultCategory
 import com.kanso.core.model.VaultItem
+import com.kanso.core.ui.components.CurrencyAmountVisualTransformation
 import com.kanso.core.ui.components.KansoButtonSize
 import com.kanso.core.ui.components.KansoDateFormatters
 import com.kanso.core.ui.components.KansoDatePickerDialog
@@ -289,12 +290,14 @@ fun MaintenanceEditorDialog(
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                     )
+                    val costVisualTransformation = remember(currency) { CurrencyAmountVisualTransformation(currency) }
                     OutlinedTextField(
                         value = costText,
-                        onValueChange = { costText = it },
+                        onValueChange = { costText = CurrencyFormatter.sanitizeInput(it, currency) },
                         modifier = Modifier.weight(1f),
                         label = { Text("Cost (${currency.symbol})") },
                         singleLine = true,
+                        visualTransformation = costVisualTransformation,
                         keyboardOptions = KeyboardOptions(
                             keyboardType = if (currency.decimalDigits == 0) KeyboardType.Number else KeyboardType.Decimal
                         )

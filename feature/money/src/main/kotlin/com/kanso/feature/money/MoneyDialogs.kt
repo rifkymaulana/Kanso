@@ -79,6 +79,7 @@ import com.kanso.core.model.RecurringBill
 import com.kanso.core.model.TransactionType
 import com.kanso.core.model.WalletBalanceSummary
 import com.kanso.core.model.WalletType
+import com.kanso.core.ui.components.CurrencyAmountVisualTransformation
 import com.kanso.core.ui.components.KansoButtonSize
 import com.kanso.core.ui.components.KansoMotion
 import com.kanso.core.ui.components.KansoOutlinedButton
@@ -257,16 +258,18 @@ fun TransactionEditorDialog(
                     )
 
                     if (initial == null) {
+                        val feeVisualTransformation = remember(currency) { CurrencyAmountVisualTransformation(currency) }
                         OutlinedTextField(
                             value = feeText,
                             onValueChange = {
-                                feeText = it
+                                feeText = CurrencyFormatter.sanitizeInput(it, currency)
                                 error = null
                             },
                             modifier = Modifier.fillMaxWidth(),
                             label = { Text("Admin / top-up fee (optional)") },
                             singleLine = true,
                             shape = RoundedCornerShape(14.dp),
+                            visualTransformation = feeVisualTransformation,
                             keyboardOptions = KeyboardOptions(
                                 keyboardType = if (currency.decimalDigits == 0) {
                                     KeyboardType.Number
@@ -1029,9 +1032,14 @@ private fun MoneyAmountHeroInput(
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
                         )
                     }
+                    val amountVisualTransformation = remember(currency) {
+                        CurrencyAmountVisualTransformation(currency)
+                    }
                     BasicTextField(
                         value = value,
-                        onValueChange = onValueChange,
+                        onValueChange = { raw ->
+                            onValueChange(CurrencyFormatter.sanitizeInput(raw, currency))
+                        },
                         modifier = Modifier.focusRequester(focusRequester),
                         singleLine = true,
                         textStyle = MaterialTheme.typography.displaySmall.copy(
@@ -1039,6 +1047,7 @@ private fun MoneyAmountHeroInput(
                             textAlign = TextAlign.Start
                         ),
                         cursorBrush = SolidColor(accentColor),
+                        visualTransformation = amountVisualTransformation,
                         keyboardOptions = KeyboardOptions(
                             keyboardType = if (currency.decimalDigits == 0) {
                                 KeyboardType.Number

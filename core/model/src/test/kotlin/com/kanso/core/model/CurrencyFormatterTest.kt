@@ -50,4 +50,47 @@ class CurrencyFormatterTest {
         assertEquals("50000", CurrencyFormatter.formatCompactInput(50_000_00L, AppCurrency.IDR))
         assertEquals("12.50", CurrencyFormatter.formatCompactInput(12_50L, AppCurrency.USD))
     }
+
+    @Test
+    fun `sanitizeInput strips separators and leading zeros per currency`() {
+        assertEquals("", CurrencyFormatter.sanitizeInput("", AppCurrency.IDR))
+        assertEquals("0", CurrencyFormatter.sanitizeInput("000", AppCurrency.IDR))
+        assertEquals("1000", CurrencyFormatter.sanitizeInput("1.000", AppCurrency.IDR))
+        assertEquals("1500000", CurrencyFormatter.sanitizeInput("Rp 1.500.000", AppCurrency.IDR))
+        assertEquals("1250.50", CurrencyFormatter.sanitizeInput("1,250.509", AppCurrency.USD))
+        assertEquals("0.5", CurrencyFormatter.sanitizeInput(".5", AppCurrency.USD))
+    }
+
+    @Test
+    fun `formatLiveInput groups thousands and preserves valid Compose offset invariants`() {
+        assertEquals("1.000", CurrencyFormatter.formatLiveInput("1000", AppCurrency.IDR).formatted)
+        assertEquals("1.500.000", CurrencyFormatter.formatLiveInput("1500000", AppCurrency.IDR).formatted)
+        assertEquals("1,250.50", CurrencyFormatter.formatLiveInput("1250.50", AppCurrency.USD).formatted)
+
+        val samples = listOf("", "5", "500", "1000", "10000", "1500000", "1234567.89")
+        for (currency in listOf(AppCurrency.IDR, AppCurrency.USD)) {
+            for (raw in samples) {
+                val res = CurrencyFormatter.formatLiveInput(raw, currency)
+                assertEquals(raw.length + 1, res.originalToTransformed.size)
+                assertEquals(res.formatted.length + 1, res.transformedToOriginal.size)
+
+                var prevTrans = 0
+                for (i in 0..raw.length) {
+                    val mapped = res.originalToTransformed[i]
+                    assert(mapped in 0..res.formatted.length)
+                    assert(mapped >= prevTrans)
+                    assertEquals(i, res.transformedToOriginal[mapped])
+                    prevTrans = mapped
+                }
+
+                var prevOrig = 0
+                for (j in 0..res.formatted.length) {
+                    val mapped = res.transformedToOriginal[j]
+                    assert(mapped in 0..raw.length)
+                    assert(mapped >= prevOrig)
+                    prevOrig = mapped
+                }
+            }
+        }
+    }
 }

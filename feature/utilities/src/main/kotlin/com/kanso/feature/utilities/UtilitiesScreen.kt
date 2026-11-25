@@ -89,9 +89,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.kanso.core.model.AppCurrency
 import com.kanso.core.model.CountdownCalculations
 import com.kanso.core.model.CountdownItem
+import com.kanso.core.model.CurrencyFormatter
 import com.kanso.core.model.OfflineCurrencyConverter
 import com.kanso.core.model.UnitConverter
 import com.kanso.core.model.UnitDomain
+import com.kanso.core.ui.components.CurrencyAmountVisualTransformation
 import com.kanso.core.ui.components.KansoBentoCard
 import com.kanso.core.ui.components.KansoButtonSize
 import com.kanso.core.ui.components.KansoDateFormatters
@@ -609,21 +611,42 @@ private fun ConverterTabContent(
                             Text("Offline Currency Converter", style = MaterialTheme.typography.titleMedium)
                             TextButton(onClick = onOpenRatesDialog) { Text("Rates") }
                         }
+                        val currencyVisualTransformation = remember(fromCurrency) {
+                            CurrencyAmountVisualTransformation(fromCurrency)
+                        }
+                        val maxDecimals = if (fromCurrency.decimalDigits == 0) 0 else 4
                         OutlinedTextField(
                             value = currencyInput,
-                            onValueChange = { currencyInput = it },
+                            onValueChange = {
+                                currencyInput = CurrencyFormatter.sanitizeInput(
+                                    raw = it,
+                                    currency = fromCurrency,
+                                    maxDecimalDigits = maxDecimals
+                                )
+                            },
                             modifier = Modifier.fillMaxWidth(),
                             label = { Text("Amount (${fromCurrency.code})") },
                             singleLine = true,
                             shape = RoundedCornerShape(14.dp),
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+                            visualTransformation = currencyVisualTransformation,
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = if (fromCurrency.decimalDigits == 0) KeyboardType.Number else KeyboardType.Decimal
+                            )
                         )
                         Text("From", style = MaterialTheme.typography.labelLarge)
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             items(AppCurrency.entries, key = { "fc-${it.code}" }) { c ->
                                 FilterChip(
                                     selected = c == fromCurrency,
-                                    onClick = { fromCurrency = c },
+                                    onClick = {
+                                        fromCurrency = c
+                                        val nextMaxDec = if (c.decimalDigits == 0) 0 else 4
+                                        currencyInput = CurrencyFormatter.sanitizeInput(
+                                            raw = currencyInput,
+                                            currency = c,
+                                            maxDecimalDigits = nextMaxDec
+                                        )
+                                    },
                                     label = { Text(c.code) }
                                 )
                             }
@@ -644,6 +667,12 @@ private fun ConverterTabContent(
                                     val prev = fromCurrency
                                     fromCurrency = toCurrency
                                     toCurrency = prev
+                                    val nextMaxDec = if (fromCurrency.decimalDigits == 0) 0 else 4
+                                    currencyInput = CurrencyFormatter.sanitizeInput(
+                                        raw = currencyInput,
+                                        currency = fromCurrency,
+                                        maxDecimalDigits = nextMaxDec
+                                    )
                                 }
                             )
                         }

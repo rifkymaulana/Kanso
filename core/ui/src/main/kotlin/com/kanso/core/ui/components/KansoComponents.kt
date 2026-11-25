@@ -94,7 +94,11 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.text.input.TransformedText
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -1112,6 +1116,33 @@ fun MoneyAmountBadge(
         ),
         color = color
     )
+}
+
+class CurrencyAmountVisualTransformation(
+    private val currency: AppCurrency
+) : VisualTransformation {
+    override fun filter(text: AnnotatedString): TransformedText {
+        val result = CurrencyFormatter.formatLiveInput(text.text, currency)
+        val mapping = object : OffsetMapping {
+            override fun originalToTransformed(offset: Int): Int {
+                val clamped = offset.coerceIn(0, result.originalToTransformed.lastIndex)
+                return result.originalToTransformed[clamped]
+            }
+
+            override fun transformedToOriginal(offset: Int): Int {
+                val clamped = offset.coerceIn(0, result.transformedToOriginal.lastIndex)
+                return result.transformedToOriginal[clamped]
+            }
+        }
+        return TransformedText(AnnotatedString(result.formatted), mapping)
+    }
+
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        return other is CurrencyAmountVisualTransformation && currency == other.currency
+    }
+
+    override fun hashCode(): Int = currency.hashCode()
 }
 
 fun ExpenseCategory.icon(): ImageVector = when (this) {

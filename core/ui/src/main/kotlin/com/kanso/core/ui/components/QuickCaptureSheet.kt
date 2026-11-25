@@ -348,7 +348,7 @@ fun QuickCaptureSheet(
                                     BasicTextField(
                                         value = amountText,
                                         onValueChange = {
-                                            amountText = it
+                                            amountText = CurrencyFormatter.sanitizeInput(it, currency)
                                             errorText = null
                                         },
                                         modifier = Modifier.focusRequester(amountFocus),
@@ -358,6 +358,9 @@ fun QuickCaptureSheet(
                                             textAlign = TextAlign.Start
                                         ),
                                         cursorBrush = SolidColor(amountAccent),
+                                        visualTransformation = remember(currency) {
+                                            CurrencyAmountVisualTransformation(currency)
+                                        },
                                         keyboardOptions = KeyboardOptions(
                                             keyboardType = if (currency.decimalDigits == 0) {
                                                 KeyboardType.Number
@@ -547,7 +550,7 @@ fun QuickCaptureSheet(
                                     BasicTextField(
                                         value = amountText,
                                         onValueChange = {
-                                            amountText = it
+                                            amountText = CurrencyFormatter.sanitizeInput(it, currency)
                                             errorText = null
                                         },
                                         modifier = Modifier.focusRequester(amountFocus),
@@ -557,6 +560,9 @@ fun QuickCaptureSheet(
                                             textAlign = TextAlign.Start
                                         ),
                                         cursorBrush = SolidColor(amountAccent),
+                                        visualTransformation = remember(currency) {
+                                            CurrencyAmountVisualTransformation(currency)
+                                        },
                                         keyboardOptions = KeyboardOptions(
                                             keyboardType = if (currency.decimalDigits == 0) {
                                                 KeyboardType.Number
@@ -698,16 +704,20 @@ fun QuickCaptureSheet(
                         }
                     }
 
+                    val transferFeeVisualTransformation = remember(currency) {
+                        CurrencyAmountVisualTransformation(currency)
+                    }
                     OutlinedTextField(
                         value = transferFeeText,
                         onValueChange = {
-                            transferFeeText = it
+                            transferFeeText = CurrencyFormatter.sanitizeInput(it, currency)
                             errorText = null
                         },
                         modifier = Modifier.fillMaxWidth(),
                         label = { Text("Transfer / top-up fee (optional)") },
                         singleLine = true,
                         shape = RoundedCornerShape(14.dp),
+                        visualTransformation = transferFeeVisualTransformation,
                         keyboardOptions = KeyboardOptions(
                             keyboardType = if (currency.decimalDigits == 0) {
                                 KeyboardType.Number
