@@ -20,6 +20,7 @@ import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.EventAvailable
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material.icons.outlined.TaskAlt
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -276,21 +277,29 @@ fun GlobalSearchRoute(
                                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
+                                    val isTransfer = tx.type == com.kanso.core.model.TransactionType.TRANSFER
+                                    val transferRoute = "${tx.wallet.label} → ${(tx.toWallet ?: tx.wallet).label}"
                                     KansoAccentIconBadge(
-                                        icon = tx.category.icon(),
-                                        accent = tx.category.accentColor(),
+                                        icon = if (isTransfer) Icons.Outlined.SwapHoriz else tx.category.icon(),
+                                        accent = if (isTransfer) MaterialTheme.colorScheme.primary else tx.category.accentColor(),
                                         size = 38.dp,
                                         iconSize = 19.dp
                                     )
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(
-                                            text = tx.note.ifBlank { tx.category.label },
+                                            text = tx.note.ifBlank { if (isTransfer) transferRoute else tx.category.label },
                                             style = MaterialTheme.typography.titleMedium
                                         )
                                         Text(
-                                            text = "${tx.category.label} · ${tx.wallet.label} · ${
-                                                KansoDateFormatters.formatShortDate(tx.timestampMillis)
-                                            }",
+                                            text = if (isTransfer) {
+                                                "Transfer · $transferRoute · ${
+                                                    KansoDateFormatters.formatShortDate(tx.timestampMillis)
+                                                }"
+                                            } else {
+                                                "${tx.category.label} · ${tx.wallet.label} · ${
+                                                    KansoDateFormatters.formatShortDate(tx.timestampMillis)
+                                                }"
+                                            },
                                             style = MaterialTheme.typography.labelMedium,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )

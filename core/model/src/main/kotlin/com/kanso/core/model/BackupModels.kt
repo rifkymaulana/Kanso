@@ -23,7 +23,7 @@ data class KansoBackupSnapshot(
     val countdowns: List<CountdownItem> = emptyList()
 ) {
     companion object {
-        const val CURRENT_SCHEMA_VERSION = 2
+        const val CURRENT_SCHEMA_VERSION = 3
     }
 }
 

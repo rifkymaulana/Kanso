@@ -33,6 +33,7 @@ import androidx.compose.material.icons.outlined.ChevronLeft
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Handshake
 import androidx.compose.material.icons.outlined.PieChart
+import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -73,6 +74,7 @@ import com.kanso.core.model.RecurringBill
 import com.kanso.core.model.SafeToSpendReport
 import com.kanso.core.model.SpendPaceStatus
 import com.kanso.core.model.TransactionType
+import com.kanso.core.model.WalletBalanceSummary
 import com.kanso.core.model.WalletType
 import com.kanso.core.ui.components.DonutSlice
 import com.kanso.core.ui.components.KansoAccentIconBadge
@@ -110,6 +112,8 @@ fun MoneyRoute(
 
     var editingTransaction by remember { mutableStateOf<MoneyTransaction?>(null) }
     var showNewTransactionDialog by remember { mutableStateOf(false) }
+    var showTransferDialog by remember { mutableStateOf(false) }
+    var adjustingWallet by remember { mutableStateOf<WalletBalanceSummary?>(null) }
 
     var showOverallBudgetDialog by remember { mutableStateOf(false) }
     var editingCategoryBudget by remember { mutableStateOf<CategoryBudget?>(null) }
@@ -128,6 +132,8 @@ fun MoneyRoute(
         onNextMonth = viewModel::nextMonth,
         onAddTransaction = { showNewTransactionDialog = true },
         onEditTransaction = { editingTransaction = it },
+        onStartTransfer = { showTransferDialog = true },
+        onAdjustWallet = { adjustingWallet = it },
         onEditOverallBudget = { showOverallBudgetDialog = true },
         onAddCategoryBudget = { showNewCategoryBudgetDialog = true },
         onEditCategoryBudget = { category ->
@@ -144,26 +150,34 @@ fun MoneyRoute(
         onRequestSettleIou = { settlingIou = it }
     )
 
-    if (showNewTransactionDialog || editingTransaction != null) {
+    if (showNewTransactionDialog || showTransferDialog || editingTransaction != null) {
         val current = editingTransaction
         TransactionEditorDialog(
             currency = uiState.currency,
             initial = current,
+            initialType = if (showTransferDialog) TransactionType.TRANSFER else TransactionType.EXPENSE,
             onDismiss = {
                 showNewTransactionDialog = false
+                showTransferDialog = false
                 editingTransaction = null
             },
-            onSave = { type, amountCents, category, wallet, note ->
+            onSave = { type, amountCents, category, wallet, toWallet, feeCents, note ->
                 viewModel.saveTransaction(
                     existingId = current?.id ?: 0L,
                     type = type,
                     amountCents = amountCents,
                     category = category,
                     wallet = wallet,
+                    toWallet = toWallet,
+                    transferFeeCents = feeCents,
                     note = note,
                     timestampMillis = current?.timestampMillis ?: System.currentTimeMillis()
                 )
+                if (current == null && type == TransactionType.TRANSFER) {
+                    onShowMessage("Saved transfer")
+                }
                 showNewTransactionDialog = false
+                showTransferDialog = false
                 editingTransaction = null
             },
             onDelete = current?.let { tx ->
@@ -172,6 +186,19 @@ fun MoneyRoute(
                     editingTransaction = null
                     onShowMessage("Transaction deleted")
                 }
+            }
+        )
+    }
+
+    adjustingWallet?.let { targetWallet ->
+        WalletBalanceDialog(
+            walletSummary = targetWallet,
+            currency = uiState.currency,
+            onDismiss = { adjustingWallet = null },
+            onSaveTargetBalance = { desiredCents ->
+                viewModel.adjustWalletCurrentBalance(targetWallet.wallet, desiredCents)
+                adjustingWallet = null
+                onShowMessage("${targetWallet.wallet.label} balance updated")
             }
         )
     }
@@ -298,6 +325,8 @@ fun MoneyScreenContent(
     onNextMonth: () -> Unit,
     onAddTransaction: () -> Unit,
     onEditTransaction: (MoneyTransaction) -> Unit,
+    onStartTransfer: () -> Unit = {},
+    onAdjustWallet: (WalletBalanceSummary) -> Unit = {},
     onEditOverallBudget: () -> Unit,
     onAddCategoryBudget: () -> Unit,
     onEditCategoryBudget: (ExpenseCategory) -> Unit,
@@ -349,6 +378,8 @@ fun MoneyScreenContent(
             when (tab) {
                 0 -> LogTabContent(
                     uiState = uiState,
+                    onStartTransfer = onStartTransfer,
+                    onAdjustWallet = onAdjustWallet,
                     onEditOverallBudget = onEditOverallBudget,
                     onAddTransaction = onAddTransaction,
                     onEditTransaction = onEditTransaction
@@ -440,6 +471,8 @@ private fun MonthPillSelector(
 @Composable
 private fun LogTabContent(
     uiState: MoneyUiState,
+    onStartTransfer: () -> Unit,
+    onAdjustWallet: (WalletBalanceSummary) -> Unit,
     onEditOverallBudget: () -> Unit,
     onAddTransaction: () -> Unit,
     onEditTransaction: (MoneyTransaction) -> Unit
@@ -530,6 +563,18 @@ private fun LogTabContent(
                         )
                     }
                 }
+            }
+        }
+
+        if (uiState.walletBalances.isNotEmpty()) {
+            item {
+                WalletsBentoCard(
+                    wallets = uiState.walletBalances,
+                    totalBalanceCents = uiState.totalWalletBalanceCents,
+                    currency = uiState.currency,
+                    onStartTransfer = onStartTransfer,
+                    onAdjustWallet = onAdjustWallet
+                )
             }
         }
 
@@ -646,6 +691,121 @@ private fun LogTabContent(
                     modifier = Modifier.animateItem(),
                     onClick = { onEditTransaction(tx) }
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun WalletsBentoCard(
+    wallets: List<WalletBalanceSummary>,
+    totalBalanceCents: Long,
+    currency: AppCurrency,
+    onStartTransfer: () -> Unit,
+    onAdjustWallet: (WalletBalanceSummary) -> Unit
+) {
+    KansoBentoCard(contentPadding = PaddingValues(16.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Text(
+                        text = "Wallets",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "Total ${CurrencyFormatter.format(totalBalanceCents, currency)}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (totalBalanceCents < 0L) {
+                            expenseSemanticColor()
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+                }
+                KansoTonalButton(
+                    text = "Transfer",
+                    leadingIcon = Icons.Outlined.SwapHoriz,
+                    size = KansoButtonSize.COMPACT,
+                    onClick = onStartTransfer
+                )
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                wallets.chunked(2).forEach { pair ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        pair.forEach { summary ->
+                            val isNegative = summary.currentBalanceCents < 0L
+                            Surface(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .clickable { onAdjustWallet(summary) },
+                                shape = RoundedCornerShape(14.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = summary.wallet.icon(),
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Text(
+                                            text = summary.wallet.label,
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                    if (isNegative) {
+                                        Text(
+                                            text = CurrencyFormatter.format(summary.currentBalanceCents, currency),
+                                            style = MaterialTheme.typography.titleSmall.copy(
+                                                fontWeight = FontWeight.Bold,
+                                                fontFeatureSettings = "tnum"
+                                            ),
+                                            color = expenseSemanticColor(),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    } else {
+                                        KansoAnimatedCurrencyText(
+                                            amountCents = summary.currentBalanceCents,
+                                            currency = currency,
+                                            style = MaterialTheme.typography.titleSmall.copy(
+                                                fontWeight = FontWeight.Bold,
+                                                fontFeatureSettings = "tnum"
+                                            ),
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        if (pair.size == 1) {
+                            Spacer(modifier = Modifier.weight(1f))
+                        }
+                    }
+                }
             }
         }
     }
@@ -927,24 +1087,32 @@ private fun TransactionRowCard(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            val isTransfer = transaction.type == TransactionType.TRANSFER
+            val transferRoute = "${transaction.wallet.label} → ${(transaction.toWallet ?: transaction.wallet).label}"
             KansoAccentIconBadge(
-                icon = transaction.category.icon(),
-                accent = transaction.category.accentColor()
+                icon = if (isTransfer) Icons.Outlined.SwapHoriz else transaction.category.icon(),
+                accent = if (isTransfer) MaterialTheme.colorScheme.primary else transaction.category.accentColor()
             )
             Column(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 Text(
-                    text = transaction.note.ifBlank { transaction.category.label },
+                    text = transaction.note.ifBlank { if (isTransfer) transferRoute else transaction.category.label },
                     style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = "${transaction.category.label} · ${transaction.wallet.label} · ${
-                        KansoDateFormatters.formatShortDate(transaction.timestampMillis)
-                    }",
+                    text = if (isTransfer) {
+                        "Transfer · $transferRoute · ${
+                            KansoDateFormatters.formatShortDate(transaction.timestampMillis)
+                        }"
+                    } else {
+                        "${transaction.category.label} · ${transaction.wallet.label} · ${
+                            KansoDateFormatters.formatShortDate(transaction.timestampMillis)
+                        }"
+                    },
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,

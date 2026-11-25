@@ -43,7 +43,7 @@ import com.kanso.core.database.entity.VaultEntity
         VaultEntity::class,
         CountdownEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class KansoDatabase : RoomDatabase() {
@@ -152,6 +152,12 @@ abstract class KansoDatabase : RoomDatabase() {
                     )
                     """.trimIndent()
                 )
+            }
+        }
+
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `transactions` ADD COLUMN `toWallet` TEXT")
             }
         }
     }

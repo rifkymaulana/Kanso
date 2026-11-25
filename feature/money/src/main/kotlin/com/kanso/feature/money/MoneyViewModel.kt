@@ -17,6 +17,7 @@ import com.kanso.core.model.RecurringBill
 import com.kanso.core.model.SafeToSpendReport
 import com.kanso.core.model.SmartCoachCalculations
 import com.kanso.core.model.TransactionType
+import com.kanso.core.model.WalletBalanceSummary
 import com.kanso.core.model.WalletType
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -50,7 +51,9 @@ data class MoneyUiState(
     val owesMeTotalCents: Long = 0L,
     val iOweTotalCents: Long = 0L,
     val safeToSpend: SafeToSpendReport? = null,
-    val coachInsights: List<CoachInsight> = emptyList()
+    val coachInsights: List<CoachInsight> = emptyList(),
+    val walletBalances: List<WalletBalanceSummary> = emptyList(),
+    val totalWalletBalanceCents: Long = 0L
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -74,9 +77,10 @@ class MoneyViewModel @Inject constructor(
         selectedMonthFlow,
         monthTransactionsFlow,
         previousMonthTransactionsFlow,
+        moneyRepository.observeAllTransactions(),
         moneyRepository.observeBudgets()
-    ) { month, transactions, previousTransactions, budgets ->
-        CoreMoneyBundle(month, transactions, previousTransactions, budgets)
+    ) { month, transactions, previousTransactions, allTransactions, budgets ->
+        CoreMoneyBundle(month, transactions, previousTransactions, allTransactions, budgets)
     }
 
     val uiState: StateFlow<MoneyUiState> = combine(
@@ -124,6 +128,10 @@ class MoneyViewModel @Inject constructor(
             previousSummary = prevSummary,
             budgetStatuses = budgetStatuses
         )
+        val walletBalances = MoneyCalculations.computeWalletBalances(
+            allTransactions = bundle.allTransactions,
+            openingBalances = prefs.walletOpeningBalancesCents
+        )
         val openIous = ious.filter { !it.isSettled }
         val settledIous = ious.filter { it.isSettled }
 
@@ -142,7 +150,9 @@ class MoneyViewModel @Inject constructor(
             owesMeTotalCents = openIous.filter { it.direction == IouDirection.OWES_ME }.sumOf { it.amountCents },
             iOweTotalCents = openIous.filter { it.direction == IouDirection.I_OWE }.sumOf { it.amountCents },
             safeToSpend = safeToSpend,
-            coachInsights = coachInsights
+            coachInsights = coachInsights,
+            walletBalances = walletBalances,
+            totalWalletBalanceCents = walletBalances.sumOf { it.currentBalanceCents }
         )
     }.stateIn(
         scope = viewModelScope,
@@ -166,21 +176,45 @@ class MoneyViewModel @Inject constructor(
         amountCents: Long,
         category: ExpenseCategory,
         wallet: WalletType,
+        toWallet: WalletType? = null,
+        transferFeeCents: Long = 0L,
         note: String,
         timestampMillis: Long = System.currentTimeMillis()
     ) {
         viewModelScope.launch {
-            moneyRepository.upsertTransaction(
-                MoneyTransaction(
-                    id = existingId,
-                    type = type,
+            if (existingId == 0L && type == TransactionType.TRANSFER && toWallet != null) {
+                moneyRepository.recordTransfer(
+                    fromWallet = wallet,
+                    toWallet = toWallet,
                     amountCents = amountCents,
-                    category = category,
-                    wallet = wallet,
-                    note = note.trim(),
+                    feeCents = transferFeeCents,
+                    note = note,
                     timestampMillis = timestampMillis
                 )
-            )
+            } else {
+                moneyRepository.upsertTransaction(
+                    MoneyTransaction(
+                        id = existingId,
+                        type = type,
+                        amountCents = amountCents,
+                        category = category,
+                        wallet = wallet,
+                        toWallet = if (type == TransactionType.TRANSFER) toWallet else null,
+                        note = note.trim(),
+                        timestampMillis = timestampMillis
+                    )
+                )
+            }
+        }
+    }
+
+    fun adjustWalletCurrentBalance(wallet: WalletType, desiredCurrentBalanceCents: Long) {
+        viewModelScope.launch {
+            val netDelta = uiState.value.walletBalances
+                .firstOrNull { it.wallet == wallet }
+                ?.netDeltaCents ?: 0L
+            val newOpening = desiredCurrentBalanceCents - netDelta
+            preferencesRepository.setWalletOpeningBalance(wallet, newOpening)
         }
     }
 
@@ -296,6 +330,7 @@ class MoneyViewModel @Inject constructor(
         val month: YearMonth,
         val transactions: List<MoneyTransaction>,
         val previousTransactions: List<MoneyTransaction>,
+        val allTransactions: List<MoneyTransaction>,
         val budgets: List<CategoryBudget>
     )
 }

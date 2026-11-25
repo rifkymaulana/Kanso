@@ -38,6 +38,7 @@ import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.EventAvailable
+import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -86,6 +87,7 @@ import java.time.LocalDate
 enum class QuickCaptureMode(val label: String) {
     EXPENSE("Expense"),
     INCOME("Income"),
+    TRANSFER("Transfer"),
     NOTE("Note"),
     TASK("Task"),
     SNIPPET("Snippet"),
@@ -96,6 +98,7 @@ enum class QuickCaptureMode(val label: String) {
 private fun QuickCaptureMode.accentColor(): Color = when (this) {
     QuickCaptureMode.EXPENSE -> MaterialTheme.kansoColors.expense
     QuickCaptureMode.INCOME -> MaterialTheme.kansoColors.income
+    QuickCaptureMode.TRANSFER -> MaterialTheme.kansoColors.utilitiesAccent
     QuickCaptureMode.NOTE -> MaterialTheme.kansoColors.brainAccent
     QuickCaptureMode.TASK -> Color(0xFF8B5CF6)
     QuickCaptureMode.SNIPPET -> MaterialTheme.colorScheme.primary
@@ -105,6 +108,7 @@ private fun QuickCaptureMode.accentColor(): Color = when (this) {
 private fun QuickCaptureMode.icon(): ImageVector = when (this) {
     QuickCaptureMode.EXPENSE -> Icons.Outlined.ArrowUpward
     QuickCaptureMode.INCOME -> Icons.Outlined.ArrowDownward
+    QuickCaptureMode.TRANSFER -> Icons.Outlined.SwapHoriz
     QuickCaptureMode.NOTE -> Icons.Outlined.Description
     QuickCaptureMode.TASK -> Icons.Outlined.CheckCircle
     QuickCaptureMode.SNIPPET -> Icons.Outlined.ContentPaste
@@ -124,6 +128,13 @@ fun QuickCaptureSheet(
         wallet: WalletType,
         note: String
     ) -> Unit,
+    onSaveTransfer: (
+        fromWallet: WalletType,
+        toWallet: WalletType,
+        amountCents: Long,
+        feeCents: Long,
+        note: String
+    ) -> Unit = { _, _, _, _, _ -> },
     onSaveNote: (title: String, content: String, tags: List<String>, isPinned: Boolean) -> Unit,
     onSaveTask: (title: String, priority: TaskPriority, dueDateEpochDay: Long?) -> Unit,
     onSaveSnippet: (
@@ -152,6 +163,9 @@ fun QuickCaptureSheet(
         )
     }
     var selectedWallet by remember { mutableStateOf(WalletType.EWALLET) }
+    var transferFromWallet by remember { mutableStateOf(WalletType.BANK) }
+    var transferToWallet by remember { mutableStateOf(WalletType.EWALLET) }
+    var transferFeeText by remember { mutableStateOf("") }
     var txNote by remember { mutableStateOf("") }
 
     // Note state
@@ -486,6 +500,234 @@ fun QuickCaptureSheet(
                     )
                 }
 
+                QuickCaptureMode.TRANSFER -> {
+                    val amountAccent = activeMode.accentColor()
+                    val amountFocus = remember { FocusRequester() }
+                    val placeholder = if (currency.decimalDigits == 0) "0" else "0.00"
+
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(20.dp))
+                            .clickable { amountFocus.requestFocus() },
+                        shape = RoundedCornerShape(20.dp),
+                        color = amountAccent.copy(alpha = 0.08f),
+                        border = BorderStroke(1.dp, amountAccent.copy(alpha = 0.25f))
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 18.dp, vertical = 16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = "TRANSFER AMOUNT",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = amountAccent
+                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Text(
+                                    text = currency.symbol,
+                                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+                                    color = amountAccent,
+                                    modifier = Modifier.padding(end = 6.dp)
+                                )
+                                Box(contentAlignment = Alignment.CenterStart) {
+                                    if (amountText.isEmpty()) {
+                                        Text(
+                                            text = placeholder,
+                                            style = MaterialTheme.typography.displaySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
+                                        )
+                                    }
+                                    BasicTextField(
+                                        value = amountText,
+                                        onValueChange = {
+                                            amountText = it
+                                            errorText = null
+                                        },
+                                        modifier = Modifier.focusRequester(amountFocus),
+                                        singleLine = true,
+                                        textStyle = MaterialTheme.typography.displaySmall.copy(
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            textAlign = TextAlign.Start
+                                        ),
+                                        cursorBrush = SolidColor(amountAccent),
+                                        keyboardOptions = KeyboardOptions(
+                                            keyboardType = if (currency.decimalDigits == 0) {
+                                                KeyboardType.Number
+                                            } else {
+                                                KeyboardType.Decimal
+                                            }
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(currency.quickPresets, key = { it }) { presetCents ->
+                            AssistChip(
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    amountText = CurrencyFormatter.formatCompactInput(presetCents, currency)
+                                    errorText = null
+                                },
+                                label = { Text(CurrencyFormatter.format(presetCents, currency)) },
+                                shape = RoundedCornerShape(50)
+                            )
+                        }
+                    }
+
+                    Text("From Wallet", style = MaterialTheme.typography.labelLarge)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        WalletType.entries.forEach { wallet ->
+                            val selected = transferFromWallet == wallet
+                            Surface(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .clickable {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        if (wallet == transferToWallet) {
+                                            transferToWallet = transferFromWallet
+                                        }
+                                        transferFromWallet = wallet
+                                        errorText = null
+                                    },
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (selected) {
+                                    MaterialTheme.colorScheme.primaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                },
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+                                )
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(3.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = wallet.icon(),
+                                        contentDescription = null,
+                                        tint = if (selected) {
+                                            MaterialTheme.colorScheme.primary
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        },
+                                        modifier = Modifier.size(17.dp)
+                                    )
+                                    Text(
+                                        text = wallet.label,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = if (selected) {
+                                            MaterialTheme.colorScheme.onPrimaryContainer
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        },
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Text("To Wallet", style = MaterialTheme.typography.labelLarge)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        WalletType.entries.forEach { wallet ->
+                            val selected = transferToWallet == wallet
+                            Surface(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .clickable {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        if (wallet == transferFromWallet) {
+                                            transferFromWallet = transferToWallet
+                                        }
+                                        transferToWallet = wallet
+                                        errorText = null
+                                    },
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (selected) {
+                                    amountAccent.copy(alpha = 0.16f)
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                },
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (selected) amountAccent else MaterialTheme.colorScheme.outlineVariant
+                                )
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(3.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = wallet.icon(),
+                                        contentDescription = null,
+                                        tint = if (selected) amountAccent else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(17.dp)
+                                    )
+                                    Text(
+                                        text = wallet.label,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = if (selected) amountAccent else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = transferFeeText,
+                        onValueChange = {
+                            transferFeeText = it
+                            errorText = null
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Transfer / top-up fee (optional)") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(14.dp),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = if (currency.decimalDigits == 0) {
+                                KeyboardType.Number
+                            } else {
+                                KeyboardType.Decimal
+                            }
+                        )
+                    )
+
+                    OutlinedTextField(
+                        value = txNote,
+                        onValueChange = { txNote = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Note (optional)") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(14.dp),
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences)
+                    )
+                }
+
                 QuickCaptureMode.NOTE -> {
                     OutlinedTextField(
                         value = noteTitle,
@@ -698,7 +940,7 @@ fun QuickCaptureSheet(
             Spacer(modifier = Modifier.height(2.dp))
 
             val buttonColor = when (mode) {
-                QuickCaptureMode.EXPENSE, QuickCaptureMode.INCOME -> mode.accentColor()
+                QuickCaptureMode.EXPENSE, QuickCaptureMode.INCOME, QuickCaptureMode.TRANSFER -> mode.accentColor()
                 else -> MaterialTheme.colorScheme.primary
             }
             KansoPrimaryButton(
@@ -722,6 +964,34 @@ fun QuickCaptureSheet(
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 onSaveTransaction(type, cents, selectedCategory, selectedWallet, txNote.trim())
                                 onDismiss()
+                            }
+                        }
+
+                        QuickCaptureMode.TRANSFER -> {
+                            val cents = CurrencyFormatter.parseInputToCents(amountText, currency)
+                            val parsedFee = if (transferFeeText.isNotBlank()) {
+                                CurrencyFormatter.parseInputToCents(transferFeeText, currency)
+                            } else {
+                                0L
+                            }
+                            when {
+                                cents == null || cents <= 0L ->
+                                    errorText = "Enter a valid amount greater than 0."
+                                transferFromWallet == transferToWallet ->
+                                    errorText = "Choose two different wallets."
+                                parsedFee == null ->
+                                    errorText = "Enter a valid transfer fee."
+                                else -> {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    onSaveTransfer(
+                                        transferFromWallet,
+                                        transferToWallet,
+                                        cents,
+                                        parsedFee,
+                                        txNote.trim()
+                                    )
+                                    onDismiss()
+                                }
                             }
                         }
 

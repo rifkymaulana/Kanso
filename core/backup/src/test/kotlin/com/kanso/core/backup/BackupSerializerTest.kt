@@ -48,7 +48,8 @@ class BackupSerializerTest {
                 lastBackupMillis = 1_760_000_000_000L,
                 waterGoalMl = 2500,
                 remindersEnabled = true,
-                customRatesVsUsd = mapOf("IDR" to 16000.0)
+                customRatesVsUsd = mapOf("IDR" to 16000.0),
+                walletOpeningBalancesCents = mapOf("BANK" to 5_000_000_00L)
             ),
             transactions = listOf(
                 MoneyTransaction(
@@ -59,6 +60,16 @@ class BackupSerializerTest {
                     wallet = WalletType.EWALLET,
                     note = "Lunch",
                     timestampMillis = 1_760_000_000_000L
+                ),
+                MoneyTransaction(
+                    id = 11L,
+                    type = TransactionType.TRANSFER,
+                    amountCents = 500_000_00L,
+                    category = ExpenseCategory.OTHER,
+                    wallet = WalletType.BANK,
+                    toWallet = WalletType.EWALLET,
+                    note = "Top up",
+                    timestampMillis = 1_760_000_100_000L
                 )
             ),
             budgets = listOf(

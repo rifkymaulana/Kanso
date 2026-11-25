@@ -13,6 +13,7 @@ import com.kanso.core.model.AppCurrency
 import com.kanso.core.model.DriveSyncConfig
 import com.kanso.core.model.ThemeMode
 import com.kanso.core.model.UserPreferences
+import com.kanso.core.model.WalletType
 import com.kanso.core.security.VaultCrypto
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
@@ -40,6 +41,7 @@ class PreferencesRepository @Inject constructor(
         val WATER_GOAL_ML = intPreferencesKey("water_goal_ml")
         val REMINDERS_ENABLED = booleanPreferencesKey("reminders_enabled")
         val CUSTOM_RATES_JSON = stringPreferencesKey("custom_rates_vs_usd_json")
+        val WALLET_OPENING_BALANCES_JSON = stringPreferencesKey("wallet_opening_balances_cents_json")
         val AUTO_CHECK_UPDATES = booleanPreferencesKey("auto_check_updates")
         val LAST_UPDATE_CHECK_MILLIS = longPreferencesKey("last_update_check_millis")
         val GITHUB_TOKEN_ENCRYPTED = stringPreferencesKey("github_token_encrypted")
@@ -60,6 +62,9 @@ class PreferencesRepository @Inject constructor(
         val customRates = prefs[Keys.CUSTOM_RATES_JSON]?.let { raw ->
             runCatching { json.decodeFromString<Map<String, Double>>(raw) }.getOrNull()
         } ?: emptyMap()
+        val walletOpeningBalances = prefs[Keys.WALLET_OPENING_BALANCES_JSON]?.let { raw ->
+            runCatching { json.decodeFromString<Map<String, Long>>(raw) }.getOrNull()
+        } ?: emptyMap()
 
         UserPreferences(
             displayName = prefs[Keys.DISPLAY_NAME].orEmpty(),
@@ -74,7 +79,8 @@ class PreferencesRepository @Inject constructor(
             remindersEnabled = prefs[Keys.REMINDERS_ENABLED] ?: true,
             customRatesVsUsd = customRates,
             autoCheckUpdates = prefs[Keys.AUTO_CHECK_UPDATES] ?: true,
-            lastUpdateCheckMillis = prefs[Keys.LAST_UPDATE_CHECK_MILLIS]
+            lastUpdateCheckMillis = prefs[Keys.LAST_UPDATE_CHECK_MILLIS],
+            walletOpeningBalancesCents = walletOpeningBalances
         )
     }
 
@@ -226,6 +232,24 @@ class PreferencesRepository @Inject constructor(
         }
     }
 
+    suspend fun setWalletOpeningBalance(wallet: WalletType, openingBalanceCents: Long) {
+        context.kansoDataStore.edit { prefs ->
+            val current = prefs[Keys.WALLET_OPENING_BALANCES_JSON]?.let { raw ->
+                runCatching { json.decodeFromString<Map<String, Long>>(raw) }.getOrNull()
+            }?.toMutableMap() ?: mutableMapOf()
+            if (openingBalanceCents == 0L) {
+                current.remove(wallet.name)
+            } else {
+                current[wallet.name] = openingBalanceCents
+            }
+            if (current.isEmpty()) {
+                prefs.remove(Keys.WALLET_OPENING_BALANCES_JSON)
+            } else {
+                prefs[Keys.WALLET_OPENING_BALANCES_JSON] = json.encodeToString(current)
+            }
+        }
+    }
+
     suspend fun setAutoCheckUpdates(enabled: Boolean) {
         context.kansoDataStore.edit { it[Keys.AUTO_CHECK_UPDATES] = enabled }
     }
@@ -248,6 +272,11 @@ class PreferencesRepository @Inject constructor(
                 prefs.remove(Keys.CUSTOM_RATES_JSON)
             } else {
                 prefs[Keys.CUSTOM_RATES_JSON] = json.encodeToString(userPreferences.customRatesVsUsd)
+            }
+            if (userPreferences.walletOpeningBalancesCents.isEmpty()) {
+                prefs.remove(Keys.WALLET_OPENING_BALANCES_JSON)
+            } else {
+                prefs[Keys.WALLET_OPENING_BALANCES_JSON] = json.encodeToString(userPreferences.walletOpeningBalancesCents)
             }
             val restoredBackupMillis = userPreferences.lastBackupMillis
             if (restoredBackupMillis != null) {

@@ -108,6 +108,24 @@ class MainViewModel @Inject constructor(
         }
     }
 
+    fun saveQuickTransfer(
+        fromWallet: WalletType,
+        toWallet: WalletType,
+        amountCents: Long,
+        feeCents: Long,
+        note: String
+    ) {
+        viewModelScope.launch {
+            moneyRepository.recordTransfer(
+                fromWallet = fromWallet,
+                toWallet = toWallet,
+                amountCents = amountCents,
+                feeCents = feeCents,
+                note = note
+            )
+        }
+    }
+
     fun saveQuickNote(
         title: String,
         content: String,

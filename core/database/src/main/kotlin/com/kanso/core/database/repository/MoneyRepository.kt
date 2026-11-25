@@ -32,6 +32,11 @@ class MoneyRepository @Inject constructor(
             .map { entities -> entities.map { it.toDomain() } }
     }
 
+    fun observeAllTransactions(): Flow<List<MoneyTransaction>> {
+        return moneyDao.observeAllTransactions()
+            .map { entities -> entities.map { it.toDomain() } }
+    }
+
     fun observeRecentTransactions(limit: Int = 20): Flow<List<MoneyTransaction>> {
         return moneyDao.observeRecentTransactions(limit)
             .map { entities -> entities.map { it.toDomain() } }
@@ -45,6 +50,46 @@ class MoneyRepository @Inject constructor(
 
     suspend fun upsertTransaction(transaction: MoneyTransaction): Long {
         return moneyDao.upsertTransaction(transaction.toEntity())
+    }
+
+    suspend fun recordTransfer(
+        fromWallet: WalletType,
+        toWallet: WalletType,
+        amountCents: Long,
+        feeCents: Long = 0L,
+        note: String = "",
+        timestampMillis: Long = System.currentTimeMillis()
+    ) {
+        require(fromWallet != toWallet) { "Source and destination wallets must be different." }
+        database.withTransaction {
+            val trimmedNote = note.trim()
+            val transferTx = MoneyTransaction(
+                type = TransactionType.TRANSFER,
+                amountCents = amountCents,
+                category = com.kanso.core.model.ExpenseCategory.OTHER,
+                wallet = fromWallet,
+                toWallet = toWallet,
+                note = trimmedNote,
+                timestampMillis = timestampMillis
+            )
+            moneyDao.upsertTransaction(transferTx.toEntity())
+            if (feeCents > 0L) {
+                val feeNote = if (trimmedNote.isNotBlank()) {
+                    "Transfer fee: $trimmedNote"
+                } else {
+                    "Transfer fee (${fromWallet.label} → ${toWallet.label})"
+                }
+                val feeTx = MoneyTransaction(
+                    type = TransactionType.EXPENSE,
+                    amountCents = feeCents,
+                    category = com.kanso.core.model.ExpenseCategory.BILLS,
+                    wallet = fromWallet,
+                    note = feeNote,
+                    timestampMillis = timestampMillis
+                )
+                moneyDao.upsertTransaction(feeTx.toEntity())
+            }
+        }
     }
 
     suspend fun deleteTransaction(id: Long) {

@@ -38,6 +38,7 @@ import com.kanso.core.model.IouEntry
 import com.kanso.core.model.MoneyTransaction
 import com.kanso.core.model.RecurringBill
 import com.kanso.core.model.TransactionType
+import com.kanso.core.model.WalletBalanceSummary
 import com.kanso.core.model.WalletType
 import java.time.LocalDate
 
@@ -46,24 +47,51 @@ import java.time.LocalDate
 fun TransactionEditorDialog(
     currency: AppCurrency,
     initial: MoneyTransaction?,
+    initialType: TransactionType = TransactionType.EXPENSE,
     onDismiss: () -> Unit,
-    onSave: (TransactionType, Long, ExpenseCategory, WalletType, String) -> Unit,
+    onSave: (
+        type: TransactionType,
+        amountCents: Long,
+        category: ExpenseCategory,
+        wallet: WalletType,
+        toWallet: WalletType?,
+        feeCents: Long,
+        note: String
+    ) -> Unit,
     onDelete: (() -> Unit)? = null
 ) {
-    var type by remember { mutableStateOf(initial?.type ?: TransactionType.EXPENSE) }
+    var type by remember { mutableStateOf(initial?.type ?: initialType) }
     var amountText by remember {
         mutableStateOf(
             initial?.let { CurrencyFormatter.formatCompactInput(it.amountCents, currency) }.orEmpty()
         )
     }
     var category by remember { mutableStateOf(initial?.category ?: ExpenseCategory.FOOD) }
-    var wallet by remember { mutableStateOf(initial?.wallet ?: WalletType.EWALLET) }
+    var wallet by remember {
+        mutableStateOf(
+            initial?.wallet ?: if (initialType == TransactionType.TRANSFER) WalletType.BANK else WalletType.EWALLET
+        )
+    }
+    var toWallet by remember {
+        mutableStateOf(
+            initial?.toWallet ?: if (wallet == WalletType.BANK) WalletType.EWALLET else WalletType.BANK
+        )
+    }
+    var feeText by remember { mutableStateOf("") }
     var note by remember { mutableStateOf(initial?.note.orEmpty()) }
     var error by remember { mutableStateOf<String?>(null) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (initial == null) "Add Transaction" else "Edit Transaction") },
+        title = {
+            Text(
+                when {
+                    initial != null -> "Edit Transaction"
+                    type == TransactionType.TRANSFER -> "Transfer Between Wallets"
+                    else -> "Add Transaction"
+                }
+            )
+        },
         text = {
             Column(
                 modifier = Modifier
@@ -77,13 +105,16 @@ fun TransactionEditorDialog(
                             selected = type == t,
                             onClick = {
                                 type = t
+                                error = null
                                 if (t == TransactionType.INCOME && !category.isIncomeDefault) {
                                     category = ExpenseCategory.SALARY
                                 } else if (t == TransactionType.EXPENSE && category.isIncomeDefault) {
                                     category = ExpenseCategory.FOOD
+                                } else if (t == TransactionType.TRANSFER && toWallet == wallet) {
+                                    toWallet = WalletType.entries.first { it != wallet }
                                 }
                             },
-                            label = { Text(if (t == TransactionType.EXPENSE) "Expense" else "Income") }
+                            label = { Text(t.label) }
                         )
                     }
                 }
@@ -100,28 +131,72 @@ fun TransactionEditorDialog(
                         keyboardType = if (currency.decimalDigits == 0) KeyboardType.Number else KeyboardType.Decimal
                     )
                 )
-                Text("Category", style = MaterialTheme.typography.labelLarge)
-                val categories = if (type == TransactionType.INCOME) {
-                    ExpenseCategory.incomeCategories
-                } else {
-                    ExpenseCategory.expenseCategories
-                }
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    categories.forEach { cat ->
-                        FilterChip(
-                            selected = category == cat,
-                            onClick = { category = cat },
-                            label = { Text(cat.label) }
-                        )
+                if (type != TransactionType.TRANSFER) {
+                    Text("Category", style = MaterialTheme.typography.labelLarge)
+                    val categories = if (type == TransactionType.INCOME) {
+                        ExpenseCategory.incomeCategories
+                    } else {
+                        ExpenseCategory.expenseCategories
+                    }
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        categories.forEach { cat ->
+                            FilterChip(
+                                selected = category == cat,
+                                onClick = { category = cat },
+                                label = { Text(cat.label) }
+                            )
+                        }
                     }
                 }
-                Text("Wallet", style = MaterialTheme.typography.labelLarge)
+                Text(
+                    text = if (type == TransactionType.TRANSFER) "From Wallet" else "Wallet",
+                    style = MaterialTheme.typography.labelLarge
+                )
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     WalletType.entries.forEach { w ->
                         FilterChip(
                             selected = wallet == w,
-                            onClick = { wallet = w },
+                            onClick = {
+                                if (type == TransactionType.TRANSFER && w == toWallet) {
+                                    toWallet = wallet
+                                }
+                                wallet = w
+                                error = null
+                            },
                             label = { Text(w.label) }
+                        )
+                    }
+                }
+                if (type == TransactionType.TRANSFER) {
+                    Text("To Wallet", style = MaterialTheme.typography.labelLarge)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        WalletType.entries.forEach { w ->
+                            FilterChip(
+                                selected = toWallet == w,
+                                onClick = {
+                                    if (w == wallet) {
+                                        wallet = toWallet
+                                    }
+                                    toWallet = w
+                                    error = null
+                                },
+                                label = { Text(w.label) }
+                            )
+                        }
+                    }
+                    if (initial == null) {
+                        OutlinedTextField(
+                            value = feeText,
+                            onValueChange = {
+                                feeText = it
+                                error = null
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("Transfer / admin fee (${currency.symbol}, optional)") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = if (currency.decimalDigits == 0) KeyboardType.Number else KeyboardType.Decimal
+                            )
                         )
                     }
                 }
@@ -141,10 +216,25 @@ fun TransactionEditorDialog(
         confirmButton = {
             TextButton(onClick = {
                 val cents = CurrencyFormatter.parseInputToCents(amountText, currency)
-                if (cents == null || cents <= 0L) {
-                    error = "Enter an amount greater than 0."
+                val parsedFee = if (type == TransactionType.TRANSFER && initial == null && feeText.isNotBlank()) {
+                    CurrencyFormatter.parseInputToCents(feeText, currency)
                 } else {
-                    onSave(type, cents, category, wallet, note)
+                    0L
+                }
+                when {
+                    cents == null || cents <= 0L -> error = "Enter an amount greater than 0."
+                    type == TransactionType.TRANSFER && wallet == toWallet ->
+                        error = "Choose two different wallets."
+                    parsedFee == null -> error = "Enter a valid transfer fee."
+                    else -> onSave(
+                        type,
+                        cents,
+                        if (type == TransactionType.TRANSFER) ExpenseCategory.OTHER else category,
+                        wallet,
+                        if (type == TransactionType.TRANSFER) toWallet else null,
+                        parsedFee,
+                        note
+                    )
                 }
             }) {
                 Text("Save")
@@ -163,6 +253,76 @@ fun TransactionEditorDialog(
                 TextButton(onClick = onDismiss) {
                     Text("Cancel")
                 }
+            }
+        }
+    )
+}
+
+@Composable
+fun WalletBalanceDialog(
+    walletSummary: WalletBalanceSummary,
+    currency: AppCurrency,
+    onDismiss: () -> Unit,
+    onSaveTargetBalance: (Long) -> Unit
+) {
+    var text by remember(walletSummary.wallet) {
+        mutableStateOf(
+            if (walletSummary.currentBalanceCents > 0L) {
+                CurrencyFormatter.formatCompactInput(walletSummary.currentBalanceCents, currency)
+            } else {
+                ""
+            }
+        )
+    }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("${walletSummary.wallet.label} Balance") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = "Tracked net flow: ${CurrencyFormatter.format(walletSummary.netDeltaCents, currency, showSign = true)}. Enter your real current balance to reconcile this wallet.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = {
+                        text = it
+                        error = null
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Actual current balance (${currency.symbol})") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = if (currency.decimalDigits == 0) KeyboardType.Number else KeyboardType.Decimal
+                    )
+                )
+                if (error != null) {
+                    Text(error.orEmpty(), color = MaterialTheme.colorScheme.error)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                if (text.isBlank()) {
+                    onSaveTargetBalance(0L)
+                } else {
+                    val cents = CurrencyFormatter.parseInputToCents(text, currency)
+                    if (cents == null) {
+                        error = "Invalid amount."
+                    } else {
+                        onSaveTargetBalance(cents)
+                    }
+                }
+            }) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
             }
         }
     )

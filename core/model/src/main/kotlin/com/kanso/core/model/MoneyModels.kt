@@ -5,9 +5,10 @@ import java.time.LocalDate
 import java.time.YearMonth
 
 @Serializable
-enum class TransactionType {
-    EXPENSE,
-    INCOME
+enum class TransactionType(val label: String) {
+    EXPENSE("Expense"),
+    INCOME("Income"),
+    TRANSFER("Transfer")
 }
 
 @Serializable
@@ -50,8 +51,16 @@ data class MoneyTransaction(
     val amountCents: Long,
     val category: ExpenseCategory,
     val wallet: WalletType,
+    val toWallet: WalletType? = null,
     val note: String = "",
     val timestampMillis: Long
+)
+
+data class WalletBalanceSummary(
+    val wallet: WalletType,
+    val openingBalanceCents: Long,
+    val netDeltaCents: Long,
+    val currentBalanceCents: Long
 )
 
 @Serializable
@@ -129,11 +138,13 @@ object MoneyCalculations {
         val byCategory = mutableMapOf<ExpenseCategory, Long>()
 
         for (tx in transactions) {
-            if (tx.type == TransactionType.INCOME) {
-                income += tx.amountCents
-            } else {
-                expense += tx.amountCents
-                byCategory[tx.category] = (byCategory[tx.category] ?: 0L) + tx.amountCents
+            when (tx.type) {
+                TransactionType.INCOME -> income += tx.amountCents
+                TransactionType.EXPENSE -> {
+                    expense += tx.amountCents
+                    byCategory[tx.category] = (byCategory[tx.category] ?: 0L) + tx.amountCents
+                }
+                TransactionType.TRANSFER -> Unit
             }
         }
 
@@ -143,6 +154,40 @@ object MoneyCalculations {
             netCents = income - expense,
             byCategory = byCategory
         )
+    }
+
+    fun computeWalletBalances(
+        allTransactions: List<MoneyTransaction>,
+        openingBalances: Map<String, Long>
+    ): List<WalletBalanceSummary> {
+        val deltas = mutableMapOf<WalletType, Long>()
+        for (tx in allTransactions) {
+            when (tx.type) {
+                TransactionType.INCOME -> {
+                    deltas[tx.wallet] = (deltas[tx.wallet] ?: 0L) + tx.amountCents
+                }
+                TransactionType.EXPENSE -> {
+                    deltas[tx.wallet] = (deltas[tx.wallet] ?: 0L) - tx.amountCents
+                }
+                TransactionType.TRANSFER -> {
+                    val target = tx.toWallet
+                    if (target != null && target != tx.wallet) {
+                        deltas[tx.wallet] = (deltas[tx.wallet] ?: 0L) - tx.amountCents
+                        deltas[target] = (deltas[target] ?: 0L) + tx.amountCents
+                    }
+                }
+            }
+        }
+        return WalletType.entries.map { wallet ->
+            val opening = openingBalances[wallet.name] ?: 0L
+            val delta = deltas[wallet] ?: 0L
+            WalletBalanceSummary(
+                wallet = wallet,
+                openingBalanceCents = opening,
+                netDeltaCents = delta,
+                currentBalanceCents = opening + delta
+            )
+        }
     }
 
     fun computeBudgetStatuses(

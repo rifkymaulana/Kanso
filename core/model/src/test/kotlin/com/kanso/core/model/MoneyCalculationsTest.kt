@@ -26,6 +26,35 @@ class MoneyCalculationsTest {
     }
 
     @Test
+    fun `transfers are excluded from monthly summary and update wallet balances accurately`() {
+        val txs = listOf(
+            MoneyTransaction(1L, TransactionType.INCOME, 5_000_000_00L, ExpenseCategory.SALARY, WalletType.BANK, timestampMillis = 1L),
+            MoneyTransaction(2L, TransactionType.TRANSFER, 1_000_000_00L, ExpenseCategory.OTHER, WalletType.BANK, toWallet = WalletType.EWALLET, note = "Top up", timestampMillis = 2L),
+            MoneyTransaction(3L, TransactionType.EXPENSE, 250_000_00L, ExpenseCategory.FOOD, WalletType.EWALLET, timestampMillis = 3L),
+            MoneyTransaction(4L, TransactionType.EXPENSE, 100_000_00L, ExpenseCategory.SHOPPING, WalletType.CASH, timestampMillis = 4L)
+        )
+
+        val summary = MoneyCalculations.summarize(txs)
+        assertEquals(5_000_000_00L, summary.incomeCents)
+        assertEquals(350_000_00L, summary.expenseCents)
+        assertEquals(4_650_000_00L, summary.netCents)
+        assertFalse(summary.byCategory.containsKey(ExpenseCategory.OTHER))
+
+        val balances = MoneyCalculations.computeWalletBalances(
+            allTransactions = txs,
+            openingBalances = mapOf(
+                WalletType.CASH.name to 500_000_00L,
+                WalletType.BANK.name to 2_000_000_00L
+            )
+        ).associateBy { it.wallet }
+
+        assertEquals(6_000_000_00L, balances.getValue(WalletType.BANK).currentBalanceCents)
+        assertEquals(750_000_00L, balances.getValue(WalletType.EWALLET).currentBalanceCents)
+        assertEquals(400_000_00L, balances.getValue(WalletType.CASH).currentBalanceCents)
+        assertEquals(0L, balances.getValue(WalletType.CARD).currentBalanceCents)
+    }
+
+    @Test
     fun `computes budget statuses with warning and over-budget thresholds`() {
         val budgets = listOf(
             CategoryBudget(1L, ExpenseCategory.FOOD, 100_000_00L),

@@ -58,10 +58,11 @@ object BackupSerializer {
             preferences = snapshot.preferences.copy(
                 lastBackupMillis = null,
                 lastUpdateCheckMillis = null,
-                customRatesVsUsd = snapshot.preferences.customRatesVsUsd.toSortedMap()
+                customRatesVsUsd = snapshot.preferences.customRatesVsUsd.toSortedMap(),
+                walletOpeningBalancesCents = snapshot.preferences.walletOpeningBalancesCents.toSortedMap()
             ),
             transactions = snapshot.transactions.sortedWith(
-                compareBy({ it.id }, { it.timestampMillis }, { it.category.name })
+                compareBy({ it.id }, { it.timestampMillis }, { it.category.name }, { it.toWallet?.name.orEmpty() })
             ),
             budgets = snapshot.budgets.sortedWith(
                 compareBy({ it.id }, { it.category.name }, { it.yearMonth })

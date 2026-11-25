@@ -19,6 +19,7 @@ data class TransactionEntity(
     val amountCents: Long,
     val category: String,
     val wallet: String,
+    val toWallet: String? = null,
     val note: String,
     val timestampMillis: Long
 )
@@ -29,6 +30,7 @@ fun TransactionEntity.toDomain(): MoneyTransaction = MoneyTransaction(
     amountCents = amountCents,
     category = runCatching { ExpenseCategory.valueOf(category) }.getOrDefault(ExpenseCategory.OTHER),
     wallet = runCatching { WalletType.valueOf(wallet) }.getOrDefault(WalletType.CASH),
+    toWallet = toWallet?.let { raw -> runCatching { WalletType.valueOf(raw) }.getOrNull() },
     note = note,
     timestampMillis = timestampMillis
 )
@@ -39,6 +41,7 @@ fun MoneyTransaction.toEntity(): TransactionEntity = TransactionEntity(
     amountCents = amountCents,
     category = category.name,
     wallet = wallet.name,
+    toWallet = toWallet?.name,
     note = note,
     timestampMillis = timestampMillis
 )

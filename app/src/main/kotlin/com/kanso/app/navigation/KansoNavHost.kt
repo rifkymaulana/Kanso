@@ -431,6 +431,11 @@ fun KansoAppRoot(
                 showMessage("Saved ${if (type.name == "INCOME") "income" else "expense"}")
                 scope.launch { KansoWidgetUpdater.updateAll(context) }
             },
+            onSaveTransfer = { fromWallet, toWallet, amountCents, feeCents, note ->
+                mainViewModel.saveQuickTransfer(fromWallet, toWallet, amountCents, feeCents, note)
+                showMessage("Saved transfer")
+                scope.launch { KansoWidgetUpdater.updateAll(context) }
+            },
             onSaveNote = { title, content, tags, isPinned ->
                 mainViewModel.saveQuickNote(title, content, tags, isPinned)
                 showMessage("Saved note")

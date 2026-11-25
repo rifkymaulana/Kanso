@@ -22,6 +22,9 @@ interface MoneyDao {
     )
     fun observeTransactionsInRange(startMillis: Long, endMillis: Long): Flow<List<TransactionEntity>>
 
+    @Query("SELECT * FROM transactions ORDER BY timestampMillis DESC, id DESC")
+    fun observeAllTransactions(): Flow<List<TransactionEntity>>
+
     @Query("SELECT * FROM transactions ORDER BY timestampMillis DESC, id DESC LIMIT :limit")
     fun observeRecentTransactions(limit: Int): Flow<List<TransactionEntity>>
 
@@ -31,6 +34,7 @@ interface MoneyDao {
         WHERE note LIKE '%' || :query || '%'
            OR category LIKE '%' || :query || '%'
            OR wallet LIKE '%' || :query || '%'
+           OR COALESCE(toWallet, '') LIKE '%' || :query || '%'
         ORDER BY timestampMillis DESC, id DESC
         """
     )

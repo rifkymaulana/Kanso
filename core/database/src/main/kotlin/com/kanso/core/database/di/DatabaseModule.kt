@@ -29,7 +29,7 @@ object DatabaseModule {
             KansoDatabase::class.java,
             "kanso_superapp.db"
         )
-            .addMigrations(KansoDatabase.MIGRATION_1_2)
+            .addMigrations(KansoDatabase.MIGRATION_1_2, KansoDatabase.MIGRATION_2_3)
             .build()
     }
 

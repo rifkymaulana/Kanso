@@ -21,7 +21,8 @@ data class UserPreferences(
     val remindersEnabled: Boolean = true,
     val customRatesVsUsd: Map<String, Double> = emptyMap(),
     val autoCheckUpdates: Boolean = true,
-    val lastUpdateCheckMillis: Long? = null
+    val lastUpdateCheckMillis: Long? = null,
+    val walletOpeningBalancesCents: Map<String, Long> = emptyMap()
 )
 
 data class DriveSyncConfig(

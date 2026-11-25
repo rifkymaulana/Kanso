@@ -1094,11 +1094,13 @@ fun MoneyAmountBadge(
     val color = when (type) {
         TransactionType.INCOME -> incomeSemanticColor()
         TransactionType.EXPENSE -> expenseSemanticColor()
+        TransactionType.TRANSFER -> MaterialTheme.colorScheme.primary
         null -> MaterialTheme.colorScheme.onSurface
     }
     val prefix = when (type) {
         TransactionType.INCOME -> "+"
         TransactionType.EXPENSE -> "-"
+        TransactionType.TRANSFER -> "⇄ "
         null -> ""
     }
     Text(
