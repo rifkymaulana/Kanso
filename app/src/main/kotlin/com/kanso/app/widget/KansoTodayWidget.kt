@@ -6,11 +6,13 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.glance.Button
-import androidx.glance.ButtonDefaults
+import androidx.glance.ColorFilter
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.GlanceTheme
+import androidx.glance.Image
+import androidx.glance.ImageProvider
+import androidx.glance.action.Action
 import androidx.glance.action.ActionParameters
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
@@ -31,11 +33,15 @@ import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.fillMaxWidth
 import androidx.glance.layout.height
 import androidx.glance.layout.padding
+import androidx.glance.layout.size
 import androidx.glance.layout.width
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
+import androidx.glance.text.TextAlign
 import androidx.glance.text.TextStyle
+import androidx.glance.unit.ColorProvider
 import com.kanso.app.MainActivity
+import com.kanso.app.R
 import com.kanso.app.navigation.KansoUris
 import com.kanso.app.navigation.createLaunchIntent
 import com.kanso.core.database.dao.BrainDao
@@ -249,19 +255,17 @@ private fun KansoWidgetContent(
             }
             Box(
                 modifier = GlanceModifier
+                    .size(36.dp)
                     .background(GlanceTheme.colors.surfaceVariant)
-                    .cornerRadius(10.dp)
-                    .clickable(actionRunCallback<RefreshWidgetAction>())
-                    .padding(horizontal = 10.dp, vertical = 4.dp),
+                    .cornerRadius(12.dp)
+                    .clickable(actionRunCallback<RefreshWidgetAction>()),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = "↻",
-                    style = TextStyle(
-                        color = GlanceTheme.colors.onSurfaceVariant,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                Image(
+                    provider = ImageProvider(R.drawable.ic_widget_refresh),
+                    contentDescription = "Refresh widget",
+                    modifier = GlanceModifier.size(18.dp),
+                    colorFilter = ColorFilter.tint(GlanceTheme.colors.onSurfaceVariant)
                 )
             }
         }
@@ -349,36 +353,60 @@ private fun KansoWidgetContent(
             modifier = GlanceModifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Button(
+            WidgetActionButton(
                 text = "+ Expense",
                 onClick = actionStartActivity(createLaunchIntent(context, KansoUris.QUICK_CAPTURE_EXPENSE)),
-                modifier = GlanceModifier.defaultWeight(),
-                colors = ButtonDefaults.buttonColors(
-                    backgroundColor = GlanceTheme.colors.primary,
-                    contentColor = GlanceTheme.colors.onPrimary
-                )
+                backgroundColor = GlanceTheme.colors.primary,
+                contentColor = GlanceTheme.colors.onPrimary,
+                modifier = GlanceModifier.defaultWeight()
             )
             Spacer(modifier = GlanceModifier.width(6.dp))
-            Button(
+            WidgetActionButton(
                 text = "+ Note",
                 onClick = actionStartActivity(createLaunchIntent(context, KansoUris.QUICK_CAPTURE_NOTE)),
-                modifier = GlanceModifier.defaultWeight(),
-                colors = ButtonDefaults.buttonColors(
-                    backgroundColor = GlanceTheme.colors.primaryContainer,
-                    contentColor = GlanceTheme.colors.onPrimaryContainer
-                )
+                backgroundColor = GlanceTheme.colors.primaryContainer,
+                contentColor = GlanceTheme.colors.onPrimaryContainer,
+                modifier = GlanceModifier.defaultWeight()
             )
             Spacer(modifier = GlanceModifier.width(6.dp))
-            Button(
-                text = "+250ml",
+            WidgetActionButton(
+                text = "+250 ml",
                 onClick = actionRunCallback<AddWaterWidgetAction>(),
-                modifier = GlanceModifier.defaultWeight(),
-                colors = ButtonDefaults.buttonColors(
-                    backgroundColor = GlanceTheme.colors.secondaryContainer,
-                    contentColor = GlanceTheme.colors.onSecondaryContainer
-                )
+                backgroundColor = GlanceTheme.colors.primaryContainer,
+                contentColor = GlanceTheme.colors.onPrimaryContainer,
+                modifier = GlanceModifier.defaultWeight()
             )
         }
+    }
+}
+
+@androidx.compose.runtime.Composable
+private fun WidgetActionButton(
+    text: String,
+    onClick: Action,
+    backgroundColor: ColorProvider,
+    contentColor: ColorProvider,
+    modifier: GlanceModifier = GlanceModifier
+) {
+    Box(
+        modifier = modifier
+            .height(38.dp)
+            .background(backgroundColor)
+            .cornerRadius(12.dp)
+            .clickable(onClick)
+            .padding(horizontal = 6.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            maxLines = 1,
+            style = TextStyle(
+                color = contentColor,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                textAlign = TextAlign.Center
+            )
+        )
     }
 }
 
