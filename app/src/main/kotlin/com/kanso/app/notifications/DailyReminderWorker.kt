@@ -192,7 +192,8 @@ class DailyReminderWorker(
                 }
 
                 val builder = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
-                    .setSmallIcon(R.mipmap.ic_launcher_round)
+                    .setSmallIcon(R.drawable.ic_tile_kanso)
+                    .setColor(0xFF0F766E.toInt())
                     .setContentTitle(briefing.title)
                     .setContentText(briefing.body)
                     .setStyle(NotificationCompat.BigTextStyle().bigText(briefing.body))
@@ -204,7 +205,8 @@ class DailyReminderWorker(
 
                 if (prefs.appLockEnabled || prefs.hideBalances) {
                     val publicNotification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
-                        .setSmallIcon(R.mipmap.ic_launcher_round)
+                        .setSmallIcon(R.drawable.ic_tile_kanso)
+                        .setColor(0xFF0F766E.toInt())
                         .setContentTitle(briefing.title)
                         .setContentText(briefing.publicRedactedBody)
                         .setAutoCancel(true)

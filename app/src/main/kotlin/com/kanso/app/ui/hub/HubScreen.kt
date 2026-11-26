@@ -147,7 +147,7 @@ fun HubRoute(
                         style = MaterialTheme.typography.headlineMedium
                     )
                     Text(
-                        text = "Your personal offline-first workspace",
+                        text = "Kanso · Personal Life OS",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

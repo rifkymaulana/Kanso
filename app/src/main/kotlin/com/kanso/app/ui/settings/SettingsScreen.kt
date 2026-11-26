@@ -732,7 +732,7 @@ fun SettingsRoute(
 
             item {
                 Text(
-                    text = "Kanso v${BuildConfig.VERSION_NAME} • Offline-First + Google Drive Sync + GitHub Updates",
+                    text = "Kanso v${BuildConfig.VERSION_NAME} • Personal Life OS • Offline-First",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
