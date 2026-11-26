@@ -77,6 +77,7 @@ import com.kanso.core.model.AppCurrency
 import com.kanso.core.model.CurrencyFormatter
 import com.kanso.core.model.ExpenseCategory
 import com.kanso.core.model.ExpiryCategory
+import com.kanso.core.model.MoneyCalculations
 import com.kanso.core.model.SnippetCategory
 import com.kanso.core.model.TaskPriority
 import com.kanso.core.model.TransactionType
@@ -126,15 +127,17 @@ fun QuickCaptureSheet(
         amountCents: Long,
         category: ExpenseCategory,
         wallet: WalletType,
-        note: String
+        note: String,
+        timestampMillis: Long
     ) -> Unit,
     onSaveTransfer: (
         fromWallet: WalletType,
         toWallet: WalletType,
         amountCents: Long,
         feeCents: Long,
-        note: String
-    ) -> Unit = { _, _, _, _, _ -> },
+        note: String,
+        timestampMillis: Long
+    ) -> Unit = { _, _, _, _, _, _ -> },
     onSaveNote: (title: String, content: String, tags: List<String>, isPinned: Boolean) -> Unit,
     onSaveTask: (title: String, priority: TaskPriority, dueDateEpochDay: Long?) -> Unit,
     onSaveSnippet: (
@@ -166,6 +169,7 @@ fun QuickCaptureSheet(
     var transferFromWallet by remember { mutableStateOf(WalletType.BANK) }
     var transferToWallet by remember { mutableStateOf(WalletType.EWALLET) }
     var transferFeeText by remember { mutableStateOf("") }
+    var txEpochDay by remember { mutableLongStateOf(LocalDate.now().toEpochDay()) }
     var txNote by remember { mutableStateOf("") }
 
     // Note state
@@ -492,6 +496,12 @@ fun QuickCaptureSheet(
                         }
                     }
 
+                    KansoTransactionDateSelector(
+                        selectedEpochDay = txEpochDay,
+                        onSelectEpochDay = { txEpochDay = it },
+                        accentColor = amountAccent
+                    )
+
                     OutlinedTextField(
                         value = txNote,
                         onValueChange = { txNote = it },
@@ -725,6 +735,12 @@ fun QuickCaptureSheet(
                                 KeyboardType.Decimal
                             }
                         )
+                    )
+
+                    KansoTransactionDateSelector(
+                        selectedEpochDay = txEpochDay,
+                        onSelectEpochDay = { txEpochDay = it },
+                        accentColor = amountAccent
                     )
 
                     OutlinedTextField(
@@ -971,8 +987,13 @@ fun QuickCaptureSheet(
                                 } else {
                                     TransactionType.EXPENSE
                                 }
+                                val timestampMillis = MoneyCalculations.resolveTransactionTimestampMillis(
+                                    selectedEpochDay = txEpochDay,
+                                    existingTimestampMillis = null,
+                                    nowMillis = System.currentTimeMillis()
+                                )
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                onSaveTransaction(type, cents, selectedCategory, selectedWallet, txNote.trim())
+                                onSaveTransaction(type, cents, selectedCategory, selectedWallet, txNote.trim(), timestampMillis)
                                 onDismiss()
                             }
                         }
@@ -992,13 +1013,19 @@ fun QuickCaptureSheet(
                                 parsedFee == null ->
                                     errorText = "Enter a valid transfer fee."
                                 else -> {
+                                    val timestampMillis = MoneyCalculations.resolveTransactionTimestampMillis(
+                                        selectedEpochDay = txEpochDay,
+                                        existingTimestampMillis = null,
+                                        nowMillis = System.currentTimeMillis()
+                                    )
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     onSaveTransfer(
                                         transferFromWallet,
                                         transferToWallet,
                                         cents,
                                         parsedFee,
-                                        txNote.trim()
+                                        txNote.trim(),
+                                        timestampMillis
                                     )
                                     onDismiss()
                                 }

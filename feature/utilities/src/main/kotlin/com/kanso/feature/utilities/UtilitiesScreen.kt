@@ -44,7 +44,6 @@ import androidx.compose.material.icons.outlined.Event
 import androidx.compose.material.icons.outlined.OpenInBrowser
 import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material.icons.outlined.Wifi
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -99,6 +98,7 @@ import com.kanso.core.ui.components.KansoButtonSize
 import com.kanso.core.ui.components.KansoDateFormatters
 import com.kanso.core.ui.components.KansoDatePickerDialog
 import com.kanso.core.ui.components.KansoEmptyState
+import com.kanso.core.ui.components.KansoFormBottomSheet
 import com.kanso.core.ui.components.KansoHeroCard
 import com.kanso.core.ui.components.KansoMotion
 import com.kanso.core.ui.components.KansoOutlinedButton
@@ -947,53 +947,57 @@ private fun WifiQrDialog(
     var ssid by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var security by remember { mutableStateOf("WPA") }
+    var error by remember { mutableStateOf<String?>(null) }
+    val utilitiesAccent = MaterialTheme.kansoColors.utilitiesAccent
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Create Wi-Fi QR") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(
-                    value = ssid,
-                    onValueChange = { ssid = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Network name (SSID)") },
-                    singleLine = true
-                )
-                OutlinedTextField(
-                    value = password,
-                    onValueChange = { password = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Password") },
-                    singleLine = true,
-                    enabled = security != "nopass"
-                )
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf("WPA", "WEP", "nopass").forEach { sec ->
-                        FilterChip(
-                            selected = security == sec,
-                            onClick = { security = sec },
-                            label = { Text(sec) }
-                        )
-                    }
-                }
+    KansoFormBottomSheet(
+        title = "Create Wi-Fi QR",
+        onDismiss = onDismiss,
+        primaryLabel = "Generate QR",
+        primaryColor = utilitiesAccent,
+        badgeText = security,
+        badgeColor = utilitiesAccent,
+        badgeIcon = Icons.Outlined.Wifi,
+        errorText = error,
+        onPrimaryClick = {
+            if (ssid.isBlank()) {
+                error = "Enter a Wi-Fi network name (SSID)."
+            } else {
+                onBuild(QrCodeUtils.buildWifiQrPayload(ssid, password, security))
             }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = {
-                    if (ssid.isNotBlank()) {
-                        onBuild(QrCodeUtils.buildWifiQrPayload(ssid, password, security))
-                    }
-                }
-            ) {
-                Text("Generate")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
         }
-    )
+    ) {
+        OutlinedTextField(
+            value = ssid,
+            onValueChange = {
+                ssid = it
+                error = null
+            },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Network name (SSID)") },
+            singleLine = true,
+            shape = RoundedCornerShape(14.dp)
+        )
+        OutlinedTextField(
+            value = password,
+            onValueChange = { password = it },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Password") },
+            singleLine = true,
+            shape = RoundedCornerShape(14.dp),
+            enabled = security != "nopass"
+        )
+        Text("Security", style = MaterialTheme.typography.labelLarge)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf("WPA", "WEP", "nopass").forEach { sec ->
+                FilterChip(
+                    selected = security == sec,
+                    onClick = { security = sec },
+                    label = { Text(sec) }
+                )
+            }
+        }
+    }
 }
 
 @Composable
@@ -1003,6 +1007,7 @@ private fun ExchangeRatesDialog(
     onSave: (Map<String, Double>) -> Unit,
     onReset: () -> Unit
 ) {
+    val utilitiesAccent = MaterialTheme.kansoColors.utilitiesAccent
     val inputs = remember(currentRates) {
         mutableStateMapOf<String, String>().apply {
             AppCurrency.entries.filter { it != AppCurrency.USD }.forEach { c ->
@@ -1012,49 +1017,40 @@ private fun ExchangeRatesDialog(
         }
     }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Rates vs 1 USD") },
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                AppCurrency.entries.filter { it != AppCurrency.USD }.forEach { currency ->
-                    OutlinedTextField(
-                        value = inputs[currency.code].orEmpty(),
-                        onValueChange = { inputs[currency.code] = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text("1 USD in ${currency.code} (${currency.symbol})") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
-                    )
+    KansoFormBottomSheet(
+        title = "Rates vs 1 USD",
+        onDismiss = onDismiss,
+        primaryLabel = "Save Rates",
+        primaryColor = utilitiesAccent,
+        badgeText = "FX Rates",
+        badgeColor = utilitiesAccent,
+        badgeIcon = Icons.Outlined.SwapHoriz,
+        secondaryLabel = "Reset",
+        onSecondaryClick = onReset,
+        secondaryIsDestructive = false,
+        onPrimaryClick = {
+            val parsed = mutableMapOf<String, Double>()
+            for ((code, raw) in inputs) {
+                val v = raw.trim().replace(',', '.').toDoubleOrNull()
+                if (v != null && v > 0.0) {
+                    parsed[code] = v
                 }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                val parsed = mutableMapOf<String, Double>()
-                for ((code, raw) in inputs) {
-                    val v = raw.trim().replace(',', '.').toDoubleOrNull()
-                    if (v != null && v > 0.0) {
-                        parsed[code] = v
-                    }
-                }
-                onSave(parsed)
-            }) {
-                Text("Save")
-            }
-        },
-        dismissButton = {
-            Row {
-                TextButton(onClick = onReset) { Text("Reset") }
-                TextButton(onClick = onDismiss) { Text("Cancel") }
-            }
+            onSave(parsed)
         }
-    )
+    ) {
+        AppCurrency.entries.filter { it != AppCurrency.USD }.forEach { currency ->
+            OutlinedTextField(
+                value = inputs[currency.code].orEmpty(),
+                onValueChange = { inputs[currency.code] = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("1 USD in ${currency.code} (${currency.symbol})") },
+                singleLine = true,
+                shape = RoundedCornerShape(14.dp),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+            )
+        }
+    }
 }
 
 @Composable
@@ -1071,76 +1067,71 @@ private fun CountdownEditorDialog(
     var note by remember { mutableStateOf(initial?.note.orEmpty()) }
     var showPicker by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    val utilitiesAccent = MaterialTheme.kansoColors.utilitiesAccent
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(if (initial == null) "New Countdown" else "Edit Countdown") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(
-                    value = title,
-                    onValueChange = {
-                        title = it
-                        error = null
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Event") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words)
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Date", style = MaterialTheme.typography.labelLarge)
-                        Text(KansoDateFormatters.formatFullDate(targetEpochDay))
-                    }
-                    KansoOutlinedButton(
-                        text = "Pick Date",
-                        size = KansoButtonSize.COMPACT,
-                        onClick = { showPicker = true }
-                    )
-                }
-                OutlinedTextField(
-                    value = note,
-                    onValueChange = { note = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Note (optional)") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences)
-                )
-                if (error != null) {
-                    Text(error.orEmpty(), color = MaterialTheme.colorScheme.error)
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                if (title.isBlank()) {
-                    error = "Enter an event title."
-                } else {
-                    onSave(title, targetEpochDay, note)
-                }
-            }) {
-                Text("Save")
-            }
-        },
-        dismissButton = {
-            Row {
-                if (onDelete != null) {
-                    TextButton(
-                        onClick = onDelete,
-                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                    ) {
-                        Text("Delete")
-                    }
-                }
-                TextButton(onClick = onDismiss) { Text("Cancel") }
+    KansoFormBottomSheet(
+        title = if (initial == null) "New Countdown" else "Edit Countdown",
+        onDismiss = onDismiss,
+        primaryLabel = if (initial == null) "Save Countdown" else "Update Countdown",
+        primaryColor = utilitiesAccent,
+        badgeText = "Countdown",
+        badgeColor = utilitiesAccent,
+        badgeIcon = Icons.Outlined.Event,
+        secondaryLabel = if (onDelete != null) "Delete" else null,
+        onSecondaryClick = onDelete,
+        errorText = error,
+        onPrimaryClick = {
+            if (title.isBlank()) {
+                error = "Enter an event title."
+            } else {
+                onSave(title, targetEpochDay, note)
             }
         }
-    )
+    ) {
+        OutlinedTextField(
+            value = title,
+            onValueChange = {
+                title = it
+                error = null
+            },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Event") },
+            singleLine = true,
+            shape = RoundedCornerShape(14.dp),
+            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words)
+        )
+        Surface(
+            shape = RoundedCornerShape(14.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Date", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(KansoDateFormatters.formatFullDate(targetEpochDay), style = MaterialTheme.typography.bodyLarge)
+                }
+                KansoOutlinedButton(
+                    text = "Pick Date",
+                    size = KansoButtonSize.COMPACT,
+                    onClick = { showPicker = true }
+                )
+            }
+        }
+        OutlinedTextField(
+            value = note,
+            onValueChange = { note = it },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Note (optional)") },
+            singleLine = true,
+            shape = RoundedCornerShape(14.dp),
+            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences)
+        )
+    }
 
     if (showPicker) {
         KansoDatePickerDialog(

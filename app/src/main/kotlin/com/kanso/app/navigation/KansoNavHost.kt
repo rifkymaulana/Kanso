@@ -426,13 +426,13 @@ fun KansoAppRoot(
             currency = prefs.currency,
             initialMode = quickCaptureInitialMode,
             onDismiss = { showQuickCapture = false },
-            onSaveTransaction = { type, amountCents, category, wallet, note ->
-                mainViewModel.saveQuickTransaction(type, amountCents, category, wallet, note)
+            onSaveTransaction = { type, amountCents, category, wallet, note, timestampMillis ->
+                mainViewModel.saveQuickTransaction(type, amountCents, category, wallet, note, timestampMillis)
                 showMessage("Saved ${if (type.name == "INCOME") "income" else "expense"}")
                 scope.launch { KansoWidgetUpdater.updateAll(context) }
             },
-            onSaveTransfer = { fromWallet, toWallet, amountCents, feeCents, note ->
-                mainViewModel.saveQuickTransfer(fromWallet, toWallet, amountCents, feeCents, note)
+            onSaveTransfer = { fromWallet, toWallet, amountCents, feeCents, note, timestampMillis ->
+                mainViewModel.saveQuickTransfer(fromWallet, toWallet, amountCents, feeCents, note, timestampMillis)
                 showMessage("Saved transfer")
                 scope.launch { KansoWidgetUpdater.updateAll(context) }
             },

@@ -92,7 +92,8 @@ class MainViewModel @Inject constructor(
         amountCents: Long,
         category: ExpenseCategory,
         wallet: WalletType,
-        note: String
+        note: String,
+        timestampMillis: Long = System.currentTimeMillis()
     ) {
         viewModelScope.launch {
             moneyRepository.upsertTransaction(
@@ -102,7 +103,7 @@ class MainViewModel @Inject constructor(
                     category = category,
                     wallet = wallet,
                     note = note,
-                    timestampMillis = System.currentTimeMillis()
+                    timestampMillis = timestampMillis
                 )
             )
         }
@@ -113,7 +114,8 @@ class MainViewModel @Inject constructor(
         toWallet: WalletType,
         amountCents: Long,
         feeCents: Long,
-        note: String
+        note: String,
+        timestampMillis: Long = System.currentTimeMillis()
     ) {
         viewModelScope.launch {
             moneyRepository.recordTransfer(
@@ -121,7 +123,8 @@ class MainViewModel @Inject constructor(
                 toWallet = toWallet,
                 amountCents = amountCents,
                 feeCents = feeCents,
-                note = note
+                note = note,
+                timestampMillis = timestampMillis
             )
         }
     }

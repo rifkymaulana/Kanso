@@ -18,6 +18,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -30,6 +31,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -39,10 +42,13 @@ import androidx.compose.material.icons.outlined.CloudDownload
 import androidx.compose.material.icons.outlined.CloudSync
 import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material.icons.outlined.InstallMobile
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.Restore
 import androidx.compose.material.icons.outlined.SystemUpdate
+import androidx.compose.material.icons.outlined.WaterDrop
 import androidx.compose.material.icons.outlined.Widgets
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -95,12 +101,14 @@ import com.kanso.core.ui.components.KansoAnimatedProgressBar
 import com.kanso.core.ui.components.KansoBentoCard
 import com.kanso.core.ui.components.KansoButtonSize
 import com.kanso.core.ui.components.KansoDateFormatters
+import com.kanso.core.ui.components.KansoFormBottomSheet
 import com.kanso.core.ui.components.KansoMotion
 import com.kanso.core.ui.components.KansoOutlinedButton
 import com.kanso.core.ui.components.KansoPillBadge
 import com.kanso.core.ui.components.KansoPrimaryButton
 import com.kanso.core.ui.components.KansoSegmentedRow
 import com.kanso.core.ui.components.KansoTonalButton
+import com.kanso.core.ui.components.warningSemanticColor
 import com.kanso.core.ui.theme.kansoColors
 import com.kanso.feature.money.OverallBudgetDialog
 import java.time.LocalDateTime
@@ -955,64 +963,56 @@ private fun DrivePassphraseDialog(
     var confirm by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(if (hasExisting) "Update Sync Passphrase" else "Set Sync Encryption Passphrase")
-        },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(
-                    text = "All Google Drive sync data is end-to-end encrypted with this passphrase before leaving your device. Use the exact same passphrase on all your devices (min ${EncryptedBackupCrypto.MIN_PASSPHRASE_LENGTH} chars). Stored locally via Android Keystore.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                OutlinedTextField(
-                    value = passphrase,
-                    onValueChange = {
-                        passphrase = it
-                        error = null
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Sync passphrase") },
-                    singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
-                )
-                OutlinedTextField(
-                    value = confirm,
-                    onValueChange = {
-                        confirm = it
-                        error = null
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Confirm passphrase") },
-                    singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
-                )
-                if (error != null) {
-                    Text(error.orEmpty(), color = MaterialTheme.colorScheme.error)
-                }
+    KansoFormBottomSheet(
+        title = if (hasExisting) "Update Sync Passphrase" else "Set Sync Encryption Passphrase",
+        onDismiss = onDismiss,
+        primaryLabel = "Save & Encrypt",
+        badgeText = "E2EE",
+        badgeColor = MaterialTheme.colorScheme.primary,
+        badgeIcon = Icons.Outlined.Lock,
+        errorText = error,
+        onPrimaryClick = {
+            when {
+                passphrase.length < EncryptedBackupCrypto.MIN_PASSPHRASE_LENGTH ->
+                    error = "Passphrase must be at least ${EncryptedBackupCrypto.MIN_PASSPHRASE_LENGTH} characters."
+                passphrase != confirm ->
+                    error = "Passphrases do not match."
+                else -> onSave(passphrase)
             }
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                when {
-                    passphrase.length < EncryptedBackupCrypto.MIN_PASSPHRASE_LENGTH ->
-                        error = "Passphrase must be at least ${EncryptedBackupCrypto.MIN_PASSPHRASE_LENGTH} characters."
-                    passphrase != confirm ->
-                        error = "Passphrases do not match."
-                    else -> onSave(passphrase)
-                }
-            }) {
-                Text("Save & Encrypt")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
         }
-    )
+    ) {
+        Text(
+            text = "All Google Drive sync data is end-to-end encrypted with this passphrase before leaving your device. Use the exact same passphrase on all your devices (min ${EncryptedBackupCrypto.MIN_PASSPHRASE_LENGTH} chars). Stored locally via Android Keystore.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        OutlinedTextField(
+            value = passphrase,
+            onValueChange = {
+                passphrase = it
+                error = null
+            },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Sync passphrase") },
+            singleLine = true,
+            shape = RoundedCornerShape(14.dp),
+            visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+        )
+        OutlinedTextField(
+            value = confirm,
+            onValueChange = {
+                confirm = it
+                error = null
+            },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Confirm passphrase") },
+            singleLine = true,
+            shape = RoundedCornerShape(14.dp),
+            visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+        )
+    }
 }
 
 @Composable
@@ -1030,60 +1030,51 @@ private fun DriveConflictDialog(
     }
     val remoteItemsLabel = remote.itemCount?.let { "$it items" } ?: "Encrypted backup"
     val remoteDeviceLabel = remote.deviceModel?.let { " from $it" }.orEmpty()
+    val conflictColor = warningSemanticColor()
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Sync Conflict Detected") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    KansoFormBottomSheet(
+        title = "Sync Conflict Detected",
+        onDismiss = onDismiss,
+        primaryLabel = "Keep Cloud",
+        onPrimaryClick = onKeepCloud,
+        badgeText = "Conflict",
+        badgeColor = conflictColor,
+        badgeIcon = Icons.Outlined.CloudSync,
+        secondaryLabel = "Keep Device",
+        onSecondaryClick = onKeepDevice,
+        secondaryIsDestructive = false
+    ) {
+        Text(
+            text = "Both this device and Google Drive contain different changes. Choose which snapshot should become the source of truth:",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Surface(
+            shape = RoundedCornerShape(14.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
                 Text(
-                    text = "Both this device and Google Drive contain different changes. Choose which snapshot should become the source of truth:",
-                    style = MaterialTheme.typography.bodyMedium,
+                    text = "This device: ${conflict.localItemCount} items",
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium)
+                )
+                Text(
+                    text = "Google Drive: $remoteItemsLabel$remoteDeviceLabel",
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium)
+                )
+                Text(
+                    text = "Cloud updated: $remoteTime",
+                    style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Text(
-                            text = "This device: ${conflict.localItemCount} items",
-                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium)
-                        )
-                        Text(
-                            text = "Google Drive: $remoteItemsLabel$remoteDeviceLabel",
-                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium)
-                        )
-                        Text(
-                            text = "Cloud updated: $remoteTime",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onKeepCloud) {
-                Text("Keep Cloud")
-            }
-        },
-        dismissButton = {
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                TextButton(onClick = onDismiss) {
-                    Text("Cancel")
-                }
-                TextButton(onClick = onKeepDevice) {
-                    Text("Keep This Device")
-                }
             }
         }
-    )
+    }
 }
 
 @Composable
@@ -1371,38 +1362,33 @@ private fun GithubTokenDialog(
 ) {
     var tokenText by remember { mutableStateOf("") }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("GitHub Access Token") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(
-                    text = "rifkymaulana/Kanso is public, so in-app updates work automatically without a token. Only add an optional read-only Fine-Grained Personal Access Token if you hit GitHub's unauthenticated API rate limit or make the repository private again. Stored locally encrypted with Android Keystore and never included in backups.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                OutlinedTextField(
-                    value = tokenText,
-                    onValueChange = { tokenText = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text(if (hasExistingToken) "New token (leave blank to clear)" else "github_pat_...") },
-                    singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                onSave(tokenText.trim().ifEmpty { null })
-            }) {
-                Text(if (tokenText.isBlank() && hasExistingToken) "Clear Token" else "Save")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+    KansoFormBottomSheet(
+        title = "GitHub Access Token",
+        onDismiss = onDismiss,
+        primaryLabel = if (tokenText.isBlank() && hasExistingToken) "Clear Token" else "Save Token",
+        badgeText = "Optional",
+        badgeColor = MaterialTheme.colorScheme.primary,
+        badgeIcon = Icons.Outlined.Lock,
+        onPrimaryClick = {
+            onSave(tokenText.trim().ifEmpty { null })
         }
-    )
+    ) {
+        Text(
+            text = "rifkymaulana/Kanso is public, so in-app updates work automatically without a token. Only add an optional read-only Fine-Grained Personal Access Token if you hit GitHub's unauthenticated API rate limit or make the repository private again. Stored locally encrypted with Android Keystore and never included in backups.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        OutlinedTextField(
+            value = tokenText,
+            onValueChange = { tokenText = it },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text(if (hasExistingToken) "New token (leave blank to clear)" else "github_pat_...") },
+            singleLine = true,
+            shape = RoundedCornerShape(14.dp),
+            visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+        )
+    }
 }
 
 @Composable
@@ -1434,26 +1420,24 @@ private fun DisplayNameDialog(
     onSave: (String) -> Unit
 ) {
     var name by remember { mutableStateOf(currentName) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Display Name") },
-        text = {
-            OutlinedTextField(
-                value = name,
-                onValueChange = { name = it },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("Your name") },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words)
-            )
-        },
-        confirmButton = {
-            TextButton(onClick = { onSave(name) }) { Text("Save") }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
-        }
-    )
+    KansoFormBottomSheet(
+        title = "Display Name",
+        onDismiss = onDismiss,
+        primaryLabel = "Save Name",
+        badgeText = "Profile",
+        badgeColor = MaterialTheme.colorScheme.primary,
+        onPrimaryClick = { onSave(name) }
+    ) {
+        OutlinedTextField(
+            value = name,
+            onValueChange = { name = it },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Your name") },
+            singleLine = true,
+            shape = RoundedCornerShape(14.dp),
+            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words)
+        )
+    }
 }
 
 @Composable
@@ -1464,42 +1448,51 @@ private fun WaterGoalDialog(
 ) {
     var text by remember { mutableStateOf(currentGoalMl.toString()) }
     var error by remember { mutableStateOf<String?>(null) }
+    val habitsAccent = MaterialTheme.kansoColors.habitsAccent
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Daily Hydration Goal") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = {
-                        text = it.filter { ch -> ch.isDigit() }
+    KansoFormBottomSheet(
+        title = "Daily Hydration Goal",
+        onDismiss = onDismiss,
+        primaryLabel = "Save Goal",
+        primaryColor = habitsAccent,
+        badgeText = "${text.ifBlank { currentGoalMl.toString() }} ml",
+        badgeColor = habitsAccent,
+        badgeIcon = Icons.Outlined.WaterDrop,
+        errorText = error,
+        onPrimaryClick = {
+            val parsed = text.toIntOrNull()
+            if (parsed == null || parsed !in 250..10_000) {
+                error = "Enter a goal between 250 and 10,000 ml."
+            } else {
+                onSave(parsed)
+            }
+        }
+    ) {
+        OutlinedTextField(
+            value = text,
+            onValueChange = {
+                text = it.filter { ch -> ch.isDigit() }
+                error = null
+            },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Goal (ml)") },
+            singleLine = true,
+            shape = RoundedCornerShape(14.dp),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+        )
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(listOf(1500, 2000, 2500, 3000), key = { it }) { presetMl ->
+                AssistChip(
+                    onClick = {
+                        text = presetMl.toString()
                         error = null
                     },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Goal (ml)") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                    label = { Text("$presetMl ml") },
+                    shape = RoundedCornerShape(50)
                 )
-                if (error != null) {
-                    Text(error.orEmpty(), color = MaterialTheme.colorScheme.error)
-                }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                val parsed = text.toIntOrNull()
-                if (parsed == null || parsed !in 250..10_000) {
-                    error = "Enter a goal between 250 and 10,000 ml."
-                } else {
-                    onSave(parsed)
-                }
-            }) { Text("Save") }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
         }
-    )
+    }
 }
 
 @Composable
@@ -1508,24 +1501,50 @@ private fun CurrencyPickerDialog(
     onDismiss: () -> Unit,
     onSelect: (AppCurrency) -> Unit
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Default Currency") },
-        text = {
-            Column {
-                AppCurrency.entries.forEach { item ->
+    KansoFormBottomSheet(
+        title = "Default Currency",
+        onDismiss = onDismiss,
+        primaryLabel = "Done",
+        onPrimaryClick = onDismiss,
+        badgeText = current.code,
+        badgeColor = MaterialTheme.colorScheme.primary,
+        badgeIcon = Icons.Outlined.Payments
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            AppCurrency.entries.forEach { item ->
+                val selected = item == current
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .clickable { onSelect(item) },
+                    shape = RoundedCornerShape(14.dp),
+                    color = if (selected) {
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                    } else {
+                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                    },
+                    border = BorderStroke(
+                        1.dp,
+                        if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+                    )
+                ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onSelect(item) }
-                            .padding(vertical = 8.dp),
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        RadioButton(selected = item == current, onClick = { onSelect(item) })
+                        RadioButton(selected = selected, onClick = { onSelect(item) })
                         Column {
-                            Text("${item.code} (${item.symbol})", style = MaterialTheme.typography.bodyLarge)
                             Text(
-                                item.displayName,
+                                text = "${item.code} (${item.symbol})",
+                                style = MaterialTheme.typography.bodyLarge.copy(
+                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
+                                )
+                            )
+                            Text(
+                                text = item.displayName,
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -1533,11 +1552,8 @@ private fun CurrencyPickerDialog(
                     }
                 }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Close") }
         }
-    )
+    }
 }
 
 @Composable
@@ -1549,62 +1565,56 @@ private fun ExportPassphraseDialog(
     var confirm by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Encrypt Backup") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(
-                    text = "Choose a passphrase (at least ${EncryptedBackupCrypto.MIN_PASSPHRASE_LENGTH} characters). Keep it safe — backups cannot be decrypted without it.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                OutlinedTextField(
-                    value = passphrase,
-                    onValueChange = {
-                        passphrase = it
-                        error = null
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Passphrase") },
-                    singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
-                )
-                OutlinedTextField(
-                    value = confirm,
-                    onValueChange = {
-                        confirm = it
-                        error = null
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Confirm passphrase") },
-                    singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
-                )
-                if (error != null) {
-                    Text(error.orEmpty(), color = MaterialTheme.colorScheme.error)
-                }
+    KansoFormBottomSheet(
+        title = "Encrypt Backup",
+        onDismiss = onDismiss,
+        primaryLabel = "Choose Location",
+        badgeText = "AES-256",
+        badgeColor = MaterialTheme.colorScheme.primary,
+        badgeIcon = Icons.Outlined.CloudUpload,
+        errorText = error,
+        onPrimaryClick = {
+            when {
+                passphrase.length < EncryptedBackupCrypto.MIN_PASSPHRASE_LENGTH ->
+                    error = "Passphrase must be at least ${EncryptedBackupCrypto.MIN_PASSPHRASE_LENGTH} characters."
+                passphrase != confirm ->
+                    error = "Passphrases do not match."
+                else -> onConfirm(passphrase)
             }
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                when {
-                    passphrase.length < EncryptedBackupCrypto.MIN_PASSPHRASE_LENGTH ->
-                        error = "Passphrase must be at least ${EncryptedBackupCrypto.MIN_PASSPHRASE_LENGTH} characters."
-                    passphrase != confirm ->
-                        error = "Passphrases do not match."
-                    else -> onConfirm(passphrase)
-                }
-            }) {
-                Text("Choose Location")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
         }
-    )
+    ) {
+        Text(
+            text = "Choose a passphrase (at least ${EncryptedBackupCrypto.MIN_PASSPHRASE_LENGTH} characters). Keep it safe — backups cannot be decrypted without it.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        OutlinedTextField(
+            value = passphrase,
+            onValueChange = {
+                passphrase = it
+                error = null
+            },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Passphrase") },
+            singleLine = true,
+            shape = RoundedCornerShape(14.dp),
+            visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+        )
+        OutlinedTextField(
+            value = confirm,
+            onValueChange = {
+                confirm = it
+                error = null
+            },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Confirm passphrase") },
+            singleLine = true,
+            shape = RoundedCornerShape(14.dp),
+            visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+        )
+    }
 }
 
 @Composable
@@ -1615,48 +1625,43 @@ private fun RestorePassphraseDialog(
     var passphrase by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Restore Backup") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(
-                    text = "Restoring replaces all current local data (money, brain, habits, life admin, vault, and countdowns). Enter your backup passphrase to proceed.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.error
-                )
-                OutlinedTextField(
-                    value = passphrase,
-                    onValueChange = {
-                        passphrase = it
-                        error = null
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Backup passphrase") },
-                    singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
-                )
-                if (error != null) {
-                    Text(error.orEmpty(), color = MaterialTheme.colorScheme.error)
-                }
+    KansoFormBottomSheet(
+        title = "Restore Backup",
+        onDismiss = onDismiss,
+        primaryLabel = "Restore Data",
+        primaryColor = MaterialTheme.colorScheme.error,
+        primaryContentColor = MaterialTheme.colorScheme.onError,
+        badgeText = "Overwrite",
+        badgeColor = MaterialTheme.colorScheme.error,
+        badgeIcon = Icons.Outlined.Restore,
+        errorText = error,
+        onPrimaryClick = {
+            if (passphrase.length < EncryptedBackupCrypto.MIN_PASSPHRASE_LENGTH) {
+                error = "Enter your backup passphrase."
+            } else {
+                onConfirm(passphrase)
             }
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                if (passphrase.length < EncryptedBackupCrypto.MIN_PASSPHRASE_LENGTH) {
-                    error = "Enter your backup passphrase."
-                } else {
-                    onConfirm(passphrase)
-                }
-            }) {
-                Text("Restore Data")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
         }
-    )
+    ) {
+        Text(
+            text = "Restoring replaces all current local data (money, brain, habits, life admin, vault, and countdowns). Enter your backup passphrase to proceed.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.error
+        )
+        OutlinedTextField(
+            value = passphrase,
+            onValueChange = {
+                passphrase = it
+                error = null
+            },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Backup passphrase") },
+            singleLine = true,
+            shape = RoundedCornerShape(14.dp),
+            visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+        )
+    }
 }
 
 private tailrec fun Context.findActivity(): Activity? = when (this) {

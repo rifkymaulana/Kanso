@@ -1,8 +1,10 @@
 package com.kanso.core.model
 
 import kotlinx.serialization.Serializable
+import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
+import java.time.ZoneId
 
 @Serializable
 enum class TransactionType(val label: String) {
@@ -131,6 +133,93 @@ object MoneyCalculations {
         val isWarning: Boolean,
         val isOverBudget: Boolean
     )
+
+    data class TransactionFilter(
+        val type: TransactionType? = null,
+        val wallet: WalletType? = null,
+        val category: ExpenseCategory? = null
+    ) {
+        val isActive: Boolean
+            get() = type != null || wallet != null || category != null
+    }
+
+    data class DailyTransactionGroup(
+        val epochDay: Long,
+        val transactions: List<MoneyTransaction>,
+        val dayIncomeCents: Long,
+        val dayExpenseCents: Long,
+        val dayNetCents: Long
+    )
+
+    fun resolveTransactionTimestampMillis(
+        selectedEpochDay: Long,
+        existingTimestampMillis: Long?,
+        nowMillis: Long,
+        zone: ZoneId = ZoneId.systemDefault()
+    ): Long {
+        val selectedDate = LocalDate.ofEpochDay(selectedEpochDay)
+        if (existingTimestampMillis != null) {
+            val existingZdt = Instant.ofEpochMilli(existingTimestampMillis).atZone(zone)
+            return if (existingZdt.toLocalDate() == selectedDate) {
+                existingTimestampMillis
+            } else {
+                selectedDate.atTime(existingZdt.toLocalTime()).atZone(zone).toInstant().toEpochMilli()
+            }
+        }
+        val nowZdt = Instant.ofEpochMilli(nowMillis).atZone(zone)
+        return if (selectedDate == nowZdt.toLocalDate()) {
+            nowMillis
+        } else {
+            selectedDate.atTime(nowZdt.toLocalTime()).atZone(zone).toInstant().toEpochMilli()
+        }
+    }
+
+    fun filterTransactions(
+        transactions: List<MoneyTransaction>,
+        filter: TransactionFilter
+    ): List<MoneyTransaction> {
+        if (!filter.isActive) return transactions
+        return transactions.filter { tx ->
+            val typeOk = filter.type == null || tx.type == filter.type
+            val walletOk = filter.wallet == null ||
+                tx.wallet == filter.wallet ||
+                (tx.type == TransactionType.TRANSFER && tx.toWallet == filter.wallet)
+            val categoryOk = filter.category == null ||
+                (tx.type != TransactionType.TRANSFER && tx.category == filter.category)
+            typeOk && walletOk && categoryOk
+        }
+    }
+
+    fun groupTransactionsByDay(
+        transactions: List<MoneyTransaction>,
+        zone: ZoneId = ZoneId.systemDefault()
+    ): List<DailyTransactionGroup> {
+        if (transactions.isEmpty()) return emptyList()
+        return transactions
+            .groupBy { tx ->
+                Instant.ofEpochMilli(tx.timestampMillis).atZone(zone).toLocalDate().toEpochDay()
+            }
+            .entries
+            .sortedByDescending { it.key }
+            .map { (epochDay, dayTxs) ->
+                var dayIncome = 0L
+                var dayExpense = 0L
+                for (tx in dayTxs) {
+                    when (tx.type) {
+                        TransactionType.INCOME -> dayIncome += tx.amountCents
+                        TransactionType.EXPENSE -> dayExpense += tx.amountCents
+                        TransactionType.TRANSFER -> Unit
+                    }
+                }
+                DailyTransactionGroup(
+                    epochDay = epochDay,
+                    transactions = dayTxs.sortedByDescending { it.timestampMillis },
+                    dayIncomeCents = dayIncome,
+                    dayExpenseCents = dayExpense,
+                    dayNetCents = dayIncome - dayExpense
+                )
+            }
+    }
 
     fun summarize(transactions: List<MoneyTransaction>): MonthlySummary {
         var income = 0L

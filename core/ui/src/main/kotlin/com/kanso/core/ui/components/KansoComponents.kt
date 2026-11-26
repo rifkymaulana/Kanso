@@ -1,5 +1,6 @@
 package com.kanso.core.ui.components
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -12,6 +13,10 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.LocalIndication
@@ -33,12 +38,16 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AccountBalance
 import androidx.compose.material.icons.outlined.AttachMoney
@@ -47,6 +56,7 @@ import androidx.compose.material.icons.outlined.CardGiftcard
 import androidx.compose.material.icons.outlined.Category
 import androidx.compose.material.icons.outlined.CreditCard
 import androidx.compose.material.icons.outlined.DirectionsCar
+import androidx.compose.material.icons.outlined.EventAvailable
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.LaptopMac
@@ -59,7 +69,6 @@ import androidx.compose.material.icons.outlined.ShoppingCart
 import androidx.compose.material.icons.outlined.Smartphone
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ChevronRight
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DatePicker
@@ -70,11 +79,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -962,6 +973,256 @@ fun KansoSmallIconButton(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun KansoFormBottomSheet(
+    title: String,
+    onDismiss: () -> Unit,
+    primaryLabel: String? = null,
+    onPrimaryClick: (() -> Unit)? = null,
+    primaryColor: Color = MaterialTheme.colorScheme.primary,
+    primaryContentColor: Color = Color.White,
+    primaryEnabled: Boolean = true,
+    badgeText: String? = null,
+    badgeColor: Color = MaterialTheme.colorScheme.primary,
+    badgeIcon: ImageVector? = null,
+    secondaryLabel: String? = null,
+    onSecondaryClick: (() -> Unit)? = null,
+    secondaryIsDestructive: Boolean = true,
+    errorText: String? = null,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        containerColor = MaterialTheme.colorScheme.surface
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .imePadding()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                    modifier = Modifier.weight(1f),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (!badgeText.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.width(8.dp))
+                    KansoPillBadge(
+                        text = badgeText,
+                        color = badgeColor,
+                        leadingIcon = badgeIcon
+                    )
+                }
+            }
+
+            content()
+
+            AnimatedVisibility(
+                visible = !errorText.isNullOrBlank(),
+                enter = expandVertically(KansoMotion.SizeSpring) + fadeIn(tween(180)),
+                exit = shrinkVertically() + fadeOut(tween(140))
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.errorContainer
+                ) {
+                    Text(
+                        text = errorText.orEmpty(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                }
+            }
+
+            if (primaryLabel != null && onPrimaryClick != null) {
+                Spacer(modifier = Modifier.height(2.dp))
+                if (secondaryLabel != null && onSecondaryClick != null) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        val secContentColor = if (secondaryIsDestructive) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.primary
+                        }
+                        val secBorderColor = if (secondaryIsDestructive) {
+                            MaterialTheme.colorScheme.error.copy(alpha = 0.45f)
+                        } else {
+                            MaterialTheme.colorScheme.outline
+                        }
+                        KansoOutlinedButton(
+                            text = secondaryLabel,
+                            size = KansoButtonSize.LARGE,
+                            contentColor = secContentColor,
+                            borderColor = secBorderColor,
+                            modifier = Modifier.weight(1f),
+                            onClick = onSecondaryClick
+                        )
+                        KansoPrimaryButton(
+                            text = primaryLabel,
+                            size = KansoButtonSize.LARGE,
+                            enabled = primaryEnabled,
+                            containerColor = primaryColor,
+                            contentColor = primaryContentColor,
+                            modifier = Modifier.weight(1.8f),
+                            onClick = onPrimaryClick
+                        )
+                    }
+                } else {
+                    KansoPrimaryButton(
+                        text = primaryLabel,
+                        size = KansoButtonSize.LARGE,
+                        enabled = primaryEnabled,
+                        containerColor = primaryColor,
+                        contentColor = primaryContentColor,
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = onPrimaryClick
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun KansoTransactionDateSelector(
+    selectedEpochDay: Long,
+    onSelectEpochDay: (Long) -> Unit,
+    accentColor: Color = MaterialTheme.colorScheme.primary,
+    modifier: Modifier = Modifier
+) {
+    val haptic = LocalHapticFeedback.current
+    val todayEpochDay = remember { LocalDate.now().toEpochDay() }
+    val yesterdayEpochDay = todayEpochDay - 1L
+    var showDatePicker by remember { mutableStateOf(false) }
+
+    val isToday = selectedEpochDay == todayEpochDay
+    val isYesterday = selectedEpochDay == yesterdayEpochDay
+    val isCustom = !isToday && !isYesterday
+
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text("Date", style = MaterialTheme.typography.labelLarge)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            TransactionDateOptionChip(
+                label = "Today",
+                selected = isToday,
+                accentColor = accentColor,
+                modifier = Modifier.weight(0.9f),
+                onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onSelectEpochDay(todayEpochDay)
+                }
+            )
+            TransactionDateOptionChip(
+                label = "Yesterday",
+                selected = isYesterday,
+                accentColor = accentColor,
+                modifier = Modifier.weight(1f),
+                onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onSelectEpochDay(yesterdayEpochDay)
+                }
+            )
+            TransactionDateOptionChip(
+                label = if (isCustom) KansoDateFormatters.formatFullDate(selectedEpochDay) else "Pick Date",
+                icon = Icons.Outlined.EventAvailable,
+                selected = isCustom,
+                accentColor = accentColor,
+                modifier = Modifier.weight(1.25f),
+                onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    showDatePicker = true
+                }
+            )
+        }
+    }
+
+    if (showDatePicker) {
+        KansoDatePickerDialog(
+            initialEpochDay = selectedEpochDay,
+            onSelect = onSelectEpochDay,
+            onDismiss = { showDatePicker = false }
+        )
+    }
+}
+
+@Composable
+private fun TransactionDateOptionChip(
+    label: String,
+    selected: Boolean,
+    accentColor: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    icon: ImageVector? = null
+) {
+    Surface(
+        modifier = modifier
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(14.dp),
+        color = if (selected) {
+            accentColor.copy(alpha = 0.16f)
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        },
+        border = BorderStroke(
+            1.dp,
+            if (selected) accentColor else MaterialTheme.colorScheme.outlineVariant
+        )
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 9.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (icon != null) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = if (selected) accentColor else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(15.dp)
+                )
+                Spacer(modifier = Modifier.width(5.dp))
+            }
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelLarge.copy(
+                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
+                ),
+                color = if (selected) accentColor else MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
 @Composable
 fun ConfirmDeleteDialog(
     title: String,
@@ -970,26 +1231,23 @@ fun ConfirmDeleteDialog(
     onDismiss: () -> Unit,
     confirmLabel: String = "Delete"
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(text = title) },
-        text = { Text(text = message) },
-        confirmButton = {
-            TextButton(
-                onClick = onConfirm,
-                colors = ButtonDefaults.textButtonColors(
-                    contentColor = MaterialTheme.colorScheme.error
-                )
-            ) {
-                Text(text = confirmLabel)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(text = "Cancel")
-            }
-        }
-    )
+    KansoFormBottomSheet(
+        title = title,
+        onDismiss = onDismiss,
+        primaryLabel = confirmLabel,
+        onPrimaryClick = onConfirm,
+        primaryColor = MaterialTheme.colorScheme.error,
+        primaryContentColor = MaterialTheme.colorScheme.onError,
+        secondaryLabel = "Cancel",
+        onSecondaryClick = onDismiss,
+        secondaryIsDestructive = false
+    ) {
+        Text(
+            text = message,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
 }
 
 @Composable
@@ -1172,6 +1430,9 @@ object KansoDateFormatters {
     private val shortDateFormatter = DateTimeFormatter.ofPattern("d MMM", Locale.getDefault())
     private val fullDateFormatter = DateTimeFormatter.ofPattern("d MMM yyyy", Locale.getDefault())
     private val dateTimeFormatter = DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm", Locale.getDefault())
+    private val timeFormatter = DateTimeFormatter.ofPattern("HH:mm", Locale.getDefault())
+    private val dayOfWeekShortDateFormatter = DateTimeFormatter.ofPattern("EEE, d MMM", Locale.getDefault())
+    private val dayOfWeekFullDateFormatter = DateTimeFormatter.ofPattern("EEE, d MMM yyyy", Locale.getDefault())
 
     fun formatShortDate(epochMillis: Long): String {
         val date = Instant.ofEpochMilli(epochMillis)
@@ -1182,6 +1443,23 @@ object KansoDateFormatters {
             today -> "Today"
             today.minusDays(1) -> "Yesterday"
             else -> date.format(shortDateFormatter)
+        }
+    }
+
+    fun formatTime(epochMillis: Long): String {
+        return Instant.ofEpochMilli(epochMillis)
+            .atZone(ZoneId.systemDefault())
+            .toLocalTime()
+            .format(timeFormatter)
+    }
+
+    fun formatDayGroupHeader(epochDay: Long, today: LocalDate = LocalDate.now()): String {
+        val date = LocalDate.ofEpochDay(epochDay)
+        return when {
+            date == today -> "Today · ${date.format(dayOfWeekShortDateFormatter)}"
+            date == today.minusDays(1) -> "Yesterday · ${date.format(dayOfWeekShortDateFormatter)}"
+            date.year == today.year -> date.format(dayOfWeekShortDateFormatter)
+            else -> date.format(dayOfWeekFullDateFormatter)
         }
     }
 

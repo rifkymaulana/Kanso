@@ -43,6 +43,9 @@ data class MoneyUiState(
     val overallMonthlyBudgetCents: Long = 0L,
     val summary: MoneyCalculations.MonthlySummary = MoneyCalculations.MonthlySummary(0L, 0L, 0L, emptyMap()),
     val transactions: List<MoneyTransaction> = emptyList(),
+    val transactionFilter: MoneyCalculations.TransactionFilter = MoneyCalculations.TransactionFilter(),
+    val filteredTransactions: List<MoneyTransaction> = emptyList(),
+    val dailyGroups: List<MoneyCalculations.DailyTransactionGroup> = emptyList(),
     val budgetStatuses: List<MoneyCalculations.BudgetStatus> = emptyList(),
     val budgets: List<CategoryBudget> = emptyList(),
     val bills: List<RecurringBill> = emptyList(),
@@ -64,6 +67,7 @@ class MoneyViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val selectedMonthFlow = MutableStateFlow(YearMonth.now())
+    private val filterFlow = MutableStateFlow(MoneyCalculations.TransactionFilter())
     private val monthTransactionsFlow = selectedMonthFlow.flatMapLatest { month ->
         moneyRepository.observeTransactionsForMonth(month)
     }
@@ -87,8 +91,9 @@ class MoneyViewModel @Inject constructor(
         coreMoneyFlow,
         moneyRepository.observeBills(),
         moneyRepository.observeIous(),
-        preferencesRepository.preferences
-    ) { bundle, bills, ious, prefs ->
+        preferencesRepository.preferences,
+        filterFlow
+    ) { bundle, bills, ious, prefs, filter ->
         val month = bundle.month
         val transactions = bundle.transactions
         val budgets = bundle.budgets
@@ -111,6 +116,8 @@ class MoneyViewModel @Inject constructor(
 
         val summary = MoneyCalculations.summarize(transactions)
         val prevSummary = MoneyCalculations.summarize(bundle.previousTransactions)
+        val filteredTransactions = MoneyCalculations.filterTransactions(transactions, filter)
+        val dailyGroups = MoneyCalculations.groupTransactionsByDay(filteredTransactions, zone)
         val budgetStatuses = MoneyCalculations.computeBudgetStatuses(budgets, summary.byCategory)
         val safeToSpend = SmartCoachCalculations.computeSafeToSpend(
             targetMonth = month,
@@ -142,6 +149,9 @@ class MoneyViewModel @Inject constructor(
             overallMonthlyBudgetCents = prefs.overallMonthlyBudgetCents,
             summary = summary,
             transactions = transactions,
+            transactionFilter = filter,
+            filteredTransactions = filteredTransactions,
+            dailyGroups = dailyGroups,
             budgetStatuses = budgetStatuses,
             budgets = budgets,
             bills = bills,
@@ -168,6 +178,28 @@ class MoneyViewModel @Inject constructor(
 
     fun nextMonth() {
         selectedMonthFlow.update { it.plusMonths(1) }
+    }
+
+    fun toggleTypeFilter(type: TransactionType) {
+        filterFlow.update { current ->
+            current.copy(type = if (current.type == type) null else type)
+        }
+    }
+
+    fun toggleWalletFilter(wallet: WalletType) {
+        filterFlow.update { current ->
+            current.copy(wallet = if (current.wallet == wallet) null else wallet)
+        }
+    }
+
+    fun toggleCategoryFilter(category: ExpenseCategory) {
+        filterFlow.update { current ->
+            current.copy(category = if (current.category == category) null else category)
+        }
+    }
+
+    fun clearTransactionFilters() {
+        filterFlow.value = MoneyCalculations.TransactionFilter()
     }
 
     fun saveTransaction(

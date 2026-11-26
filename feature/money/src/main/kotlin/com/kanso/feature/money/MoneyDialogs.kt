@@ -18,17 +18,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.ArrowDownward
@@ -36,18 +32,16 @@ import androidx.compose.material.icons.outlined.ArrowUpward
 import androidx.compose.material.icons.outlined.Handshake
 import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material3.AssistChip
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -74,24 +68,25 @@ import com.kanso.core.model.CurrencyFormatter
 import com.kanso.core.model.ExpenseCategory
 import com.kanso.core.model.IouDirection
 import com.kanso.core.model.IouEntry
+import com.kanso.core.model.MoneyCalculations
 import com.kanso.core.model.MoneyTransaction
 import com.kanso.core.model.RecurringBill
 import com.kanso.core.model.TransactionType
 import com.kanso.core.model.WalletBalanceSummary
 import com.kanso.core.model.WalletType
 import com.kanso.core.ui.components.CurrencyAmountVisualTransformation
-import com.kanso.core.ui.components.KansoButtonSize
+import com.kanso.core.ui.components.KansoFormBottomSheet
 import com.kanso.core.ui.components.KansoMotion
-import com.kanso.core.ui.components.KansoOutlinedButton
-import com.kanso.core.ui.components.KansoPillBadge
-import com.kanso.core.ui.components.KansoPrimaryButton
 import com.kanso.core.ui.components.KansoSegmentedRow
+import com.kanso.core.ui.components.KansoTransactionDateSelector
 import com.kanso.core.ui.components.accentColor
 import com.kanso.core.ui.components.expenseSemanticColor
 import com.kanso.core.ui.components.icon
 import com.kanso.core.ui.components.incomeSemanticColor
 import com.kanso.core.ui.theme.kansoColors
+import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
 
 @Composable
 private fun TransactionType.accentColor(): Color = when (this) {
@@ -119,7 +114,8 @@ fun TransactionEditorDialog(
         wallet: WalletType,
         toWallet: WalletType?,
         feeCents: Long,
-        note: String
+        note: String,
+        timestampMillis: Long
     ) -> Unit,
     onDelete: (() -> Unit)? = null
 ) {
@@ -142,6 +138,16 @@ fun TransactionEditorDialog(
         )
     }
     var feeText by remember { mutableStateOf("") }
+    var selectedEpochDay by remember {
+        mutableLongStateOf(
+            initial?.let {
+                Instant.ofEpochMilli(it.timestampMillis)
+                    .atZone(ZoneId.systemDefault())
+                    .toLocalDate()
+                    .toEpochDay()
+            } ?: LocalDate.now().toEpochDay()
+        )
+    }
     var note by remember { mutableStateOf(initial?.note.orEmpty()) }
     var error by remember { mutableStateOf<String?>(null) }
 
@@ -179,6 +185,11 @@ fun TransactionEditorDialog(
                     error = "Choose two different wallets."
                 parsedFee == null -> error = "Enter a valid transfer fee."
                 else -> {
+                    val resolvedTimestampMillis = MoneyCalculations.resolveTransactionTimestampMillis(
+                        selectedEpochDay = selectedEpochDay,
+                        existingTimestampMillis = initial?.timestampMillis,
+                        nowMillis = System.currentTimeMillis()
+                    )
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     onSave(
                         type,
@@ -187,7 +198,8 @@ fun TransactionEditorDialog(
                         wallet,
                         if (type == TransactionType.TRANSFER) toWallet else null,
                         parsedFee,
-                        note
+                        note,
+                        resolvedTimestampMillis
                     )
                 }
             }
@@ -301,6 +313,12 @@ fun TransactionEditorDialog(
                 }
             }
         }
+
+        KansoTransactionDateSelector(
+            selectedEpochDay = selectedEpochDay,
+            onSelectEpochDay = { selectedEpochDay = it },
+            accentColor = activeAccent
+        )
 
         OutlinedTextField(
             value = note,
@@ -868,7 +886,6 @@ fun SettleIouDialog(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MoneySheetScaffold(
     title: String,
@@ -883,100 +900,22 @@ private fun MoneySheetScaffold(
     onPrimaryClick: () -> Unit,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-        containerColor = MaterialTheme.colorScheme.surface
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .navigationBarsPadding()
-                .imePadding()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                    modifier = Modifier.weight(1f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                KansoPillBadge(
-                    text = badgeText,
-                    color = badgeColor,
-                    leadingIcon = badgeIcon
-                )
-            }
-
-            content()
-
-            AnimatedVisibility(
-                visible = errorText != null,
-                enter = expandVertically(KansoMotion.SizeSpring) + fadeIn(tween(180)),
-                exit = shrinkVertically() + fadeOut(tween(140))
-            ) {
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.errorContainer
-                ) {
-                    Text(
-                        text = errorText.orEmpty(),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onErrorContainer
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(2.dp))
-
-            if (onDelete != null) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    KansoOutlinedButton(
-                        text = "Delete",
-                        size = KansoButtonSize.LARGE,
-                        contentColor = MaterialTheme.colorScheme.error,
-                        borderColor = MaterialTheme.colorScheme.error.copy(alpha = 0.45f),
-                        modifier = Modifier.weight(1f),
-                        onClick = onDelete
-                    )
-                    KansoPrimaryButton(
-                        text = primaryLabel,
-                        size = KansoButtonSize.LARGE,
-                        containerColor = primaryColor,
-                        contentColor = Color.White,
-                        modifier = Modifier.weight(1.8f),
-                        onClick = onPrimaryClick
-                    )
-                }
-            } else {
-                KansoPrimaryButton(
-                    text = primaryLabel,
-                    size = KansoButtonSize.LARGE,
-                    containerColor = primaryColor,
-                    contentColor = Color.White,
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = onPrimaryClick
-                )
-            }
-        }
-    }
+    KansoFormBottomSheet(
+        title = title,
+        onDismiss = onDismiss,
+        primaryLabel = primaryLabel,
+        onPrimaryClick = onPrimaryClick,
+        primaryColor = primaryColor,
+        primaryContentColor = Color.White,
+        badgeText = badgeText,
+        badgeColor = badgeColor,
+        badgeIcon = badgeIcon,
+        secondaryLabel = if (onDelete != null) "Delete" else null,
+        onSecondaryClick = onDelete,
+        secondaryIsDestructive = true,
+        errorText = errorText,
+        content = content
+    )
 }
 
 @Composable

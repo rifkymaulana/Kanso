@@ -5,6 +5,8 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDate
+import java.time.LocalTime
+import java.time.ZoneOffset
 
 class MoneyCalculationsTest {
 
@@ -110,5 +112,134 @@ class MoneyCalculationsTest {
         assertEquals("••••", SnippetMasker.mask("1234"))
         assertEquals("••••", SnippetMasker.mask("abc"))
         assertEquals("•••• •••• 7890", SnippetMasker.mask("1234567890"))
+    }
+
+    @Test
+    fun `resolveTransactionTimestampMillis handles today, backdated new tx, and edited tx dates`() {
+        val zone = ZoneOffset.UTC
+        val nov26 = LocalDate.of(2026, 11, 26)
+        val nov24 = LocalDate.of(2026, 11, 24)
+        val nov20 = LocalDate.of(2026, 11, 20)
+
+        val nowMillis = nov26.atTime(LocalTime.of(10, 15, 30)).toInstant(zone).toEpochMilli()
+        val existingMillis = nov24.atTime(LocalTime.of(14, 22, 10)).toInstant(zone).toEpochMilli()
+
+        // New transaction dated today returns exact nowMillis
+        assertEquals(
+            nowMillis,
+            MoneyCalculations.resolveTransactionTimestampMillis(
+                selectedEpochDay = nov26.toEpochDay(),
+                existingTimestampMillis = null,
+                nowMillis = nowMillis,
+                zone = zone
+            )
+        )
+
+        // New backdated transaction preserves time-of-day from nowMillis on selected date
+        val expectedBackdated = nov24.atTime(LocalTime.of(10, 15, 30)).toInstant(zone).toEpochMilli()
+        assertEquals(
+            expectedBackdated,
+            MoneyCalculations.resolveTransactionTimestampMillis(
+                selectedEpochDay = nov24.toEpochDay(),
+                existingTimestampMillis = null,
+                nowMillis = nowMillis,
+                zone = zone
+            )
+        )
+
+        // Edited transaction with unchanged date returns exact existingTimestampMillis
+        assertEquals(
+            existingMillis,
+            MoneyCalculations.resolveTransactionTimestampMillis(
+                selectedEpochDay = nov24.toEpochDay(),
+                existingTimestampMillis = existingMillis,
+                nowMillis = nowMillis,
+                zone = zone
+            )
+        )
+
+        // Edited transaction with changed date keeps existing time-of-day on new date
+        val expectedMoved = nov20.atTime(LocalTime.of(14, 22, 10)).toInstant(zone).toEpochMilli()
+        assertEquals(
+            expectedMoved,
+            MoneyCalculations.resolveTransactionTimestampMillis(
+                selectedEpochDay = nov20.toEpochDay(),
+                existingTimestampMillis = existingMillis,
+                nowMillis = nowMillis,
+                zone = zone
+            )
+        )
+    }
+
+    @Test
+    fun `filterTransactions supports type, wallet including transfer destinations, category, and combined filters`() {
+        val expenseFoodEwallet = MoneyTransaction(1L, TransactionType.EXPENSE, 50_000_00L, ExpenseCategory.FOOD, WalletType.EWALLET, timestampMillis = 1L)
+        val incomeSalaryBank = MoneyTransaction(2L, TransactionType.INCOME, 5_000_000_00L, ExpenseCategory.SALARY, WalletType.BANK, timestampMillis = 2L)
+        val transferBankToEwallet = MoneyTransaction(3L, TransactionType.TRANSFER, 200_000_00L, ExpenseCategory.OTHER, WalletType.BANK, toWallet = WalletType.EWALLET, timestampMillis = 3L)
+        val expenseOtherCash = MoneyTransaction(4L, TransactionType.EXPENSE, 25_000_00L, ExpenseCategory.OTHER, WalletType.CASH, timestampMillis = 4L)
+        val all = listOf(expenseFoodEwallet, incomeSalaryBank, transferBankToEwallet, expenseOtherCash)
+
+        assertEquals(all, MoneyCalculations.filterTransactions(all, MoneyCalculations.TransactionFilter()))
+
+        // Type filter
+        assertEquals(
+            listOf(expenseFoodEwallet, expenseOtherCash),
+            MoneyCalculations.filterTransactions(all, MoneyCalculations.TransactionFilter(type = TransactionType.EXPENSE))
+        )
+
+        // Wallet filter matches both source wallet and transfer destination toWallet
+        assertEquals(
+            listOf(expenseFoodEwallet, transferBankToEwallet),
+            MoneyCalculations.filterTransactions(all, MoneyCalculations.TransactionFilter(wallet = WalletType.EWALLET))
+        )
+
+        // Category filter excludes TRANSFER transactions even though transfer carries OTHER
+        assertEquals(
+            listOf(expenseOtherCash),
+            MoneyCalculations.filterTransactions(all, MoneyCalculations.TransactionFilter(category = ExpenseCategory.OTHER))
+        )
+
+        // Combined filter
+        assertEquals(
+            listOf(expenseFoodEwallet),
+            MoneyCalculations.filterTransactions(
+                all,
+                MoneyCalculations.TransactionFilter(
+                    type = TransactionType.EXPENSE,
+                    wallet = WalletType.EWALLET,
+                    category = ExpenseCategory.FOOD
+                )
+            )
+        )
+    }
+
+    @Test
+    fun `groupTransactionsByDay groups descending by day and excludes transfers from daily totals`() {
+        val zone = ZoneOffset.UTC
+        val nov25Morning = LocalDate.of(2026, 11, 25).atTime(LocalTime.of(9, 0)).toInstant(zone).toEpochMilli()
+        val nov25Evening = LocalDate.of(2026, 11, 25).atTime(LocalTime.of(19, 30)).toInstant(zone).toEpochMilli()
+        val nov26Noon = LocalDate.of(2026, 11, 26).atTime(LocalTime.of(12, 0)).toInstant(zone).toEpochMilli()
+
+        val tx1 = MoneyTransaction(1L, TransactionType.INCOME, 1_000_000_00L, ExpenseCategory.SALARY, WalletType.BANK, timestampMillis = nov25Morning)
+        val tx2 = MoneyTransaction(2L, TransactionType.EXPENSE, 150_000_00L, ExpenseCategory.FOOD, WalletType.EWALLET, timestampMillis = nov25Evening)
+        val tx3 = MoneyTransaction(3L, TransactionType.TRANSFER, 300_000_00L, ExpenseCategory.OTHER, WalletType.BANK, toWallet = WalletType.CASH, timestampMillis = nov25Evening + 1_000L)
+        val tx4 = MoneyTransaction(4L, TransactionType.EXPENSE, 40_000_00L, ExpenseCategory.TRANSPORT, WalletType.CASH, timestampMillis = nov26Noon)
+
+        val groups = MoneyCalculations.groupTransactionsByDay(listOf(tx1, tx2, tx3, tx4), zone)
+        assertEquals(2, groups.size)
+
+        // Nov 26 comes first
+        assertEquals(LocalDate.of(2026, 11, 26).toEpochDay(), groups[0].epochDay)
+        assertEquals(listOf(tx4), groups[0].transactions)
+        assertEquals(0L, groups[0].dayIncomeCents)
+        assertEquals(40_000_00L, groups[0].dayExpenseCents)
+        assertEquals(-40_000_00L, groups[0].dayNetCents)
+
+        // Nov 25 comes second, sorted descending within the day, transfer excluded from income/expense
+        assertEquals(LocalDate.of(2026, 11, 25).toEpochDay(), groups[1].epochDay)
+        assertEquals(listOf(tx3, tx2, tx1), groups[1].transactions)
+        assertEquals(1_000_000_00L, groups[1].dayIncomeCents)
+        assertEquals(150_000_00L, groups[1].dayExpenseCents)
+        assertEquals(850_000_00L, groups[1].dayNetCents)
     }
 }
