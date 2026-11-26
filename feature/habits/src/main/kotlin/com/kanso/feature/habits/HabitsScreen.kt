@@ -102,6 +102,7 @@ import java.util.Locale
 fun HabitsRoute(
     onBack: () -> Unit,
     onShowMessage: (String) -> Unit,
+    onShowUndoMessage: (String, () -> Unit) -> Unit = { msg, _ -> onShowMessage(msg) },
     viewModel: HabitsViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -141,9 +142,12 @@ fun HabitsRoute(
             },
             onDelete = current?.let { habit ->
                 {
-                    viewModel.deleteHabit(habit.id)
                     editingHabit = null
-                    onShowMessage("Habit deleted")
+                    viewModel.deleteHabitWithUndo(habit) { capturedCompletions ->
+                        onShowUndoMessage("Habit deleted") {
+                            viewModel.restoreHabit(habit, capturedCompletions)
+                        }
+                    }
                 }
             }
         )

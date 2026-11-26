@@ -39,8 +39,10 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -156,6 +158,31 @@ fun KansoAppRoot(
             scope.launch {
                 snackbarHostState.currentSnackbarData?.dismiss()
                 snackbarHostState.showSnackbar(message)
+            }
+        }
+    }
+
+    val showUndoMessage: (String, () -> Unit) -> Unit = remember(scope, snackbarHostState, context) {
+        { message, onUndo ->
+            scope.launch {
+                snackbarHostState.currentSnackbarData?.dismiss()
+                val result = snackbarHostState.showSnackbar(
+                    message = message,
+                    actionLabel = "Undo",
+                    duration = SnackbarDuration.Short
+                )
+                if (result == SnackbarResult.ActionPerformed) {
+                    onUndo()
+                    KansoWidgetUpdater.updateAll(context)
+                }
+            }
+        }
+    }
+
+    val refreshWidgets: () -> Unit = remember(scope, context) {
+        {
+            scope.launch {
+                KansoWidgetUpdater.updateAll(context)
             }
         }
     }
@@ -324,12 +351,17 @@ fun KansoAppRoot(
                         onOpenBrainTab = openBrainTab,
                         onOpenHabits = { navController.navigate(Routes.HABITS) },
                         onOpenExpiries = { navController.navigate(Routes.lifeAdmin(0)) },
-                        onShowMessage = showMessage
+                        onShowMessage = showMessage,
+                        onBalancesVisibilityChanged = refreshWidgets
                     )
                 }
 
                 composable(Routes.MONEY) {
-                    MoneyRoute(onShowMessage = showMessage)
+                    MoneyRoute(
+                        onShowMessage = showMessage,
+                        onShowUndoMessage = showUndoMessage,
+                        onBalancesVisibilityChanged = refreshWidgets
+                    )
                 }
 
                 composable(
@@ -344,7 +376,8 @@ fun KansoAppRoot(
                     val initialTab = entry.arguments?.getInt("tab") ?: 0
                     BrainRoute(
                         initialTab = initialTab,
-                        onShowMessage = showMessage
+                        onShowMessage = showMessage,
+                        onShowUndoMessage = showUndoMessage
                     )
                 }
 
@@ -363,7 +396,8 @@ fun KansoAppRoot(
                 composable(Routes.HABITS) {
                     HabitsRoute(
                         onBack = { navController.popBackStack() },
-                        onShowMessage = showMessage
+                        onShowMessage = showMessage,
+                        onShowUndoMessage = showUndoMessage
                     )
                 }
 
@@ -380,7 +414,8 @@ fun KansoAppRoot(
                     LifeAdminRoute(
                         initialTab = initialTab,
                         onBack = { navController.popBackStack() },
-                        onShowMessage = showMessage
+                        onShowMessage = showMessage,
+                        onShowUndoMessage = showUndoMessage
                     )
                 }
 
@@ -397,7 +432,8 @@ fun KansoAppRoot(
                     UtilitiesRoute(
                         initialTab = initialTab,
                         onBack = { navController.popBackStack() },
-                        onShowMessage = showMessage
+                        onShowMessage = showMessage,
+                        onShowUndoMessage = showUndoMessage
                     )
                 }
 
@@ -414,7 +450,9 @@ fun KansoAppRoot(
                 composable(Routes.SETTINGS) {
                     SettingsRoute(
                         onBack = { navController.popBackStack() },
-                        onShowMessage = showMessage
+                        onShowMessage = showMessage,
+                        onAppLockActivated = mainViewModel::markSessionUnlocked,
+                        onBiometricPromptActive = mainViewModel::setBiometricPromptActive
                     )
                 }
             }

@@ -175,6 +175,12 @@ class BrainViewModel @Inject constructor(
         }
     }
 
+    fun restoreNote(note: NoteItem) {
+        viewModelScope.launch {
+            brainRepository.upsertNote(note)
+        }
+    }
+
     fun saveTask(
         existing: TaskItem?,
         title: String,
@@ -211,6 +217,12 @@ class BrainViewModel @Inject constructor(
         }
     }
 
+    fun restoreTask(task: TaskItem) {
+        viewModelScope.launch {
+            brainRepository.upsertTask(task)
+        }
+    }
+
     fun saveSnippet(
         existing: SnippetItem?,
         label: String,
@@ -243,6 +255,12 @@ class BrainViewModel @Inject constructor(
     fun deleteSnippet(id: Long) {
         viewModelScope.launch {
             brainRepository.deleteSnippet(id)
+        }
+    }
+
+    fun restoreSnippet(snippet: SnippetItem) {
+        viewModelScope.launch {
+            brainRepository.upsertSnippet(snippet)
         }
     }
 }

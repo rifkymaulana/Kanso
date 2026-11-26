@@ -160,6 +160,12 @@ class UtilitiesViewModel @Inject constructor(
         }
     }
 
+    fun restoreCountdown(item: CountdownItem) {
+        viewModelScope.launch {
+            utilitiesRepository.upsertCountdown(item)
+        }
+    }
+
     override fun onCleared() {
         timerJob?.cancel()
         super.onCleared()

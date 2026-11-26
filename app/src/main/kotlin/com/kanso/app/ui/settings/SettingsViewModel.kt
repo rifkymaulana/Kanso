@@ -14,6 +14,7 @@ import com.kanso.core.backup.drive.DriveSyncState
 import com.kanso.core.backup.drive.GoogleDriveSyncManager
 import com.kanso.core.database.preferences.PreferencesRepository
 import com.kanso.core.model.AppCurrency
+import com.kanso.core.model.AppLockTimeout
 import com.kanso.core.model.DriveSyncConfig
 import com.kanso.core.model.ThemeMode
 import com.kanso.core.model.UserPreferences
@@ -116,6 +117,22 @@ class SettingsViewModel @Inject constructor(
 
     fun setGithubToken(token: String?) {
         viewModelScope.launch { preferencesRepository.setGithubToken(token) }
+    }
+
+    fun setAppLockEnabled(enabled: Boolean) {
+        viewModelScope.launch { preferencesRepository.setAppLockEnabled(enabled) }
+    }
+
+    fun setAppLockTimeout(timeout: AppLockTimeout) {
+        viewModelScope.launch { preferencesRepository.setAppLockTimeout(timeout) }
+    }
+
+    fun setHideRecentAppsPreview(enabled: Boolean) {
+        viewModelScope.launch { preferencesRepository.setHideRecentAppsPreview(enabled) }
+    }
+
+    fun setHideBalances(enabled: Boolean) {
+        viewModelScope.launch { preferencesRepository.setHideBalances(enabled) }
     }
 
     fun connectOrSyncDrive(activity: Activity? = null) {

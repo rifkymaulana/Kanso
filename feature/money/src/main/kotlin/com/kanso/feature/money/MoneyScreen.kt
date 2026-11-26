@@ -92,6 +92,7 @@ import com.kanso.core.ui.components.KansoEmptyState
 import com.kanso.core.ui.components.KansoHeroCard
 import com.kanso.core.ui.components.KansoMotion
 import com.kanso.core.ui.components.KansoPillBadge
+import com.kanso.core.ui.components.KansoPrivacyEyeButton
 import com.kanso.core.ui.components.KansoProgressRing
 import com.kanso.core.ui.components.KansoSegmentedRow
 import com.kanso.core.ui.components.KansoTonalButton
@@ -113,6 +114,8 @@ import java.util.Locale
 @Composable
 fun MoneyRoute(
     onShowMessage: (String) -> Unit,
+    onShowUndoMessage: (String, () -> Unit) -> Unit = { msg, _ -> onShowMessage(msg) },
+    onBalancesVisibilityChanged: () -> Unit = {},
     viewModel: MoneyViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -158,7 +161,11 @@ fun MoneyRoute(
         onToggleTypeFilter = viewModel::toggleTypeFilter,
         onToggleWalletFilter = viewModel::toggleWalletFilter,
         onToggleCategoryFilter = viewModel::toggleCategoryFilter,
-        onClearFilters = viewModel::clearTransactionFilters
+        onClearFilters = viewModel::clearTransactionFilters,
+        onToggleHideBalances = {
+            viewModel.toggleHideBalances()
+            onBalancesVisibilityChanged()
+        }
     )
 
     if (showNewTransactionDialog || showTransferDialog || editingTransaction != null) {
@@ -201,7 +208,9 @@ fun MoneyRoute(
                 {
                     viewModel.deleteTransaction(tx.id)
                     editingTransaction = null
-                    onShowMessage("Transaction deleted")
+                    onShowUndoMessage("Transaction deleted") {
+                        viewModel.restoreTransaction(tx)
+                    }
                 }
             }
         )
@@ -251,7 +260,9 @@ fun MoneyRoute(
                 {
                     viewModel.deleteCategoryBudget(budget.id)
                     editingCategoryBudget = null
-                    onShowMessage("Budget removed")
+                    onShowUndoMessage("Budget removed") {
+                        viewModel.restoreCategoryBudget(budget)
+                    }
                 }
             }
         )
@@ -284,7 +295,9 @@ fun MoneyRoute(
                 {
                     viewModel.deleteRecurringBill(bill.id)
                     editingBill = null
-                    onShowMessage("Bill deleted")
+                    onShowUndoMessage("Bill deleted") {
+                        viewModel.restoreRecurringBill(bill)
+                    }
                 }
             }
         )
@@ -315,7 +328,9 @@ fun MoneyRoute(
                 {
                     viewModel.deleteIou(iou.id)
                     editingIou = null
-                    onShowMessage("IOU deleted")
+                    onShowUndoMessage("IOU deleted") {
+                        viewModel.restoreIou(iou)
+                    }
                 }
             }
         )
@@ -357,6 +372,7 @@ fun MoneyScreenContent(
     onToggleWalletFilter: (WalletType) -> Unit = {},
     onToggleCategoryFilter: (ExpenseCategory) -> Unit = {},
     onClearFilters: () -> Unit = {},
+    onToggleHideBalances: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
@@ -378,11 +394,21 @@ fun MoneyScreenContent(
                 text = "Money",
                 style = MaterialTheme.typography.headlineMedium
             )
-            MonthPillSelector(
-                label = uiState.selectedMonthLabel,
-                onPrevious = onPreviousMonth,
-                onNext = onNextMonth
-            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                KansoPrivacyEyeButton(
+                    hidden = uiState.hideBalances,
+                    onToggle = onToggleHideBalances,
+                    size = 38.dp
+                )
+                MonthPillSelector(
+                    label = uiState.selectedMonthLabel,
+                    onPrevious = onPreviousMonth,
+                    onNext = onNextMonth
+                )
+            }
         }
 
         KansoSegmentedRow(
@@ -612,6 +638,7 @@ private fun LogTabContent(
                     wallets = uiState.walletBalances,
                     totalBalanceCents = uiState.totalWalletBalanceCents,
                     currency = uiState.currency,
+                    hideBalances = uiState.hideBalances,
                     selectedWalletFilter = uiState.transactionFilter.wallet,
                     onToggleWalletFilter = onToggleWalletFilter,
                     onStartTransfer = onStartTransfer,
@@ -625,6 +652,7 @@ private fun LogTabContent(
                 MoneySmartCoachCard(
                     report = report,
                     currency = uiState.currency,
+                    hideBalances = uiState.hideBalances,
                     insights = uiState.coachInsights,
                     onEditOverallBudget = onEditOverallBudget
                 )
@@ -713,7 +741,9 @@ private fun LogTabContent(
                                             )
                                         }
                                         Text(
-                                            text = "$pct% · ${CurrencyFormatter.format(amount, uiState.currency)}",
+                                            text = "$pct% · ${
+                                                CurrencyFormatter.formatOrMask(amount, uiState.currency, hidden = uiState.hideBalances)
+                                            }",
                                             style = MaterialTheme.typography.labelMedium,
                                             color = if (isCatSelected) {
                                                 category.accentColor()
@@ -777,7 +807,8 @@ private fun LogTabContent(
                 item(key = "day_${group.epochDay}") {
                     DailyTransactionGroupHeader(
                         group = group,
-                        currency = uiState.currency
+                        currency = uiState.currency,
+                        hideBalances = uiState.hideBalances
                     )
                 }
                 items(group.transactions, key = { it.id }) { tx ->
@@ -853,7 +884,8 @@ private fun TransactionFilterStrip(
 @Composable
 private fun DailyTransactionGroupHeader(
     group: MoneyCalculations.DailyTransactionGroup,
-    currency: AppCurrency
+    currency: AppCurrency,
+    hideBalances: Boolean
 ) {
     Row(
         modifier = Modifier
@@ -869,11 +901,11 @@ private fun DailyTransactionGroupHeader(
         )
         val (summaryText, summaryColor) = when {
             group.dayIncomeCents > 0L && group.dayExpenseCents == 0L ->
-                "+${CurrencyFormatter.format(group.dayIncomeCents, currency)}" to incomeSemanticColor()
+                "+${CurrencyFormatter.formatOrMask(group.dayIncomeCents, currency, hidden = hideBalances)}" to incomeSemanticColor()
             group.dayExpenseCents > 0L && group.dayIncomeCents == 0L ->
-                "-${CurrencyFormatter.format(group.dayExpenseCents, currency)}" to expenseSemanticColor()
+                "-${CurrencyFormatter.formatOrMask(group.dayExpenseCents, currency, hidden = hideBalances)}" to expenseSemanticColor()
             group.dayIncomeCents > 0L && group.dayExpenseCents > 0L ->
-                CurrencyFormatter.format(group.dayNetCents, currency, showSign = true) to
+                CurrencyFormatter.formatOrMask(group.dayNetCents, currency, hidden = hideBalances, showSign = true) to
                     if (group.dayNetCents >= 0L) incomeSemanticColor() else expenseSemanticColor()
             else -> "Transfer" to MaterialTheme.colorScheme.onSurfaceVariant
         }
@@ -893,6 +925,7 @@ private fun WalletsBentoCard(
     wallets: List<WalletBalanceSummary>,
     totalBalanceCents: Long,
     currency: AppCurrency,
+    hideBalances: Boolean,
     selectedWalletFilter: WalletType?,
     onToggleWalletFilter: (WalletType) -> Unit,
     onStartTransfer: () -> Unit,
@@ -916,7 +949,7 @@ private fun WalletsBentoCard(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "Total ${CurrencyFormatter.format(totalBalanceCents, currency)}",
+                        text = "Total ${CurrencyFormatter.formatOrMask(totalBalanceCents, currency, hidden = hideBalances)}",
                         style = MaterialTheme.typography.labelMedium,
                         color = if (totalBalanceCents < 0L) {
                             expenseSemanticColor()
@@ -1011,7 +1044,7 @@ private fun WalletsBentoCard(
                                     }
                                     if (isNegative) {
                                         Text(
-                                            text = CurrencyFormatter.format(summary.currentBalanceCents, currency),
+                                            text = CurrencyFormatter.formatOrMask(summary.currentBalanceCents, currency, hidden = hideBalances),
                                             style = MaterialTheme.typography.titleSmall.copy(
                                                 fontWeight = FontWeight.Bold,
                                                 fontFeatureSettings = "tnum"
@@ -1048,6 +1081,7 @@ private fun WalletsBentoCard(
 private fun MoneySmartCoachCard(
     report: SafeToSpendReport,
     currency: AppCurrency,
+    hideBalances: Boolean,
     insights: List<CoachInsight>,
     onEditOverallBudget: () -> Unit
 ) {
@@ -1097,9 +1131,9 @@ private fun MoneySmartCoachCard(
                     MaterialTheme.colorScheme.onSurface
                 }
                 val anchorLabel = if (report.anchorSource == BudgetAnchorSource.MONTHLY_INCOME) {
-                    "Income ${CurrencyFormatter.format(report.anchorAmountCents, currency)}"
+                    "Income ${CurrencyFormatter.formatOrMask(report.anchorAmountCents, currency, hidden = hideBalances)}"
                 } else {
-                    "Cap ${CurrencyFormatter.format(report.anchorAmountCents, currency)}"
+                    "Cap ${CurrencyFormatter.formatOrMask(report.anchorAmountCents, currency, hidden = hideBalances)}"
                 }
 
                 Row(
@@ -1122,7 +1156,7 @@ private fun MoneySmartCoachCard(
                             )
                             if (isExceeded) {
                                 Text(
-                                    text = "-${CurrencyFormatter.format(-report.todayRemainingAllowanceCents, currency)}",
+                                    text = "-${CurrencyFormatter.formatOrMask(-report.todayRemainingAllowanceCents, currency, hidden = hideBalances)}",
                                     style = MaterialTheme.typography.titleMedium.copy(
                                         fontWeight = FontWeight.Bold,
                                         fontFeatureSettings = "tnum"
@@ -1143,7 +1177,7 @@ private fun MoneySmartCoachCard(
                                 )
                             }
                             Text(
-                                text = "${CurrencyFormatter.format(report.dailySafeAllowanceCents, currency)}/day · ${report.daysRemainingIncludingToday}d left",
+                                text = "${CurrencyFormatter.formatOrMask(report.dailySafeAllowanceCents, currency, hidden = hideBalances)}/day · ${report.daysRemainingIncludingToday}d left",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
@@ -1187,7 +1221,7 @@ private fun MoneySmartCoachCard(
                 }
             } else if (report.isPastMonth) {
                 Text(
-                    text = "Daily avg ${CurrencyFormatter.format(report.averageDailySpendCents, currency)}/day across ${report.daysElapsed} days",
+                    text = "Daily avg ${CurrencyFormatter.formatOrMask(report.averageDailySpendCents, currency, hidden = hideBalances)}/day across ${report.daysElapsed} days",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1412,12 +1446,12 @@ private fun BudgetsTabContent(
                         Text("Overall Monthly Budget", style = MaterialTheme.typography.titleMedium)
                         if (uiState.overallMonthlyBudgetCents > 0L) {
                             Text(
-                                text = "${CurrencyFormatter.format(uiState.summary.expenseCents, uiState.currency)} spent",
+                                text = "${CurrencyFormatter.formatOrMask(uiState.summary.expenseCents, uiState.currency, hidden = uiState.hideBalances)} spent",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = "Limit ${CurrencyFormatter.format(uiState.overallMonthlyBudgetCents, uiState.currency)}",
+                                text = "Limit ${CurrencyFormatter.formatOrMask(uiState.overallMonthlyBudgetCents, uiState.currency, hidden = uiState.hideBalances)}",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -1425,12 +1459,17 @@ private fun BudgetsTabContent(
                             if (coachReport != null && coachReport.isCurrentMonth) {
                                 Text(
                                     text = "Safe today: ${
-                                        CurrencyFormatter.format(
+                                        CurrencyFormatter.formatOrMask(
                                             coachReport.todayRemainingAllowanceCents.coerceAtLeast(0L),
-                                            uiState.currency
+                                            uiState.currency,
+                                            hidden = uiState.hideBalances
                                         )
                                     } · Forecast ${
-                                        CurrencyFormatter.format(coachReport.projectedMonthEndCents, uiState.currency)
+                                        CurrencyFormatter.formatOrMask(
+                                            coachReport.projectedMonthEndCents,
+                                            uiState.currency,
+                                            hidden = uiState.hideBalances
+                                        )
                                     }",
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.primary
@@ -1508,8 +1547,8 @@ private fun BudgetsTabContent(
                                 Column {
                                     Text(status.category.label, style = MaterialTheme.typography.titleMedium)
                                     Text(
-                                        text = "${CurrencyFormatter.format(status.spentCents, uiState.currency)} / ${
-                                            CurrencyFormatter.format(status.limitCents, uiState.currency)
+                                        text = "${CurrencyFormatter.formatOrMask(status.spentCents, uiState.currency, hidden = uiState.hideBalances)} / ${
+                                            CurrencyFormatter.formatOrMask(status.limitCents, uiState.currency, hidden = uiState.hideBalances)
                                         }",
                                         style = MaterialTheme.typography.labelMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -1603,7 +1642,7 @@ private fun BillsTabContent(
                             )
                             Spacer(modifier = Modifier.height(3.dp))
                             Text(
-                                text = CurrencyFormatter.format(bill.amountCents, uiState.currency),
+                                text = CurrencyFormatter.formatOrMask(bill.amountCents, uiState.currency, hidden = uiState.hideBalances),
                                 style = MaterialTheme.typography.titleSmall.copy(
                                     fontWeight = FontWeight.SemiBold,
                                     fontFeatureSettings = "tnum"
@@ -1772,7 +1811,7 @@ private fun IousTabContent(
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = CurrencyFormatter.format(iou.amountCents, uiState.currency),
+                                text = CurrencyFormatter.formatOrMask(iou.amountCents, uiState.currency, hidden = uiState.hideBalances),
                                 style = MaterialTheme.typography.titleSmall.copy(
                                     fontWeight = FontWeight.SemiBold,
                                     fontFeatureSettings = "tnum"

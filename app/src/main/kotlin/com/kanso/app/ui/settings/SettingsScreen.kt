@@ -13,10 +13,13 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
@@ -81,6 +84,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.kanso.app.BuildConfig
@@ -93,8 +97,11 @@ import com.kanso.app.widget.KansoWidgetUpdater
 import com.kanso.core.backup.EncryptedBackupCrypto
 import com.kanso.core.backup.drive.DriveSyncState
 import com.kanso.core.model.AppCurrency
+import com.kanso.core.model.AppLockTimeout
 import com.kanso.core.model.CurrencyFormatter
 import com.kanso.core.model.ThemeMode
+import com.kanso.core.security.BiometricAuthHelper
+import com.kanso.core.security.BiometricAvailability
 import com.kanso.core.ui.components.ConfirmDeleteDialog
 import com.kanso.core.ui.components.KansoAccentIconBadge
 import com.kanso.core.ui.components.KansoAnimatedProgressBar
@@ -119,12 +126,15 @@ import java.time.format.DateTimeFormatter
 fun SettingsRoute(
     onBack: () -> Unit,
     onShowMessage: (String) -> Unit = {},
+    onAppLockActivated: () -> Unit = {},
+    onBiometricPromptActive: (Boolean) -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val prefs = uiState.preferences
     val context = LocalContext.current
     val activity = remember(context) { context.findActivity() }
+    val fragmentActivity = remember(context) { context.findFragmentActivity() }
 
     var showNameDialog by remember { mutableStateOf(false) }
     var showCurrencyDialog by remember { mutableStateOf(false) }
@@ -171,6 +181,10 @@ fun SettingsRoute(
 
             else -> Unit
         }
+    }
+
+    LaunchedEffect(prefs.hideBalances) {
+        KansoWidgetUpdater.updateAll(context)
     }
 
     LaunchedEffect(uiState.updateState) {
@@ -333,6 +347,144 @@ fun SettingsRoute(
                                             KansoReminderScheduler.syncSchedule(context, wantEnabled)
                                         }
                                     }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    SettingsSectionOverline("SECURITY & PRIVACY")
+                    KansoBentoCard(contentPadding = PaddingValues(16.dp)) {
+                        Column(
+                            modifier = Modifier.animateContentSize(animationSpec = KansoMotion.SizeSpring),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("App Lock", style = MaterialTheme.typography.bodyLarge)
+                                    Text(
+                                        text = "Require fingerprint, face, or device PIN when opening Kanso",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Switch(
+                                    checked = prefs.appLockEnabled,
+                                    onCheckedChange = { wantEnabled ->
+                                        val availability = BiometricAuthHelper.checkAvailability(context)
+                                        if (wantEnabled) {
+                                            when (availability) {
+                                                BiometricAvailability.AVAILABLE -> {
+                                                    if (fragmentActivity != null) {
+                                                        onBiometricPromptActive(true)
+                                                        BiometricAuthHelper.authenticate(
+                                                            activity = fragmentActivity,
+                                                            title = "Enable App Lock",
+                                                            subtitle = "Confirm identity to lock Kanso",
+                                                            onSuccess = {
+                                                                onBiometricPromptActive(false)
+                                                                onAppLockActivated()
+                                                                viewModel.setAppLockEnabled(true)
+                                                                onShowMessage("App Lock enabled")
+                                                            },
+                                                            onError = { msg ->
+                                                                onBiometricPromptActive(false)
+                                                                onShowMessage(msg)
+                                                            },
+                                                            onCancel = { onBiometricPromptActive(false) }
+                                                        )
+                                                    } else {
+                                                        onShowMessage("Unable to open biometric prompt.")
+                                                    }
+                                                }
+                                                BiometricAvailability.NOT_ENROLLED -> {
+                                                    onShowMessage("Set up biometrics or a screen lock in Android Settings first.")
+                                                }
+                                                BiometricAvailability.UNAVAILABLE -> {
+                                                    onShowMessage("Biometric or device credential hardware unavailable.")
+                                                }
+                                            }
+                                        } else if (availability == BiometricAvailability.AVAILABLE && fragmentActivity != null) {
+                                            onBiometricPromptActive(true)
+                                            BiometricAuthHelper.authenticate(
+                                                activity = fragmentActivity,
+                                                title = "Disable App Lock",
+                                                subtitle = "Confirm identity to turn off App Lock",
+                                                onSuccess = {
+                                                    onBiometricPromptActive(false)
+                                                    viewModel.setAppLockEnabled(false)
+                                                    onShowMessage("App Lock disabled")
+                                                },
+                                                onError = { msg ->
+                                                    onBiometricPromptActive(false)
+                                                    onShowMessage(msg)
+                                                },
+                                                onCancel = { onBiometricPromptActive(false) }
+                                            )
+                                        } else {
+                                            viewModel.setAppLockEnabled(false)
+                                        }
+                                    }
+                                )
+                            }
+
+                            AnimatedVisibility(
+                                visible = prefs.appLockEnabled,
+                                enter = expandVertically(KansoMotion.SizeSpring) + fadeIn(tween(180)),
+                                exit = shrinkVertically() + fadeOut(tween(140))
+                            ) {
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text("Lock After Leaving", style = MaterialTheme.typography.labelLarge)
+                                    KansoSegmentedRow(
+                                        options = AppLockTimeout.entries.map { it.label },
+                                        selectedIndex = AppLockTimeout.entries.indexOf(prefs.appLockTimeout),
+                                        onSelect = { idx -> viewModel.setAppLockTimeout(AppLockTimeout.entries[idx]) }
+                                    )
+                                }
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("Hide Recent-Apps Preview", style = MaterialTheme.typography.bodyLarge)
+                                    Text(
+                                        text = "Blur Kanso in Recent Apps & block screenshots across all screens",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Switch(
+                                    checked = prefs.hideRecentAppsPreview,
+                                    onCheckedChange = viewModel::setHideRecentAppsPreview
+                                )
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("Hide Currency Balances", style = MaterialTheme.typography.bodyLarge)
+                                    Text(
+                                        text = "Mask money amounts with •••••• across Today, Money & Widget",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Switch(
+                                    checked = prefs.hideBalances,
+                                    onCheckedChange = viewModel::setHideBalances
                                 )
                             }
                         }
@@ -1667,5 +1819,11 @@ private fun RestorePassphraseDialog(
 private tailrec fun Context.findActivity(): Activity? = when (this) {
     is Activity -> this
     is ContextWrapper -> baseContext.findActivity()
+    else -> null
+}
+
+private tailrec fun Context.findFragmentActivity(): FragmentActivity? = when (this) {
+    is FragmentActivity -> this
+    is ContextWrapper -> baseContext.findFragmentActivity()
     else -> null
 }

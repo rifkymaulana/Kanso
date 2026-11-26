@@ -95,6 +95,7 @@ import java.time.LocalDate
 fun BrainRoute(
     initialTab: Int = 0,
     onShowMessage: (String) -> Unit,
+    onShowUndoMessage: (String, () -> Unit) -> Unit = { msg, _ -> onShowMessage(msg) },
     viewModel: BrainViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -148,7 +149,9 @@ fun BrainRoute(
                 {
                     viewModel.deleteNote(note.id)
                     editingNote = null
-                    onShowMessage("Note deleted")
+                    onShowUndoMessage("Note deleted") {
+                        viewModel.restoreNote(note)
+                    }
                 }
             }
         )
@@ -171,7 +174,9 @@ fun BrainRoute(
                 {
                     viewModel.deleteTask(task.id)
                     editingTask = null
-                    onShowMessage("Task deleted")
+                    onShowUndoMessage("Task deleted") {
+                        viewModel.restoreTask(task)
+                    }
                 }
             }
         )
@@ -194,7 +199,9 @@ fun BrainRoute(
                 {
                     viewModel.deleteSnippet(snippet.id)
                     editingSnippet = null
-                    onShowMessage("Snippet deleted")
+                    onShowUndoMessage("Snippet deleted") {
+                        viewModel.restoreSnippet(snippet)
+                    }
                 }
             }
         )

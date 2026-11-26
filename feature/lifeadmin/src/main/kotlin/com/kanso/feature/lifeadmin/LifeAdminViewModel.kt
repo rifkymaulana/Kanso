@@ -111,6 +111,12 @@ class LifeAdminViewModel @Inject constructor(
         }
     }
 
+    fun restoreExpiry(item: ExpiryItem) {
+        viewModelScope.launch {
+            lifeAdminRepository.upsertExpiry(item)
+        }
+    }
+
     fun saveMaintenanceLog(
         existing: MaintenanceLog?,
         assetName: String,
@@ -147,6 +153,12 @@ class LifeAdminViewModel @Inject constructor(
         }
     }
 
+    fun restoreMaintenanceLog(log: MaintenanceLog) {
+        viewModelScope.launch {
+            lifeAdminRepository.upsertMaintenanceLog(log)
+        }
+    }
+
     fun saveVaultItem(
         existing: VaultItem?,
         title: String,
@@ -169,6 +181,12 @@ class LifeAdminViewModel @Inject constructor(
     fun deleteVaultItem(id: Long) {
         viewModelScope.launch {
             lifeAdminRepository.deleteVaultItem(id)
+        }
+    }
+
+    fun restoreVaultItem(item: VaultItem) {
+        viewModelScope.launch {
+            lifeAdminRepository.upsertVaultItem(item)
         }
     }
 }

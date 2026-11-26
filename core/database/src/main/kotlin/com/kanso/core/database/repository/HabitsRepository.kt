@@ -32,6 +32,23 @@ class HabitsRepository @Inject constructor(
         habitsDao.deleteHabitById(id)
     }
 
+    suspend fun deleteHabitAndCaptureCompletions(id: Long): List<HabitCompletion> {
+        return database.withTransaction {
+            val captured = habitsDao.getCompletionsForHabit(id).map { it.toDomain() }
+            habitsDao.deleteHabitById(id)
+            captured
+        }
+    }
+
+    suspend fun restoreHabitWithCompletions(habit: HabitItem, completions: List<HabitCompletion>) {
+        database.withTransaction {
+            habitsDao.upsertHabit(habit.toEntity())
+            if (completions.isNotEmpty()) {
+                habitsDao.insertCompletions(completions.map { it.toEntity() })
+            }
+        }
+    }
+
     fun observeCompletionsSince(minEpochDay: Long): Flow<List<HabitCompletion>> {
         return habitsDao.observeCompletionsSince(minEpochDay).map { list -> list.map { it.toDomain() } }
     }

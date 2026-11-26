@@ -233,4 +233,43 @@ class SmartCoachCalculationsTest {
         )
         assertTrue(completedHabitsInsights.any { it.id == "habits_done" && it.tone == CoachInsightTone.POSITIVE })
     }
+
+    @Test
+    fun `buildMoneyInsights masks currency amounts when hideAmounts is true`() {
+        val today = LocalDate.of(2026, 11, 15)
+        val report = SmartCoachCalculations.computeSafeToSpend(
+            targetMonth = YearMonth.of(2026, 11),
+            today = today,
+            monthlyBudgetCents = 5_000_000_00L,
+            monthIncomeCents = 8_000_000_00L,
+            monthExpenseCents = 1_500_000_00L,
+            todayExpenseCents = 50_000_00L,
+            bills = emptyList()
+        )
+        val currentSummary = MoneyCalculations.MonthlySummary(
+            incomeCents = 8_000_000_00L,
+            expenseCents = 1_500_000_00L,
+            netCents = 6_500_000_00L,
+            byCategory = mapOf(ExpenseCategory.FOOD to 900_000_00L)
+        )
+        val prevSummary = MoneyCalculations.MonthlySummary(0L, 0L, 0L, emptyMap())
+        val statuses = MoneyCalculations.computeBudgetStatuses(
+            budgets = listOf(CategoryBudget(1L, ExpenseCategory.FOOD, 1_000_000_00L)),
+            spentByCategory = currentSummary.byCategory
+        )
+
+        val insights = SmartCoachCalculations.buildMoneyInsights(
+            report = report,
+            currency = AppCurrency.IDR,
+            currentSummary = currentSummary,
+            previousSummary = prevSummary,
+            budgetStatuses = statuses,
+            maxItems = 3,
+            hideAmounts = true
+        )
+
+        val warnInsight = insights.first { it.id == "cat_warn_FOOD" }
+        assertTrue(warnInsight.body.contains("Rp ••••••"))
+        assertFalse(warnInsight.body.contains("100.000"))
+    }
 }

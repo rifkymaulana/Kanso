@@ -133,7 +133,11 @@ class KansoTodayWidget : GlanceAppWidget() {
 
         return WidgetDashboardData(
             dateLabel = today.format(DateTimeFormatter.ofPattern("EEE, d MMM", Locale.getDefault())),
-            monthExpenseFormatted = CurrencyFormatter.format(monthExpenseCents, prefs.currency),
+            monthExpenseFormatted = CurrencyFormatter.formatOrMask(
+                monthExpenseCents,
+                prefs.currency,
+                hidden = prefs.hideBalances
+            ),
             openTasksCount = openTasksCount,
             habitsDone = activeHabits.count { completedHabitIds.contains(it.id) },
             habitsTotal = activeHabits.size,
@@ -191,7 +195,11 @@ class KansoTodayWidget : GlanceAppWidget() {
         ) { prefs, money, hl ->
             WidgetDashboardData(
                 dateLabel = today.format(DateTimeFormatter.ofPattern("EEE, d MMM", Locale.getDefault())),
-                monthExpenseFormatted = CurrencyFormatter.format(money.first, prefs.currency),
+                monthExpenseFormatted = CurrencyFormatter.formatOrMask(
+                    money.first,
+                    prefs.currency,
+                    hidden = prefs.hideBalances
+                ),
                 openTasksCount = money.third,
                 habitsDone = hl.habitsDone,
                 habitsTotal = hl.habitsTotal,

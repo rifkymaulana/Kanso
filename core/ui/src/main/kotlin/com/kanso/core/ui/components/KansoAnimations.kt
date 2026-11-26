@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.kanso.core.model.AppCurrency
 import com.kanso.core.model.CurrencyFormatter
+import com.kanso.core.ui.theme.LocalBalancesHidden
 import kotlinx.coroutines.delay
 import kotlin.math.roundToLong
 
@@ -158,6 +159,19 @@ fun KansoAnimatedCurrencyText(
     prefix: String = "",
     maxLines: Int = 1
 ) {
+    val hidden = LocalBalancesHidden.current
+    if (hidden) {
+        Text(
+            text = "$prefix${CurrencyFormatter.mask(currency)}",
+            style = style,
+            color = color,
+            maxLines = maxLines,
+            overflow = TextOverflow.Ellipsis,
+            modifier = modifier
+        )
+        return
+    }
+
     var displayedCents by remember { mutableLongStateOf(amountCents) }
     var previousTarget by remember { mutableLongStateOf(amountCents) }
     var isFirstComposition by remember { mutableStateOf(true) }

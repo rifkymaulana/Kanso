@@ -205,6 +205,20 @@ object CurrencyFormatter {
         return "$sign${currency.symbol}$spacer$formattedNumber"
     }
 
+    fun mask(currency: AppCurrency): String {
+        val spacer = if (currency == AppCurrency.IDR || currency == AppCurrency.MYR) " " else ""
+        return "${currency.symbol}$spacer••••••"
+    }
+
+    fun formatOrMask(
+        amountCents: Long,
+        currency: AppCurrency,
+        hidden: Boolean,
+        showSign: Boolean = false
+    ): String {
+        return if (hidden) mask(currency) else format(amountCents, currency, showSign = showSign)
+    }
+
     fun formatCompactInput(amountCents: Long, currency: AppCurrency): String {
         val absCents = abs(amountCents)
         return if (currency.decimalDigits == 0) {

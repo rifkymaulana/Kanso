@@ -56,7 +56,8 @@ data class MoneyUiState(
     val safeToSpend: SafeToSpendReport? = null,
     val coachInsights: List<CoachInsight> = emptyList(),
     val walletBalances: List<WalletBalanceSummary> = emptyList(),
-    val totalWalletBalanceCents: Long = 0L
+    val totalWalletBalanceCents: Long = 0L,
+    val hideBalances: Boolean = false
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -133,7 +134,8 @@ class MoneyViewModel @Inject constructor(
             currency = prefs.currency,
             currentSummary = summary,
             previousSummary = prevSummary,
-            budgetStatuses = budgetStatuses
+            budgetStatuses = budgetStatuses,
+            hideAmounts = prefs.hideBalances
         )
         val walletBalances = MoneyCalculations.computeWalletBalances(
             allTransactions = bundle.allTransactions,
@@ -162,7 +164,8 @@ class MoneyViewModel @Inject constructor(
             safeToSpend = safeToSpend,
             coachInsights = coachInsights,
             walletBalances = walletBalances,
-            totalWalletBalanceCents = walletBalances.sumOf { it.currentBalanceCents }
+            totalWalletBalanceCents = walletBalances.sumOf { it.currentBalanceCents },
+            hideBalances = prefs.hideBalances
         )
     }.stateIn(
         scope = viewModelScope,
@@ -200,6 +203,36 @@ class MoneyViewModel @Inject constructor(
 
     fun clearTransactionFilters() {
         filterFlow.value = MoneyCalculations.TransactionFilter()
+    }
+
+    fun toggleHideBalances() {
+        viewModelScope.launch {
+            preferencesRepository.toggleHideBalances()
+        }
+    }
+
+    fun restoreTransaction(tx: MoneyTransaction) {
+        viewModelScope.launch {
+            moneyRepository.upsertTransaction(tx)
+        }
+    }
+
+    fun restoreCategoryBudget(budget: CategoryBudget) {
+        viewModelScope.launch {
+            moneyRepository.upsertBudget(budget)
+        }
+    }
+
+    fun restoreRecurringBill(bill: RecurringBill) {
+        viewModelScope.launch {
+            moneyRepository.upsertBill(bill)
+        }
+    }
+
+    fun restoreIou(iou: IouEntry) {
+        viewModelScope.launch {
+            moneyRepository.upsertIou(iou)
+        }
     }
 
     fun saveTransaction(

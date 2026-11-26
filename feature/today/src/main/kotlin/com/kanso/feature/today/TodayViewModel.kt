@@ -61,7 +61,8 @@ data class TodayUiState(
     val pinnedSnippets: List<SnippetItem> = emptyList(),
     val recentNotes: List<NoteItem> = emptyList(),
     val safeToSpend: SafeToSpendReport? = null,
-    val coachInsights: List<CoachInsight> = emptyList()
+    val coachInsights: List<CoachInsight> = emptyList(),
+    val hideBalances: Boolean = false
 ) {
     val hasAttentionItems: Boolean
         get() = dueBills.isNotEmpty() || expiringItems.isNotEmpty() || dueOrOverdueTasksCount > 0 || openIouCount > 0
@@ -69,7 +70,7 @@ data class TodayUiState(
 
 @HiltViewModel
 class TodayViewModel @Inject constructor(
-    preferencesRepository: PreferencesRepository,
+    private val preferencesRepository: PreferencesRepository,
     private val moneyRepository: MoneyRepository,
     private val brainRepository: BrainRepository,
     private val habitsRepository: HabitsRepository,
@@ -205,7 +206,8 @@ class TodayViewModel @Inject constructor(
             waterGoalMl = prefs.waterGoalMl,
             todayHabitsDone = doneHabitCount,
             todayHabitsTotal = lifeHabits.habits.size,
-            hourOfDay = hour
+            hourOfDay = hour,
+            hideAmounts = prefs.hideBalances
         )
 
         TodayUiState(
@@ -230,7 +232,8 @@ class TodayViewModel @Inject constructor(
             pinnedSnippets = pinnedSnippets,
             recentNotes = topNotes,
             safeToSpend = safeToSpend,
-            coachInsights = coachInsights
+            coachInsights = coachInsights,
+            hideBalances = prefs.hideBalances
         )
     }.stateIn(
         scope = viewModelScope,
@@ -265,6 +268,12 @@ class TodayViewModel @Inject constructor(
     fun addWater250ml() {
         viewModelScope.launch {
             habitsRepository.adjustWater(LocalDate.now().toEpochDay(), 250)
+        }
+    }
+
+    fun toggleHideBalances() {
+        viewModelScope.launch {
+            preferencesRepository.toggleHideBalances()
         }
     }
 

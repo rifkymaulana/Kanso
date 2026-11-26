@@ -67,6 +67,8 @@ import androidx.compose.material.icons.outlined.School
 import androidx.compose.material.icons.outlined.ShoppingBag
 import androidx.compose.material.icons.outlined.ShoppingCart
 import androidx.compose.material.icons.outlined.Smartphone
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material3.Button
@@ -119,6 +121,7 @@ import com.kanso.core.model.CurrencyFormatter
 import com.kanso.core.model.ExpenseCategory
 import com.kanso.core.model.TransactionType
 import com.kanso.core.model.WalletType
+import com.kanso.core.ui.theme.LocalBalancesHidden
 import com.kanso.core.ui.theme.kansoColors
 import java.time.Instant
 import java.time.LocalDate
@@ -1347,12 +1350,59 @@ fun KansoSegmentedRow(
 }
 
 @Composable
+fun KansoPrivacyEyeButton(
+    hidden: Boolean,
+    onToggle: () -> Unit,
+    size: Dp = 40.dp,
+    modifier: Modifier = Modifier
+) {
+    val haptic = LocalHapticFeedback.current
+    Surface(
+        modifier = modifier
+            .size(size)
+            .clip(CircleShape)
+            .clickable {
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onToggle()
+            },
+        shape = CircleShape,
+        color = if (hidden) {
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+        } else {
+            MaterialTheme.colorScheme.surface
+        },
+        border = BorderStroke(
+            1.dp,
+            if (hidden) {
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
+            } else {
+                MaterialTheme.colorScheme.outlineVariant
+            }
+        )
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = if (hidden) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+                contentDescription = if (hidden) "Show currency amounts" else "Hide currency amounts",
+                modifier = Modifier.size(if (size >= 40.dp) 20.dp else 18.dp),
+                tint = if (hidden) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                }
+            )
+        }
+    }
+}
+
+@Composable
 fun MoneyAmountBadge(
     amountCents: Long,
     currency: AppCurrency,
     type: TransactionType? = null,
     modifier: Modifier = Modifier
 ) {
+    val hidden = LocalBalancesHidden.current
     val color = when (type) {
         TransactionType.INCOME -> incomeSemanticColor()
         TransactionType.EXPENSE -> expenseSemanticColor()
@@ -1365,8 +1415,13 @@ fun MoneyAmountBadge(
         TransactionType.TRANSFER -> "⇄ "
         null -> ""
     }
+    val displayAmount = if (hidden) {
+        CurrencyFormatter.mask(currency)
+    } else {
+        CurrencyFormatter.format(amountCents, currency)
+    }
     Text(
-        text = "$prefix${CurrencyFormatter.format(amountCents, currency)}",
+        text = "$prefix$displayAmount",
         modifier = modifier,
         style = MaterialTheme.typography.titleMedium.copy(
             fontWeight = FontWeight.SemiBold,

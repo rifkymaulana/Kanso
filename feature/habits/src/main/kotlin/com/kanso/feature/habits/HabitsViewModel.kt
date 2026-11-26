@@ -6,6 +6,7 @@ import com.kanso.core.database.preferences.PreferencesRepository
 import com.kanso.core.database.repository.HabitsRepository
 import com.kanso.core.model.DailyHealthLog
 import com.kanso.core.model.HabitCalculations
+import com.kanso.core.model.HabitCompletion
 import com.kanso.core.model.HabitItem
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -170,6 +171,22 @@ class HabitsViewModel @Inject constructor(
     fun deleteHabit(id: Long) {
         viewModelScope.launch {
             habitsRepository.deleteHabit(id)
+        }
+    }
+
+    fun deleteHabitWithUndo(
+        habit: HabitItem,
+        onDeleted: (List<HabitCompletion>) -> Unit
+    ) {
+        viewModelScope.launch {
+            val captured = habitsRepository.deleteHabitAndCaptureCompletions(habit.id)
+            onDeleted(captured)
+        }
+    }
+
+    fun restoreHabit(habit: HabitItem, completions: List<HabitCompletion>) {
+        viewModelScope.launch {
+            habitsRepository.restoreHabitWithCompletions(habit, completions)
         }
     }
 

@@ -127,6 +127,7 @@ fun LifeAdminRoute(
     initialTab: Int = 0,
     onBack: () -> Unit,
     onShowMessage: (String) -> Unit,
+    onShowUndoMessage: (String, () -> Unit) -> Unit = { msg, _ -> onShowMessage(msg) },
     viewModel: LifeAdminViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -142,14 +143,16 @@ fun LifeAdminRoute(
         }
     }
 
-    // Protect vault screens with FLAG_SECURE when Vault tab is active.
+    // Protect vault screens with FLAG_SECURE when Vault tab is active without clearing global privacy flag.
     DisposableEffect(selectedTab, activity) {
         val window = activity?.window
+        val wasAlreadySecure = window != null &&
+            (window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE) != 0
         if (selectedTab == 2 && window != null) {
             window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         }
         onDispose {
-            if (selectedTab == 2 && window != null) {
+            if (selectedTab == 2 && window != null && !wasAlreadySecure) {
                 window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
             }
         }
@@ -246,7 +249,9 @@ fun LifeAdminRoute(
                 {
                     viewModel.deleteExpiry(item.id)
                     editingExpiry = null
-                    onShowMessage("Expiry alert deleted")
+                    onShowUndoMessage("Expiry alert deleted") {
+                        viewModel.restoreExpiry(item)
+                    }
                 }
             }
         )
@@ -270,7 +275,9 @@ fun LifeAdminRoute(
                 {
                     viewModel.deleteMaintenanceLog(log.id)
                     editingMaintenance = null
-                    onShowMessage("Service log deleted")
+                    onShowUndoMessage("Service log deleted") {
+                        viewModel.restoreMaintenanceLog(log)
+                    }
                 }
             }
         )
@@ -293,7 +300,9 @@ fun LifeAdminRoute(
                 {
                     viewModel.deleteVaultItem(item.id)
                     editingVault = null
-                    onShowMessage("Vault secret deleted")
+                    onShowUndoMessage("Vault secret deleted") {
+                        viewModel.restoreVaultItem(item)
+                    }
                 }
             }
         )

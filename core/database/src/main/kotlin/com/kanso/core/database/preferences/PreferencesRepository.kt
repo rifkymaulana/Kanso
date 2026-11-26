@@ -10,6 +10,7 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.kanso.core.model.AppCurrency
+import com.kanso.core.model.AppLockTimeout
 import com.kanso.core.model.DriveSyncConfig
 import com.kanso.core.model.ThemeMode
 import com.kanso.core.model.UserPreferences
@@ -45,6 +46,10 @@ class PreferencesRepository @Inject constructor(
         val AUTO_CHECK_UPDATES = booleanPreferencesKey("auto_check_updates")
         val LAST_UPDATE_CHECK_MILLIS = longPreferencesKey("last_update_check_millis")
         val GITHUB_TOKEN_ENCRYPTED = stringPreferencesKey("github_token_encrypted")
+        val APP_LOCK_ENABLED = booleanPreferencesKey("app_lock_enabled")
+        val APP_LOCK_TIMEOUT = stringPreferencesKey("app_lock_timeout")
+        val HIDE_RECENT_APPS_PREVIEW = booleanPreferencesKey("hide_recent_apps_preview")
+        val HIDE_BALANCES = booleanPreferencesKey("hide_balances")
 
         val DRIVE_SYNC_CONNECTED = booleanPreferencesKey("drive_sync_connected")
         val DRIVE_AUTO_SYNC = booleanPreferencesKey("drive_auto_sync")
@@ -80,7 +85,13 @@ class PreferencesRepository @Inject constructor(
             customRatesVsUsd = customRates,
             autoCheckUpdates = prefs[Keys.AUTO_CHECK_UPDATES] ?: true,
             lastUpdateCheckMillis = prefs[Keys.LAST_UPDATE_CHECK_MILLIS],
-            walletOpeningBalancesCents = walletOpeningBalances
+            walletOpeningBalancesCents = walletOpeningBalances,
+            appLockEnabled = prefs[Keys.APP_LOCK_ENABLED] ?: false,
+            appLockTimeout = runCatching {
+                AppLockTimeout.valueOf(prefs[Keys.APP_LOCK_TIMEOUT] ?: AppLockTimeout.IMMEDIATE.name)
+            }.getOrDefault(AppLockTimeout.IMMEDIATE),
+            hideRecentAppsPreview = prefs[Keys.HIDE_RECENT_APPS_PREVIEW] ?: false,
+            hideBalances = prefs[Keys.HIDE_BALANCES] ?: false
         )
     }
 
@@ -258,6 +269,28 @@ class PreferencesRepository @Inject constructor(
         context.kansoDataStore.edit { it[Keys.LAST_UPDATE_CHECK_MILLIS] = timestampMillis }
     }
 
+    suspend fun setAppLockEnabled(enabled: Boolean) {
+        context.kansoDataStore.edit { it[Keys.APP_LOCK_ENABLED] = enabled }
+    }
+
+    suspend fun setAppLockTimeout(timeout: AppLockTimeout) {
+        context.kansoDataStore.edit { it[Keys.APP_LOCK_TIMEOUT] = timeout.name }
+    }
+
+    suspend fun setHideRecentAppsPreview(enabled: Boolean) {
+        context.kansoDataStore.edit { it[Keys.HIDE_RECENT_APPS_PREVIEW] = enabled }
+    }
+
+    suspend fun setHideBalances(enabled: Boolean) {
+        context.kansoDataStore.edit { it[Keys.HIDE_BALANCES] = enabled }
+    }
+
+    suspend fun toggleHideBalances() {
+        context.kansoDataStore.edit { prefs ->
+            prefs[Keys.HIDE_BALANCES] = !(prefs[Keys.HIDE_BALANCES] ?: false)
+        }
+    }
+
     suspend fun restorePreferences(userPreferences: UserPreferences) {
         context.kansoDataStore.edit { prefs ->
             prefs[Keys.DISPLAY_NAME] = userPreferences.displayName
@@ -268,6 +301,7 @@ class PreferencesRepository @Inject constructor(
             prefs[Keys.WATER_GOAL_ML] = userPreferences.waterGoalMl.coerceIn(250, 10_000)
             prefs[Keys.REMINDERS_ENABLED] = userPreferences.remindersEnabled
             prefs[Keys.AUTO_CHECK_UPDATES] = userPreferences.autoCheckUpdates
+            prefs[Keys.HIDE_BALANCES] = userPreferences.hideBalances
             if (userPreferences.customRatesVsUsd.isEmpty()) {
                 prefs.remove(Keys.CUSTOM_RATES_JSON)
             } else {

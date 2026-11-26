@@ -90,6 +90,7 @@ import com.kanso.core.ui.components.KansoDateFormatters
 import com.kanso.core.ui.components.KansoHeroCard
 import com.kanso.core.ui.components.KansoMotion
 import com.kanso.core.ui.components.KansoPillBadge
+import com.kanso.core.ui.components.KansoPrivacyEyeButton
 import com.kanso.core.ui.components.KansoProgressRing
 import com.kanso.core.ui.components.KansoStaggeredEntrance
 import com.kanso.core.ui.components.KansoTonalButton
@@ -111,6 +112,7 @@ fun TodayRoute(
     onOpenHabits: () -> Unit = {},
     onOpenExpiries: () -> Unit = {},
     onShowMessage: (String) -> Unit,
+    onBalancesVisibilityChanged: () -> Unit = {},
     viewModel: TodayViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -125,6 +127,10 @@ fun TodayRoute(
         onOpenBrainTab = onOpenBrainTab,
         onOpenHabits = onOpenHabits,
         onOpenExpiries = onOpenExpiries,
+        onToggleHideBalances = {
+            viewModel.toggleHideBalances()
+            onBalancesVisibilityChanged()
+        },
         onToggleTask = viewModel::toggleTaskComplete,
         onToggleHabit = { habit ->
             viewModel.toggleHabitToday(habit.id)
@@ -155,6 +161,7 @@ fun TodayScreenContent(
     onOpenBrainTab: (Int) -> Unit,
     onOpenHabits: () -> Unit = {},
     onOpenExpiries: () -> Unit = {},
+    onToggleHideBalances: () -> Unit = {},
     onToggleTask: (TaskItem) -> Unit,
     onToggleHabit: (HabitItem) -> Unit = {},
     onAddWater250: () -> Unit = {},
@@ -194,6 +201,10 @@ fun TodayScreenContent(
                         )
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        KansoPrivacyEyeButton(
+                            hidden = uiState.hideBalances,
+                            onToggle = onToggleHideBalances
+                        )
                         Surface(
                             modifier = Modifier
                                 .size(40.dp)
@@ -589,7 +600,7 @@ private fun MoneyHeroPulseCard(
                             color = kansoColors.heroOnSurfaceMuted
                         )
                         Text(
-                            text = CurrencyFormatter.format(uiState.monthlyBudgetCents, uiState.currency),
+                            text = CurrencyFormatter.formatOrMask(uiState.monthlyBudgetCents, uiState.currency, hidden = uiState.hideBalances),
                             style = MaterialTheme.typography.labelMedium,
                             color = kansoColors.heroOnSurface
                         )
@@ -889,7 +900,7 @@ private fun AttentionBentoCard(
                             style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium)
                         )
                         Text(
-                            text = CurrencyFormatter.format(bill.amountCents, uiState.currency),
+                            text = CurrencyFormatter.formatOrMask(bill.amountCents, uiState.currency, hidden = uiState.hideBalances),
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -969,7 +980,12 @@ private fun AttentionBentoCard(
                 ) {
                     Text(
                         text = "${uiState.openIouCount} open IOU(s) · Net ${
-                            CurrencyFormatter.format(uiState.openIouNetCents, uiState.currency, showSign = true)
+                            CurrencyFormatter.formatOrMask(
+                                uiState.openIouNetCents,
+                                uiState.currency,
+                                hidden = uiState.hideBalances,
+                                showSign = true
+                            )
                         }",
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.weight(1f)
@@ -1195,7 +1211,7 @@ private fun SmartCoachBentoCard(
                             )
                             if (isExceeded) {
                                 Text(
-                                    text = "Over by ${CurrencyFormatter.format(-report.todayRemainingAllowanceCents, uiState.currency)}",
+                                    text = "Over by ${CurrencyFormatter.formatOrMask(-report.todayRemainingAllowanceCents, uiState.currency, hidden = uiState.hideBalances)}",
                                     style = MaterialTheme.typography.titleLarge.copy(
                                         fontWeight = FontWeight.Bold,
                                         fontFeatureSettings = "tnum"
@@ -1216,7 +1232,7 @@ private fun SmartCoachBentoCard(
                                 )
                             }
                             Text(
-                                text = "${CurrencyFormatter.format(report.dailySafeAllowanceCents, uiState.currency)}/day · ${report.daysRemainingIncludingToday}d left$anchorTag",
+                                text = "${CurrencyFormatter.formatOrMask(report.dailySafeAllowanceCents, uiState.currency, hidden = uiState.hideBalances)}/day · ${report.daysRemainingIncludingToday}d left$anchorTag",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,

@@ -36,6 +36,9 @@ interface HabitsDao {
     @Query("SELECT * FROM habit_completions WHERE epochDay >= :minEpochDay")
     fun observeCompletionsSince(minEpochDay: Long): Flow<List<HabitCompletionEntity>>
 
+    @Query("SELECT * FROM habit_completions WHERE habitId = :habitId")
+    suspend fun getCompletionsForHabit(habitId: Long): List<HabitCompletionEntity>
+
     @Query("SELECT * FROM habit_completions")
     suspend fun getAllCompletions(): List<HabitCompletionEntity>
 

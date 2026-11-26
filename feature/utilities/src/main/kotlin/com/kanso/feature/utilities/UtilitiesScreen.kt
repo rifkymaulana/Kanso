@@ -119,6 +119,7 @@ fun UtilitiesRoute(
     initialTab: Int = 0,
     onBack: () -> Unit,
     onShowMessage: (String) -> Unit,
+    onShowUndoMessage: (String, () -> Unit) -> Unit = { msg, _ -> onShowMessage(msg) },
     viewModel: UtilitiesViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -161,7 +162,9 @@ fun UtilitiesRoute(
                 {
                     viewModel.deleteCountdown(item.id)
                     editingCountdown = null
-                    onShowMessage("Countdown deleted")
+                    onShowUndoMessage("Countdown deleted") {
+                        viewModel.restoreCountdown(item)
+                    }
                 }
             }
         )

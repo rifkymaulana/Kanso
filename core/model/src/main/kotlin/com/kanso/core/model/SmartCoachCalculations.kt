@@ -192,9 +192,11 @@ object SmartCoachCalculations {
         currentSummary: MoneyCalculations.MonthlySummary,
         previousSummary: MoneyCalculations.MonthlySummary,
         budgetStatuses: List<MoneyCalculations.BudgetStatus>,
-        maxItems: Int = 3
+        maxItems: Int = 3,
+        hideAmounts: Boolean = false
     ): List<CoachInsight> {
         val insights = mutableListOf<CoachInsight>()
+        fun fmt(cents: Long): String = CurrencyFormatter.formatOrMask(cents, currency, hidden = hideAmounts)
 
         if (report.isCurrentMonth && report.hasAnchor) {
             when (report.paceStatus) {
@@ -203,7 +205,7 @@ object SmartCoachCalculations {
                         .coerceAtLeast(0L)
                     insights += CoachInsight(
                         id = "pace_over_budget",
-                        title = "Over monthly target by ${CurrencyFormatter.format(overBy, currency)}",
+                        title = "Over monthly target by ${fmt(overBy)}",
                         body = "Pause discretionary spend or adjust your monthly cap.",
                         tone = CoachInsightTone.CRITICAL,
                         actionLabel = "Adjust Cap",
@@ -216,8 +218,8 @@ object SmartCoachCalculations {
                         .coerceAtLeast(0L)
                     insights += CoachInsight(
                         id = "pace_watch",
-                        title = "Projected +${CurrencyFormatter.format(projectedOver, currency)} over cap",
-                        body = "Aim for ${CurrencyFormatter.format(report.dailySafeAllowanceCents, currency)}/day over the next ${report.daysRemainingIncludingToday} days.",
+                        title = "Projected +${fmt(projectedOver)} over cap",
+                        body = "Aim for ${fmt(report.dailySafeAllowanceCents)}/day over the next ${report.daysRemainingIncludingToday} days.",
                         tone = CoachInsightTone.WARNING
                     )
                 }
@@ -227,8 +229,8 @@ object SmartCoachCalculations {
                         .coerceAtLeast(0L)
                     insights += CoachInsight(
                         id = "pace_under",
-                        title = "On pace to save ${CurrencyFormatter.format(projectedSaved, currency)} under cap",
-                        body = "Projected month-end spend is ${CurrencyFormatter.format(report.projectedMonthEndCents, currency)}.",
+                        title = "On pace to save ${fmt(projectedSaved)} under cap",
+                        body = "Projected month-end spend is ${fmt(report.projectedMonthEndCents)}.",
                         tone = CoachInsightTone.POSITIVE
                     )
                 }
@@ -242,8 +244,8 @@ object SmartCoachCalculations {
             if (overCat != null) {
                 insights += CoachInsight(
                     id = "cat_over_${overCat.category.name}",
-                    title = "${overCat.category.label} exceeded limit by ${CurrencyFormatter.format(overCat.spentCents - overCat.limitCents, currency)}",
-                    body = "${CurrencyFormatter.format(overCat.spentCents, currency)} spent vs ${CurrencyFormatter.format(overCat.limitCents, currency)} cap.",
+                    title = "${overCat.category.label} exceeded limit by ${fmt(overCat.spentCents - overCat.limitCents)}",
+                    body = "${fmt(overCat.spentCents)} spent vs ${fmt(overCat.limitCents)} cap.",
                     tone = CoachInsightTone.CRITICAL
                 )
             } else {
@@ -254,7 +256,7 @@ object SmartCoachCalculations {
                     insights += CoachInsight(
                         id = "cat_warn_${warnCat.category.name}",
                         title = "${warnCat.category.label} at $pct% of limit",
-                        body = "${CurrencyFormatter.format(remaining, currency)} remaining for ${report.daysRemainingIncludingToday}d.",
+                        body = "${fmt(remaining)} remaining for ${report.daysRemainingIncludingToday}d.",
                         tone = CoachInsightTone.WARNING
                     )
                 }
@@ -278,7 +280,7 @@ object SmartCoachCalculations {
             insights += CoachInsight(
                 id = "mom_spike_${cat.name}",
                 title = "${cat.label} up +$pct% vs last month",
-                body = "${CurrencyFormatter.format(curr, currency)} logged vs ${CurrencyFormatter.format(prev, currency)} last month.",
+                body = "${fmt(curr)} logged vs ${fmt(prev)} last month.",
                 tone = CoachInsightTone.WARNING
             )
         } else if (report.isPastMonth && previousSummary.expenseCents > 0L && currentSummary.expenseCents > 0L) {
@@ -288,14 +290,14 @@ object SmartCoachCalculations {
                 insights += CoachInsight(
                     id = "mom_saved",
                     title = "Spent $pct% less than prior month",
-                    body = "Saved ${CurrencyFormatter.format(-delta, currency)} compared to ${CurrencyFormatter.format(previousSummary.expenseCents, currency)}.",
+                    body = "Saved ${fmt(-delta)} compared to ${fmt(previousSummary.expenseCents)}.",
                     tone = CoachInsightTone.POSITIVE
                 )
             } else if (delta > 0L && pct >= 10) {
                 insights += CoachInsight(
                     id = "mom_higher",
                     title = "Spent +$pct% more than prior month",
-                    body = "Up ${CurrencyFormatter.format(delta, currency)} compared to ${CurrencyFormatter.format(previousSummary.expenseCents, currency)}.",
+                    body = "Up ${fmt(delta)} compared to ${fmt(previousSummary.expenseCents)}.",
                     tone = CoachInsightTone.NEUTRAL
                 )
             }
@@ -305,7 +307,7 @@ object SmartCoachCalculations {
             val billWord = if (report.unpaidBillsCount == 1) "1 unpaid bill" else "${report.unpaidBillsCount} unpaid bills"
             insights += CoachInsight(
                 id = "bills_reserved",
-                title = "${CurrencyFormatter.format(report.unpaidBillsCents, currency)} reserved for $billWord",
+                title = "${fmt(report.unpaidBillsCents)} reserved for $billWord",
                 body = "Already deducted from your Safe-to-Spend allowance.",
                 tone = CoachInsightTone.NEUTRAL
             )
@@ -320,13 +322,13 @@ object SmartCoachCalculations {
                 insights += CoachInsight(
                     id = "savings_rate",
                     title = "Saving $savingsPct% of logged income",
-                    body = "Net +${CurrencyFormatter.format(currentSummary.netCents, currency)} kept this month.",
+                    body = "Net +${fmt(currentSummary.netCents)} kept this month.",
                     tone = CoachInsightTone.POSITIVE
                 )
             } else if (currentSummary.netCents < 0L) {
                 insights += CoachInsight(
                     id = "negative_cashflow",
-                    title = "Spending exceeds income by ${CurrencyFormatter.format(-currentSummary.netCents, currency)}",
+                    title = "Spending exceeds income by ${fmt(-currentSummary.netCents)}",
                     body = "Review top categories or log any missing income.",
                     tone = CoachInsightTone.WARNING
                 )
@@ -358,7 +360,8 @@ object SmartCoachCalculations {
         todayHabitsDone: Int,
         todayHabitsTotal: Int,
         hourOfDay: Int,
-        maxItems: Int = 2
+        maxItems: Int = 2,
+        hideAmounts: Boolean = false
     ): List<CoachInsight> {
         val moneyInsights = buildMoneyInsights(
             report = report,
@@ -366,7 +369,8 @@ object SmartCoachCalculations {
             currentSummary = currentSummary,
             previousSummary = previousSummary,
             budgetStatuses = budgetStatuses,
-            maxItems = maxItems.coerceAtLeast(1)
+            maxItems = maxItems.coerceAtLeast(1),
+            hideAmounts = hideAmounts
         )
 
         val pulseInsight = when {

@@ -14,6 +14,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -76,6 +77,8 @@ private val DarkColorScheme = darkColorScheme(
     onErrorContainer = Color(0xFFFECACA)
 )
 
+val LocalBalancesHidden = compositionLocalOf { false }
+
 val MaterialTheme.kansoColors: KansoExtendedColors
     @Composable
     @ReadOnlyComposable
@@ -91,6 +94,7 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
 fun KansoTheme(
     themeMode: ThemeMode = ThemeMode.SYSTEM,
     useDynamicColor: Boolean = false,
+    hideBalances: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val darkTheme = when (themeMode) {
@@ -119,7 +123,10 @@ fun KansoTheme(
         }
     }
 
-    CompositionLocalProvider(LocalKansoColors provides extendedColors) {
+    CompositionLocalProvider(
+        LocalKansoColors provides extendedColors,
+        LocalBalancesHidden provides hideBalances
+    ) {
         MaterialTheme(
             colorScheme = colorScheme,
             typography = KansoTypography,

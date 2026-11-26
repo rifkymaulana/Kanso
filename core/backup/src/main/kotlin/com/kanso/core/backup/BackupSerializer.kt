@@ -1,5 +1,6 @@
 package com.kanso.core.backup
 
+import com.kanso.core.model.AppLockTimeout
 import com.kanso.core.model.KansoBackupSnapshot
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -59,7 +60,11 @@ object BackupSerializer {
                 lastBackupMillis = null,
                 lastUpdateCheckMillis = null,
                 customRatesVsUsd = snapshot.preferences.customRatesVsUsd.toSortedMap(),
-                walletOpeningBalancesCents = snapshot.preferences.walletOpeningBalancesCents.toSortedMap()
+                walletOpeningBalancesCents = snapshot.preferences.walletOpeningBalancesCents.toSortedMap(),
+                appLockEnabled = false,
+                appLockTimeout = AppLockTimeout.IMMEDIATE,
+                hideRecentAppsPreview = false,
+                hideBalances = false
             ),
             transactions = snapshot.transactions.sortedWith(
                 compareBy({ it.id }, { it.timestampMillis }, { it.category.name }, { it.toWallet?.name.orEmpty() })

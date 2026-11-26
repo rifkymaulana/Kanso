@@ -1,7 +1,9 @@
 package com.kanso.core.model
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CurrencyFormatterTest {
@@ -92,5 +94,79 @@ class CurrencyFormatterTest {
                 }
             }
         }
+    }
+
+    @Test
+    fun `mask and formatOrMask hide exact currency figures cleanly`() {
+        assertEquals("Rp ••••••", CurrencyFormatter.mask(AppCurrency.IDR))
+        assertEquals("$••••••", CurrencyFormatter.mask(AppCurrency.USD))
+        assertEquals("Rp ••••••", CurrencyFormatter.formatOrMask(250_000_00L, AppCurrency.IDR, hidden = true))
+        assertEquals("Rp 250.000", CurrencyFormatter.formatOrMask(250_000_00L, AppCurrency.IDR, hidden = false))
+    }
+
+    @Test
+    fun `app lock policy enforces lock availability, grace timeout, and ignores config change`() {
+        // Cold start when enabled + biometric available -> locked
+        val lockedColdStart = AppLockSession(isUnlocked = false)
+        assertTrue(AppLockPolicy.shouldRequireUnlock(appLockEnabled = true, isBiometricAvailable = true, lockedColdStart))
+        // Fail open if device has no biometrics enrolled
+        assertFalse(AppLockPolicy.shouldRequireUnlock(appLockEnabled = true, isBiometricAvailable = false, lockedColdStart))
+        // Disabled -> never locks
+        assertFalse(AppLockPolicy.shouldRequireUnlock(appLockEnabled = false, isBiometricAvailable = true, lockedColdStart))
+
+        // Immediate timeout locks on background unless changing configurations or prompt active
+        val unlocked = AppLockSession(isUnlocked = true)
+        val afterRotation = AppLockPolicy.onBackgrounded(
+            session = unlocked,
+            appLockEnabled = true,
+            timeout = AppLockTimeout.IMMEDIATE,
+            isChangingConfigurations = true,
+            nowElapsedMillis = 1_000L
+        )
+        assertTrue(afterRotation.isUnlocked)
+
+        val afterPromptBg = AppLockPolicy.onBackgrounded(
+            session = unlocked.copy(isPromptActive = true),
+            appLockEnabled = true,
+            timeout = AppLockTimeout.IMMEDIATE,
+            isChangingConfigurations = false,
+            nowElapsedMillis = 1_000L
+        )
+        assertTrue(afterPromptBg.isUnlocked)
+
+        val afterImmediateBg = AppLockPolicy.onBackgrounded(
+            session = unlocked,
+            appLockEnabled = true,
+            timeout = AppLockTimeout.IMMEDIATE,
+            isChangingConfigurations = false,
+            nowElapsedMillis = 1_000L
+        )
+        assertFalse(afterImmediateBg.isUnlocked)
+
+        // 1-minute grace window: stays unlocked at +30s, locks at +60s
+        val afterGraceBg = AppLockPolicy.onBackgrounded(
+            session = unlocked,
+            appLockEnabled = true,
+            timeout = AppLockTimeout.ONE_MINUTE,
+            isChangingConfigurations = false,
+            nowElapsedMillis = 10_000L
+        )
+        assertTrue(afterGraceBg.isUnlocked)
+
+        val returnedEarly = AppLockPolicy.onForegrounded(
+            session = afterGraceBg,
+            appLockEnabled = true,
+            timeout = AppLockTimeout.ONE_MINUTE,
+            nowElapsedMillis = 40_000L
+        )
+        assertTrue(returnedEarly.isUnlocked)
+
+        val returnedLate = AppLockPolicy.onForegrounded(
+            session = afterGraceBg,
+            appLockEnabled = true,
+            timeout = AppLockTimeout.ONE_MINUTE,
+            nowElapsedMillis = 70_000L
+        )
+        assertFalse(returnedLate.isUnlocked)
     }
 }
