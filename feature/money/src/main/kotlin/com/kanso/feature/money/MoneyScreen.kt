@@ -5,10 +5,13 @@ import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -24,6 +27,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -33,17 +37,20 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ReceiptLong
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.ChevronLeft
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.ExpandLess
+import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.FileDownload
+import androidx.compose.material.icons.outlined.FilterList
 import androidx.compose.material.icons.outlined.Handshake
 import androidx.compose.material.icons.outlined.PieChart
 import androidx.compose.material.icons.outlined.Savings
 import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -71,11 +78,7 @@ import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.kanso.core.model.AppCurrency
-import com.kanso.core.model.BudgetAnchorSource
 import com.kanso.core.model.CategoryBudget
-import com.kanso.core.model.CoachActionTarget
-import com.kanso.core.model.CoachInsight
-import com.kanso.core.model.CoachInsightTone
 import com.kanso.core.model.CsvExportScope
 import com.kanso.core.model.CurrencyFormatter
 import com.kanso.core.model.ExpenseCategory
@@ -84,9 +87,7 @@ import com.kanso.core.model.IouEntry
 import com.kanso.core.model.MoneyCalculations
 import com.kanso.core.model.MoneyTransaction
 import com.kanso.core.model.RecurringBill
-import com.kanso.core.model.SafeToSpendReport
 import com.kanso.core.model.SavingsGoal
-import com.kanso.core.model.SpendPaceStatus
 import com.kanso.core.model.TransactionType
 import com.kanso.core.model.WalletBalanceSummary
 import com.kanso.core.model.WalletType
@@ -576,7 +577,8 @@ fun MoneyScreenContent(
                 KansoPrivacyEyeButton(
                     hidden = uiState.hideBalances,
                     onToggle = onToggleHideBalances,
-                    size = 38.dp
+                    size = 36.dp,
+                    bordered = false
                 )
                 MonthPillSelector(
                     label = uiState.selectedMonthLabel,
@@ -745,6 +747,12 @@ private fun LogTabContent(
         }
     }
 
+    var showAnalytics by rememberSaveable { mutableStateOf(false) }
+    var showFilters by rememberSaveable { mutableStateOf(false) }
+    val hasTrendData = uiState.monthlyTrend.any { it.incomeCents > 0L || it.expenseCents > 0L } ||
+        uiState.summary.expenseCents > 0L
+    val hasCategoryData = topCategories.isNotEmpty() && uiState.summary.expenseCents > 0L
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 28.dp),
@@ -762,8 +770,9 @@ private fun LogTabContent(
                 animationSpec = tween(250),
                 label = "netBadgeFg"
             )
+            val currentCoach = uiState.safeToSpend?.takeIf { it.isCurrentMonth && it.hasAnchor }
             KansoHeroCard(glowColor = if (isPositive) kansoColors.moneyAccent else kansoColors.expense) {
-                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -814,6 +823,51 @@ private fun LogTabContent(
                             modifier = Modifier.weight(1f)
                         )
                     }
+
+                    if (currentCoach != null) {
+                        HorizontalDivider(color = Color.White.copy(alpha = 0.12f))
+                        val isExceeded = currentCoach.todayRemainingAllowanceCents < 0L
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .clickable(onClick = onEditOverallBudget)
+                                .padding(vertical = 2.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = if (isExceeded) {
+                                    "Over today's cap by ${
+                                        CurrencyFormatter.formatOrMask(
+                                            -currentCoach.todayRemainingAllowanceCents,
+                                            uiState.currency,
+                                            hidden = uiState.hideBalances
+                                        )
+                                    }"
+                                } else {
+                                    "Safe today · ${
+                                        CurrencyFormatter.formatOrMask(
+                                            currentCoach.todayRemainingAllowanceCents,
+                                            uiState.currency,
+                                            hidden = uiState.hideBalances
+                                        )
+                                    }"
+                                },
+                                style = MaterialTheme.typography.labelMedium,
+                                color = if (isExceeded) Color(0xFFFCA5A5) else kansoColors.heroOnSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = currentCoach.paceStatus.badgeLabel,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = kansoColors.heroOnSurfaceMuted
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -834,125 +888,164 @@ private fun LogTabContent(
             }
         }
 
-        uiState.safeToSpend?.let { report ->
+        if (hasTrendData || hasCategoryData) {
             item {
-                MoneySmartCoachCard(
-                    report = report,
-                    currency = uiState.currency,
-                    hideBalances = uiState.hideBalances,
-                    insights = uiState.coachInsights,
-                    onEditOverallBudget = onEditOverallBudget
-                )
-            }
-        }
-
-        if (uiState.monthlyTrend.any { it.incomeCents > 0L || it.expenseCents > 0L } ||
-            uiState.summary.expenseCents > 0L
-        ) {
-            item {
-                CashflowTrendsBentoCard(
-                    selectedMonth = uiState.selectedMonth,
-                    monthlyTrend = uiState.monthlyTrend,
-                    dailySpendSeries = uiState.dailySpendSeries,
-                    dailySafeAllowanceCents = uiState.safeToSpend?.takeIf { it.isCurrentMonth && it.hasAnchor }?.dailySafeAllowanceCents,
-                    currency = uiState.currency,
-                    hideBalances = uiState.hideBalances
-                )
-            }
-        }
-
-        if (topCategories.isNotEmpty() && uiState.summary.expenseCents > 0L) {
-            item {
-                KansoBentoCard(contentPadding = PaddingValues(16.dp)) {
-                    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                        Text(
-                            text = "Spending Breakdown",
-                            style = MaterialTheme.typography.titleMedium
-                        )
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    KansoBentoCard(
+                        onClick = { showAnalytics = !showAnalytics },
+                        cornerRadius = 18.dp,
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)
+                    ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            KansoCategoryDonutChart(
-                                slices = slices,
-                                size = 122.dp,
-                                strokeWidth = 15.dp
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    KansoAnimatedIntText(
-                                        value = uiState.summary.byCategory.size,
-                                        format = { "$it" },
-                                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Text(
-                                        text = "categories",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
+                                Icon(
+                                    imageVector = Icons.Outlined.PieChart,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Text(
+                                    text = "Charts & Breakdown",
+                                    style = MaterialTheme.typography.titleSmall
+                                )
                             }
-
-                            Column(
-                                modifier = Modifier.weight(1f),
-                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                topCategories.forEach { (category, amount) ->
-                                    val pct = ((amount.toFloat() / uiState.summary.expenseCents.toFloat()) * 100f).toInt()
-                                    val isCatSelected = uiState.transactionFilter.category == category
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clip(RoundedCornerShape(10.dp))
-                                            .background(
-                                                if (isCatSelected) {
-                                                    category.accentColor().copy(alpha = 0.14f)
-                                                } else {
-                                                    Color.Transparent
-                                                }
-                                            )
-                                            .clickable { onToggleCategoryFilter(category) }
-                                            .padding(horizontal = 6.dp, vertical = 4.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(7.dp),
-                                            modifier = Modifier.weight(1f)
-                                        ) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(8.dp)
-                                                    .clip(CircleShape)
-                                                    .background(category.accentColor())
-                                            )
-                                            Text(
-                                                text = category.label,
-                                                style = MaterialTheme.typography.bodyMedium.copy(
-                                                    fontWeight = if (isCatSelected) FontWeight.SemiBold else FontWeight.Normal
-                                                ),
-                                                color = if (isCatSelected) {
-                                                    category.accentColor()
-                                                } else {
-                                                    MaterialTheme.colorScheme.onSurface
-                                                },
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-                                        }
+                                Text(
+                                    text = if (topCategories.isNotEmpty()) topCategories.first().key.label else "6M trend",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Icon(
+                                    imageVector = if (showAnalytics) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                                    contentDescription = if (showAnalytics) "Collapse charts" else "Expand charts",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    AnimatedVisibility(
+                        visible = showAnalytics,
+                        enter = expandVertically(KansoMotion.SizeSpring) + fadeIn(tween(180)),
+                        exit = shrinkVertically() + fadeOut(tween(140))
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            if (hasTrendData) {
+                                CashflowTrendsBentoCard(
+                                    selectedMonth = uiState.selectedMonth,
+                                    monthlyTrend = uiState.monthlyTrend,
+                                    dailySpendSeries = uiState.dailySpendSeries,
+                                    dailySafeAllowanceCents = uiState.safeToSpend?.takeIf { it.isCurrentMonth && it.hasAnchor }?.dailySafeAllowanceCents,
+                                    currency = uiState.currency,
+                                    hideBalances = uiState.hideBalances
+                                )
+                            }
+                            if (hasCategoryData) {
+                                KansoBentoCard(contentPadding = PaddingValues(16.dp)) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                                         Text(
-                                            text = "$pct% · ${
-                                                CurrencyFormatter.formatOrMask(amount, uiState.currency, hidden = uiState.hideBalances)
-                                            }",
-                                            style = MaterialTheme.typography.labelMedium,
-                                            color = if (isCatSelected) {
-                                                category.accentColor()
-                                            } else {
-                                                MaterialTheme.colorScheme.onSurfaceVariant
-                                            }
+                                            text = "Spending Breakdown",
+                                            style = MaterialTheme.typography.titleMedium
                                         )
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            KansoCategoryDonutChart(
+                                                slices = slices,
+                                                size = 122.dp,
+                                                strokeWidth = 15.dp
+                                            ) {
+                                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                    KansoAnimatedIntText(
+                                                        value = uiState.summary.byCategory.size,
+                                                        format = { "$it" },
+                                                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                                                        color = MaterialTheme.colorScheme.onSurface
+                                                    )
+                                                    Text(
+                                                        text = "categories",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                }
+                                            }
+
+                                            Column(
+                                                modifier = Modifier.weight(1f),
+                                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                topCategories.forEach { (category, amount) ->
+                                                    val pct = ((amount.toFloat() / uiState.summary.expenseCents.toFloat()) * 100f).toInt()
+                                                    val isCatSelected = uiState.transactionFilter.category == category
+                                                    Row(
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .clip(RoundedCornerShape(10.dp))
+                                                            .background(
+                                                                if (isCatSelected) {
+                                                                    category.accentColor().copy(alpha = 0.14f)
+                                                                } else {
+                                                                    Color.Transparent
+                                                                }
+                                                            )
+                                                            .clickable { onToggleCategoryFilter(category) }
+                                                            .padding(horizontal = 6.dp, vertical = 4.dp),
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.SpaceBetween
+                                                    ) {
+                                                        Row(
+                                                            verticalAlignment = Alignment.CenterVertically,
+                                                            horizontalArrangement = Arrangement.spacedBy(7.dp),
+                                                            modifier = Modifier.weight(1f)
+                                                        ) {
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .size(8.dp)
+                                                                    .clip(CircleShape)
+                                                                    .background(category.accentColor())
+                                                            )
+                                                            Text(
+                                                                text = category.label,
+                                                                style = MaterialTheme.typography.bodyMedium.copy(
+                                                                    fontWeight = if (isCatSelected) FontWeight.SemiBold else FontWeight.Normal
+                                                                ),
+                                                                color = if (isCatSelected) {
+                                                                    category.accentColor()
+                                                                } else {
+                                                                    MaterialTheme.colorScheme.onSurface
+                                                                },
+                                                                maxLines = 1,
+                                                                overflow = TextOverflow.Ellipsis
+                                                            )
+                                                        }
+                                                        Text(
+                                                            text = "$pct% · ${
+                                                                CurrencyFormatter.formatOrMask(amount, uiState.currency, hidden = uiState.hideBalances)
+                                                            }",
+                                                            style = MaterialTheme.typography.labelMedium,
+                                                            color = if (isCatSelected) {
+                                                                category.accentColor()
+                                                            } else {
+                                                                MaterialTheme.colorScheme.onSurfaceVariant
+                                                            }
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -966,7 +1059,7 @@ private fun LogTabContent(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 4.dp),
+                    .padding(top = 2.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -975,9 +1068,31 @@ private fun LogTabContent(
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                 )
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    if (uiState.transactions.isNotEmpty() || uiState.transactionFilter.isActive) {
+                        val filtersVisible = showFilters || uiState.transactionFilter.isActive
+                        if (filtersVisible) {
+                            KansoTonalButton(
+                                text = if (uiState.transactionFilter.isActive) {
+                                    "Filter (${uiState.filteredTransactions.size})"
+                                } else {
+                                    "Filter"
+                                },
+                                leadingIcon = Icons.Outlined.FilterList,
+                                size = KansoButtonSize.COMPACT,
+                                onClick = { showFilters = !showFilters }
+                            )
+                        } else {
+                            KansoOutlinedButton(
+                                text = "Filter",
+                                leadingIcon = Icons.Outlined.FilterList,
+                                size = KansoButtonSize.COMPACT,
+                                onClick = { showFilters = true }
+                            )
+                        }
+                    }
                     if (uiState.allTransactionsCount > 0) {
                         KansoOutlinedButton(
                             text = "CSV",
@@ -998,15 +1113,21 @@ private fun LogTabContent(
 
         if (uiState.transactions.isNotEmpty() || uiState.transactionFilter.isActive) {
             item {
-                TransactionFilterStrip(
-                    transactions = uiState.transactions,
-                    filter = uiState.transactionFilter,
-                    filteredCount = uiState.filteredTransactions.size,
-                    onToggleTypeFilter = onToggleTypeFilter,
-                    onToggleWalletFilter = onToggleWalletFilter,
-                    onToggleCategoryFilter = onToggleCategoryFilter,
-                    onClearFilters = onClearFilters
-                )
+                AnimatedVisibility(
+                    visible = showFilters || uiState.transactionFilter.isActive,
+                    enter = expandVertically(KansoMotion.SizeSpring) + fadeIn(tween(180)),
+                    exit = shrinkVertically() + fadeOut(tween(140))
+                ) {
+                    TransactionFilterStrip(
+                        transactions = uiState.transactions,
+                        filter = uiState.transactionFilter,
+                        filteredCount = uiState.filteredTransactions.size,
+                        onToggleTypeFilter = onToggleTypeFilter,
+                        onToggleWalletFilter = onToggleWalletFilter,
+                        onToggleCategoryFilter = onToggleCategoryFilter,
+                        onClearFilters = onClearFilters
+                    )
+                }
             }
         }
 
@@ -1162,8 +1283,8 @@ private fun WalletsBentoCard(
 ) {
     val haptic = LocalHapticFeedback.current
     val hasReserved = goalsOverview.totalSavedCents > 0L
-    KansoBentoCard(contentPadding = PaddingValues(16.dp)) {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    KansoBentoCard(contentPadding = PaddingValues(14.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -1174,18 +1295,11 @@ private fun WalletsBentoCard(
                     verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
                     Text(
-                        text = "Wallets",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = "Total ${CurrencyFormatter.formatOrMask(totalBalanceCents, currency, hidden = hideBalances)}",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = if (totalBalanceCents < 0L) {
-                            expenseSemanticColor()
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        }
+                        text = "Wallets · ${CurrencyFormatter.formatOrMask(totalBalanceCents, currency, hidden = hideBalances)}",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = if (totalBalanceCents < 0L) expenseSemanticColor() else MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                     if (hasReserved) {
                         Text(
@@ -1217,125 +1331,75 @@ private fun WalletsBentoCard(
                 )
             }
 
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                wallets.chunked(2).forEach { pair ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(wallets, key = { it.wallet.name }) { summary ->
+                    val isNegative = summary.currentBalanceCents < 0L
+                    val isFiltered = selectedWalletFilter == summary.wallet
+                    Surface(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(14.dp))
+                            .clickable {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                onToggleWalletFilter(summary.wallet)
+                            },
+                        shape = RoundedCornerShape(14.dp),
+                        color = if (isFiltered) {
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                        } else {
+                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                        },
+                        border = if (isFiltered) {
+                            BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary)
+                        } else {
+                            null
+                        }
                     ) {
-                        pair.forEach { summary ->
-                            val isNegative = summary.currentBalanceCents < 0L
-                            val isFiltered = selectedWalletFilter == summary.wallet
-                            val walletReserved = goalsOverview.reservedByWallet[summary.wallet] ?: 0L
-                            Surface(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(14.dp))
-                                    .clickable {
-                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        onToggleWalletFilter(summary.wallet)
-                                    },
-                                shape = RoundedCornerShape(14.dp),
-                                color = if (isFiltered) {
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
-                                } else {
-                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
-                                },
-                                border = if (isFiltered) {
-                                    BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary)
-                                } else {
-                                    null
-                                }
+                        Column(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+                            verticalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
                             ) {
-                                Column(
-                                    modifier = Modifier.padding(12.dp),
-                                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.weight(1f),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                        ) {
-                                            Icon(
-                                                imageVector = summary.wallet.icon(),
-                                                contentDescription = null,
-                                                tint = MaterialTheme.colorScheme.primary,
-                                                modifier = Modifier.size(16.dp)
-                                            )
-                                            Text(
-                                                text = summary.wallet.label,
-                                                style = MaterialTheme.typography.labelMedium,
-                                                color = if (isFiltered) {
-                                                    MaterialTheme.colorScheme.primary
-                                                } else {
-                                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                                },
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-                                        }
-                                        Box(
-                                            modifier = Modifier
-                                                .size(28.dp)
-                                                .clip(CircleShape)
-                                                .clickable { onAdjustWallet(summary) },
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Outlined.Edit,
-                                                contentDescription = "Adjust ${summary.wallet.label} balance",
-                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                modifier = Modifier.size(14.dp)
-                                            )
-                                        }
-                                    }
-                                    if (isNegative) {
-                                        Text(
-                                            text = CurrencyFormatter.formatOrMask(summary.currentBalanceCents, currency, hidden = hideBalances),
-                                            style = MaterialTheme.typography.titleSmall.copy(
-                                                fontWeight = FontWeight.Bold,
-                                                fontFeatureSettings = "tnum"
-                                            ),
-                                            color = expenseSemanticColor(),
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
+                                Icon(
+                                    imageVector = summary.wallet.icon(),
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Text(
+                                    text = summary.wallet.label,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = if (isFiltered) {
+                                        MaterialTheme.colorScheme.primary
                                     } else {
-                                        KansoAnimatedCurrencyText(
-                                            amountCents = summary.currentBalanceCents,
-                                            currency = currency,
-                                            style = MaterialTheme.typography.titleSmall.copy(
-                                                fontWeight = FontWeight.Bold,
-                                                fontFeatureSettings = "tnum"
-                                            ),
-                                            color = MaterialTheme.colorScheme.onSurface
-                                        )
+                                        MaterialTheme.colorScheme.onSurfaceVariant
                                     }
-                                    if (walletReserved > 0L) {
-                                        Text(
-                                            text = "Free ${
-                                                CurrencyFormatter.formatOrMask(
-                                                    summary.currentBalanceCents - walletReserved,
-                                                    currency,
-                                                    hidden = hideBalances
-                                                )
-                                            }",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .size(22.dp)
+                                        .clip(CircleShape)
+                                        .clickable { onAdjustWallet(summary) },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Edit,
+                                        contentDescription = "Adjust ${summary.wallet.label} balance",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(13.dp)
+                                    )
                                 }
                             }
-                        }
-                        if (pair.size == 1) {
-                            Spacer(modifier = Modifier.weight(1f))
+                            Text(
+                                text = CurrencyFormatter.formatOrMask(summary.currentBalanceCents, currency, hidden = hideBalances),
+                                style = MaterialTheme.typography.titleSmall.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontFeatureSettings = "tnum"
+                                ),
+                                color = if (isNegative) expenseSemanticColor() else MaterialTheme.colorScheme.onSurface
+                            )
                         }
                     }
                 }
@@ -1550,218 +1614,6 @@ private fun CashflowTrendsBentoCard(
                         }
                     }
                 }
-            }
-        }
-    }
-}
-
-@Composable
-private fun MoneySmartCoachCard(
-    report: SafeToSpendReport,
-    currency: AppCurrency,
-    hideBalances: Boolean,
-    insights: List<CoachInsight>,
-    onEditOverallBudget: () -> Unit
-) {
-    val statusColor = when (report.paceStatus) {
-        SpendPaceStatus.UNDER_PACE -> incomeSemanticColor()
-        SpendPaceStatus.ON_TRACK -> MaterialTheme.kansoColors.moneyAccent
-        SpendPaceStatus.WATCH_PACE -> warningSemanticColor()
-        SpendPaceStatus.OVER_BUDGET -> expenseSemanticColor()
-        else -> MaterialTheme.colorScheme.primary
-    }
-
-    KansoBentoCard(contentPadding = PaddingValues(16.dp)) {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    KansoAccentIconBadge(
-                        icon = Icons.Outlined.AutoAwesome,
-                        accent = statusColor,
-                        size = 34.dp,
-                        iconSize = 18.dp,
-                        cornerRadius = 10.dp
-                    )
-                    Text(
-                        text = "Smart Coach",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-                KansoPillBadge(
-                    text = report.paceStatus.badgeLabel,
-                    color = statusColor
-                )
-            }
-
-            if (report.isCurrentMonth && report.hasAnchor) {
-                val isExceeded = report.todayRemainingAllowanceCents < 0L
-                val forecastColor = if (report.projectedMonthEndCents > report.anchorAmountCents) {
-                    warningSemanticColor()
-                } else {
-                    MaterialTheme.colorScheme.onSurface
-                }
-                val anchorLabel = if (report.anchorSource == BudgetAnchorSource.MONTHLY_INCOME) {
-                    "Income ${CurrencyFormatter.formatOrMask(report.anchorAmountCents, currency, hidden = hideBalances)}"
-                } else {
-                    "Cap ${CurrencyFormatter.formatOrMask(report.anchorAmountCents, currency, hidden = hideBalances)}"
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Surface(
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(14.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(3.dp)
-                        ) {
-                            Text(
-                                text = "SAFE TODAY",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = if (isExceeded) expenseSemanticColor() else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            if (isExceeded) {
-                                Text(
-                                    text = "-${CurrencyFormatter.formatOrMask(-report.todayRemainingAllowanceCents, currency, hidden = hideBalances)}",
-                                    style = MaterialTheme.typography.titleMedium.copy(
-                                        fontWeight = FontWeight.Bold,
-                                        fontFeatureSettings = "tnum"
-                                    ),
-                                    color = expenseSemanticColor(),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            } else {
-                                KansoAnimatedCurrencyText(
-                                    amountCents = report.todayRemainingAllowanceCents.coerceAtLeast(0L),
-                                    currency = currency,
-                                    style = MaterialTheme.typography.titleMedium.copy(
-                                        fontWeight = FontWeight.Bold,
-                                        fontFeatureSettings = "tnum"
-                                    ),
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                            Text(
-                                text = "${CurrencyFormatter.formatOrMask(report.dailySafeAllowanceCents, currency, hidden = hideBalances)}/day · ${report.daysRemainingIncludingToday}d left",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
-
-                    Surface(
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(14.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(3.dp)
-                        ) {
-                            Text(
-                                text = "MONTH FORECAST",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            KansoAnimatedCurrencyText(
-                                amountCents = report.projectedMonthEndCents,
-                                currency = currency,
-                                style = MaterialTheme.typography.titleMedium.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    fontFeatureSettings = "tnum"
-                                ),
-                                color = forecastColor
-                            )
-                            Text(
-                                text = anchorLabel,
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
-                }
-            } else if (report.isPastMonth) {
-                Text(
-                    text = "Daily avg ${CurrencyFormatter.formatOrMask(report.averageDailySpendCents, currency, hidden = hideBalances)}/day across ${report.daysElapsed} days",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            if (insights.isNotEmpty()) {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    insights.forEach { insight ->
-                        val toneColor = when (insight.tone) {
-                            CoachInsightTone.POSITIVE -> incomeSemanticColor()
-                            CoachInsightTone.NEUTRAL -> MaterialTheme.colorScheme.primary
-                            CoachInsightTone.WARNING -> warningSemanticColor()
-                            CoachInsightTone.CRITICAL -> expenseSemanticColor()
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(7.dp)
-                                    .clip(CircleShape)
-                                    .background(toneColor)
-                            )
-                            Column(
-                                modifier = Modifier.weight(1f),
-                                verticalArrangement = Arrangement.spacedBy(2.dp)
-                            ) {
-                                Text(
-                                    text = insight.title,
-                                    style = MaterialTheme.typography.titleSmall,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    text = insight.body,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                            if (insight.actionTarget == CoachActionTarget.OPEN_MONEY_BUDGETS ||
-                                (!report.hasAnchor && report.isCurrentMonth && insight.actionLabel != null)
-                            ) {
-                                KansoTonalButton(
-                                    text = insight.actionLabel ?: "Set Cap",
-                                    size = KansoButtonSize.COMPACT,
-                                    onClick = onEditOverallBudget
-                                )
-                            }
-                        }
-                    }
-                }
-            } else if (!report.hasAnchor && report.isCurrentMonth) {
-                KansoTonalButton(
-                    text = "Set Monthly Budget",
-                    size = KansoButtonSize.COMPACT,
-                    onClick = onEditOverallBudget
-                )
             }
         }
     }

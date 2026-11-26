@@ -167,7 +167,7 @@ fun KansoBentoCard(
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
     containerColor: Color = MaterialTheme.colorScheme.surface,
-    borderColor: Color = MaterialTheme.colorScheme.outlineVariant,
+    borderColor: Color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
     cornerRadius: Dp = 22.dp,
     contentPadding: PaddingValues = PaddingValues(16.dp),
     content: @Composable ColumnScope.() -> Unit
@@ -1368,6 +1368,7 @@ fun KansoPrivacyEyeButton(
     hidden: Boolean,
     onToggle: () -> Unit,
     size: Dp = 40.dp,
+    bordered: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     val haptic = LocalHapticFeedback.current
@@ -1380,29 +1381,26 @@ fun KansoPrivacyEyeButton(
                 onToggle()
             },
         shape = CircleShape,
-        color = if (hidden) {
-            MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
-        } else {
-            MaterialTheme.colorScheme.surface
+        color = when {
+            hidden -> MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+            bordered -> MaterialTheme.colorScheme.surface
+            else -> Color.Transparent
         },
-        border = BorderStroke(
-            1.dp,
-            if (hidden) {
-                MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
-            } else {
-                MaterialTheme.colorScheme.outlineVariant
-            }
-        )
+        border = when {
+            hidden -> BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f))
+            bordered -> BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+            else -> null
+        }
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(
                 imageVector = if (hidden) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
                 contentDescription = if (hidden) "Show currency amounts" else "Hide currency amounts",
                 modifier = Modifier.size(if (size >= 40.dp) 20.dp else 18.dp),
-                tint = if (hidden) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onSurface
+                tint = when {
+                    hidden -> MaterialTheme.colorScheme.primary
+                    bordered -> MaterialTheme.colorScheme.onSurface
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
                 }
             )
         }
