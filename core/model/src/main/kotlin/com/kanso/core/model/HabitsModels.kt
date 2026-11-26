@@ -30,6 +30,20 @@ data class DailyHealthLog(
     val updatedAtMillis: Long
 )
 
+enum class HealthTrendWindow(val days: Int, val label: String) {
+    DAYS_14(14, "14 Days"),
+    DAYS_30(30, "30 Days")
+}
+
+data class DailyHealthTrendPoint(
+    val epochDay: Long,
+    val waterMl: Int,
+    val hasEntry: Boolean,
+    val sleepHours: Float?,
+    val weightKg: Float?,
+    val mood: Int?
+)
+
 object HabitCalculations {
 
     fun currentStreak(completedDays: Set<Long>, todayEpochDay: Long): Int {
@@ -75,5 +89,33 @@ object HabitCalculations {
         val start = todayEpochDay - 29L
         val count = completedDays.count { it in start..todayEpochDay }
         return count / 30f
+    }
+
+    fun buildHealthTrendSeries(
+        logs: List<DailyHealthLog>,
+        todayEpochDay: Long,
+        days: Int
+    ): List<DailyHealthTrendPoint> {
+        if (days <= 0) return emptyList()
+        val byDay = logs.associateBy { it.epochDay }
+        val startDay = todayEpochDay - days + 1L
+        return (0 until days).map { offset ->
+            val day = startDay + offset.toLong()
+            val entry = byDay[day]
+            DailyHealthTrendPoint(
+                epochDay = day,
+                waterMl = entry?.waterMl ?: 0,
+                hasEntry = entry != null,
+                sleepHours = entry?.sleepHours,
+                weightKg = entry?.weightKg,
+                mood = entry?.mood
+            )
+        }
+    }
+
+    fun computeWeightDelta(points: List<DailyHealthTrendPoint>): Float? {
+        val weights = points.mapNotNull { it.weightKg }
+        if (weights.size < 2) return null
+        return weights.last() - weights.first()
     }
 }

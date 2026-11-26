@@ -2,6 +2,7 @@ package com.kanso.core.model
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -87,5 +88,35 @@ class Milestone2CalculationsTest {
         assertEquals("In 12 days", CountdownCalculations.formatDelta(12L))
         assertEquals("1 day ago", CountdownCalculations.formatDelta(-1L))
         assertEquals("5 days ago", CountdownCalculations.formatDelta(-5L))
+    }
+
+    @Test
+    fun `health trend series aligns chronological days and computes weight delta`() {
+        val today = 20_000L
+        val logs = listOf(
+            DailyHealthLog(epochDay = today - 10L, waterMl = 1500, sleepHours = 7.0f, weightKg = 70.5f, mood = 3, updatedAtMillis = 1L),
+            DailyHealthLog(epochDay = today - 2L, waterMl = 2250, sleepHours = 8.0f, weightKg = null, mood = 4, updatedAtMillis = 2L),
+            DailyHealthLog(epochDay = today, waterMl = 2500, sleepHours = null, weightKg = 69.8f, mood = 5, updatedAtMillis = 3L)
+        )
+
+        val series14 = HabitCalculations.buildHealthTrendSeries(logs, todayEpochDay = today, days = 14)
+        assertEquals(14, series14.size)
+        assertEquals(today - 13L, series14.first().epochDay)
+        assertEquals(0, series14.first().waterMl)
+        assertFalse(series14.first().hasEntry)
+
+        assertTrue(series14.last().hasEntry)
+        assertEquals(2500, series14.last().waterMl)
+        assertEquals(-0.7f, HabitCalculations.computeWeightDelta(series14) ?: 0f, 0.001f)
+
+        val series30 = HabitCalculations.buildHealthTrendSeries(logs, todayEpochDay = today, days = 30)
+        assertEquals(30, series30.size)
+
+        val singleWeight = HabitCalculations.buildHealthTrendSeries(
+            listOf(DailyHealthLog(epochDay = today, weightKg = 70.0f, updatedAtMillis = 1L)),
+            todayEpochDay = today,
+            days = 14
+        )
+        assertNull(HabitCalculations.computeWeightDelta(singleWeight))
     }
 }

@@ -43,6 +43,7 @@ import androidx.compose.material.icons.outlined.SentimentVeryDissatisfied
 import androidx.compose.material.icons.outlined.SentimentVerySatisfied
 import androidx.compose.material.icons.outlined.WaterDrop
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -77,7 +78,9 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.kanso.core.model.DailyHealthLog
 import com.kanso.core.model.HabitItem
+import com.kanso.core.model.HealthTrendWindow
 import com.kanso.core.ui.components.KansoAnimatedIntText
+import com.kanso.core.ui.components.KansoAreaSparklineChart
 import com.kanso.core.ui.components.KansoBentoCard
 import com.kanso.core.ui.components.KansoBounceOnChange
 import com.kanso.core.ui.components.KansoButtonSize
@@ -90,13 +93,18 @@ import com.kanso.core.ui.components.KansoPillBadge
 import com.kanso.core.ui.components.KansoPrimaryButton
 import com.kanso.core.ui.components.KansoProgressRing
 import com.kanso.core.ui.components.KansoSegmentedRow
+import com.kanso.core.ui.components.KansoSingleBarChart
 import com.kanso.core.ui.components.KansoSmallIconButton
 import com.kanso.core.ui.components.KansoTonalButton
+import com.kanso.core.ui.components.SingleBarItem
+import com.kanso.core.ui.components.SparklineItem
 import com.kanso.core.ui.components.warningSemanticColor
 import com.kanso.core.ui.theme.KansoTheme
 import com.kanso.core.ui.theme.kansoColors
 import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlin.math.abs
 
 @Composable
 fun HabitsRoute(
@@ -124,7 +132,8 @@ fun HabitsRoute(
         onSaveHealthDetails = { sleep, weight, mood, workout ->
             viewModel.saveHealthDetails(sleep, weight, mood, workout)
             onShowMessage("Saved health log")
-        }
+        },
+        onSelectTrendWindow = viewModel::selectTrendWindow
     )
 
     if (showNewHabitDialog || editingHabit != null) {
@@ -179,7 +188,8 @@ fun HabitsScreenContent(
     onPreviousDay: () -> Unit,
     onNextDay: () -> Unit,
     onAdjustWater: (Int) -> Unit,
-    onSaveHealthDetails: (sleepHours: Float?, weightKg: Float?, mood: Int?, workoutNote: String) -> Unit
+    onSaveHealthDetails: (sleepHours: Float?, weightKg: Float?, mood: Int?, workoutNote: String) -> Unit,
+    onSelectTrendWindow: (HealthTrendWindow) -> Unit = {}
 ) {
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
 
@@ -236,7 +246,10 @@ fun HabitsScreenContent(
                         onSaveHealthDetails = onSaveHealthDetails
                     )
 
-                    else -> InsightsTabContent(uiState = uiState)
+                    else -> InsightsTabContent(
+                        uiState = uiState,
+                        onSelectTrendWindow = onSelectTrendWindow
+                    )
                 }
             }
         }
@@ -391,7 +404,8 @@ private fun HealthTabContent(
     onPreviousDay: () -> Unit,
     onNextDay: () -> Unit,
     onAdjustWater: (Int) -> Unit,
-    onSaveHealthDetails: (sleepHours: Float?, weightKg: Float?, mood: Int?, workoutNote: String) -> Unit
+    onSaveHealthDetails: (sleepHours: Float?, weightKg: Float?, mood: Int?, workoutNote: String) -> Unit,
+    onSelectTrendWindow: (HealthTrendWindow) -> Unit = {}
 ) {
     val log = uiState.selectedHealthLog
     var sleepText by remember(uiState.selectedDate, log) {
@@ -702,8 +716,26 @@ private fun HealthTabContent(
 }
 
 @Composable
-private fun InsightsTabContent(uiState: HabitsUiState) {
+private fun InsightsTabContent(
+    uiState: HabitsUiState,
+    onSelectTrendWindow: (HealthTrendWindow) -> Unit
+) {
     val kansoColors = MaterialTheme.kansoColors
+    val chartDateFormatter = remember { DateTimeFormatter.ofPattern("d MMM", Locale.getDefault()) }
+    val points = uiState.healthTrendPoints
+
+    var selectedWaterIdx by remember(points) {
+        mutableStateOf(points.indexOfLast { it.waterMl > 0 }.takeIf { it >= 0 })
+    }
+    var selectedSleepIdx by remember(points) {
+        mutableStateOf(points.indexOfLast { it.sleepHours != null }.takeIf { it >= 0 })
+    }
+    var selectedWeightIdx by remember(points) {
+        mutableStateOf(points.indexOfLast { it.weightKg != null }.takeIf { it >= 0 })
+    }
+    var selectedMoodIdx by remember(points) {
+        mutableStateOf(points.indexOfLast { it.mood != null }.takeIf { it >= 0 })
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -717,28 +749,270 @@ private fun InsightsTabContent(uiState: HabitsUiState) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(modifier = Modifier.height(6.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                InsightKpiTile(
-                    label = "Water",
-                    value = "${uiState.avgWaterMl7d} ml",
-                    accent = kansoColors.hydrationAccent,
-                    modifier = Modifier.weight(1f)
-                )
-                InsightKpiTile(
-                    label = "Sleep",
-                    value = uiState.avgSleepHours7d?.let { String.format(Locale.US, "%.1fh", it) } ?: "—",
-                    accent = kansoColors.brainAccent,
-                    modifier = Modifier.weight(1f)
-                )
-                InsightKpiTile(
-                    label = "Mood",
-                    value = uiState.avgMood7d?.let { String.format(Locale.US, "%.1f/5", it) } ?: "—",
-                    accent = kansoColors.warning,
-                    modifier = Modifier.weight(1f)
-                )
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    InsightKpiTile(
+                        label = "Water",
+                        value = "${uiState.avgWaterMl7d} ml",
+                        accent = kansoColors.hydrationAccent,
+                        modifier = Modifier.weight(1f)
+                    )
+                    InsightKpiTile(
+                        label = "Sleep",
+                        value = uiState.avgSleepHours7d?.let { String.format(Locale.US, "%.1fh", it) } ?: "—",
+                        accent = kansoColors.brainAccent,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    InsightKpiTile(
+                        label = "Mood",
+                        value = uiState.avgMood7d?.let { String.format(Locale.US, "%.1f/5", it) } ?: "—",
+                        accent = kansoColors.warning,
+                        modifier = Modifier.weight(1f)
+                    )
+                    InsightKpiTile(
+                        label = "Weight",
+                        value = uiState.latestWeightKg?.let { String.format(Locale.US, "%.1f kg", it) } ?: "—",
+                        accent = kansoColors.habitsAccent,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+        }
+
+        if (points.isNotEmpty()) {
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Health Trends",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        HealthTrendWindow.entries.forEach { window ->
+                            FilterChip(
+                                selected = uiState.trendWindow == window,
+                                onClick = { onSelectTrendWindow(window) },
+                                label = { Text(window.label) }
+                            )
+                        }
+                    }
+                }
+            }
+
+            item {
+                val waterItems = remember(points, uiState.waterGoalMl) {
+                    points.map { pt ->
+                        SingleBarItem(
+                            label = LocalDate.ofEpochDay(pt.epochDay).format(chartDateFormatter),
+                            value = pt.waterMl.toFloat(),
+                            metGoal = pt.waterMl >= uiState.waterGoalMl
+                        )
+                    }
+                }
+                val focusedWater = selectedWaterIdx?.let { points.getOrNull(it) }
+                KansoBentoCard(contentPadding = PaddingValues(16.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Hydration", style = MaterialTheme.typography.titleMedium)
+                            KansoPillBadge(
+                                text = "Goal hit ${uiState.waterGoalHitDays}/${points.size}d",
+                                color = kansoColors.hydrationAccent
+                            )
+                        }
+                        KansoSingleBarChart(
+                            items = waterItems,
+                            barColor = kansoColors.hydrationAccent.copy(alpha = 0.55f),
+                            goalMetColor = kansoColors.hydrationAccent,
+                            goalValue = uiState.waterGoalMl.toFloat(),
+                            selectedIndex = selectedWaterIdx,
+                            onSelectIndex = { selectedWaterIdx = it }
+                        )
+                        Text(
+                            text = focusedWater?.let {
+                                "${KansoDateFormatters.formatFullDate(it.epochDay)}: ${it.waterMl} ml / ${uiState.waterGoalMl} ml"
+                            } ?: "Dashed line marks your daily ${uiState.waterGoalMl} ml goal.",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            item {
+                val sleepItems = remember(points) {
+                    points.map { pt ->
+                        SparklineItem(
+                            label = LocalDate.ofEpochDay(pt.epochDay).format(chartDateFormatter),
+                            value = pt.sleepHours
+                        )
+                    }
+                }
+                val hasSleep = sleepItems.any { it.value != null }
+                val focusedSleep = selectedSleepIdx?.let { points.getOrNull(it) }
+                KansoBentoCard(contentPadding = PaddingValues(16.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Sleep", style = MaterialTheme.typography.titleMedium)
+                            uiState.avgSleepHours7d?.let { avg ->
+                                KansoPillBadge(
+                                    text = "7d avg ${String.format(Locale.US, "%.1fh", avg)}",
+                                    color = kansoColors.brainAccent
+                                )
+                            }
+                        }
+                        if (!hasSleep) {
+                            Text(
+                                text = "Log sleep hours in the Health tab to view your sleep curve.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            KansoAreaSparklineChart(
+                                items = sleepItems,
+                                lineColor = kansoColors.brainAccent,
+                                selectedIndex = selectedSleepIdx,
+                                onSelectIndex = { selectedSleepIdx = it },
+                                zeroAnchored = false,
+                                referenceValue = 8.0f
+                            )
+                            Text(
+                                text = focusedSleep?.sleepHours?.let { hrs ->
+                                    "${KansoDateFormatters.formatFullDate(focusedSleep.epochDay)}: ${String.format(Locale.US, "%.1f", hrs)} hrs"
+                                } ?: "Tap a point to inspect logged sleep hours.",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (points.any { it.weightKg != null }) {
+                item {
+                    val weightItems = remember(points) {
+                        points.map { pt ->
+                            SparklineItem(
+                                label = LocalDate.ofEpochDay(pt.epochDay).format(chartDateFormatter),
+                                value = pt.weightKg
+                            )
+                        }
+                    }
+                    val focusedWeight = selectedWeightIdx?.let { points.getOrNull(it) }
+                    val delta = uiState.weightDeltaKg
+                    val deltaLabel = delta?.let { d ->
+                        val sign = when {
+                            d > 0.05f -> "+"
+                            d < -0.05f -> "-"
+                            else -> ""
+                        }
+                        "$sign${String.format(Locale.US, "%.1f", abs(d))} kg"
+                    }
+                    KansoBentoCard(contentPadding = PaddingValues(16.dp)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Weight", style = MaterialTheme.typography.titleMedium)
+                                if (deltaLabel != null) {
+                                    KansoPillBadge(
+                                        text = deltaLabel,
+                                        color = kansoColors.habitsAccent
+                                    )
+                                }
+                            }
+                            KansoAreaSparklineChart(
+                                items = weightItems,
+                                lineColor = kansoColors.habitsAccent,
+                                selectedIndex = selectedWeightIdx,
+                                onSelectIndex = { selectedWeightIdx = it },
+                                zeroAnchored = false
+                            )
+                            Text(
+                                text = focusedWeight?.weightKg?.let { kg ->
+                                    "${KansoDateFormatters.formatFullDate(focusedWeight.epochDay)}: ${String.format(Locale.US, "%.1f", kg)} kg"
+                                } ?: "Tap a point to inspect recorded weight.",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (points.any { it.mood != null }) {
+                item {
+                    val moodItems = remember(points) {
+                        points.map { pt ->
+                            SparklineItem(
+                                label = LocalDate.ofEpochDay(pt.epochDay).format(chartDateFormatter),
+                                value = pt.mood?.toFloat()
+                            )
+                        }
+                    }
+                    val focusedMood = selectedMoodIdx?.let { points.getOrNull(it) }
+                    KansoBentoCard(contentPadding = PaddingValues(16.dp)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Mood", style = MaterialTheme.typography.titleMedium)
+                                uiState.avgMood7d?.let { avg ->
+                                    KansoPillBadge(
+                                        text = "7d avg ${String.format(Locale.US, "%.1f/5", avg)}",
+                                        color = kansoColors.warning
+                                    )
+                                }
+                            }
+                            KansoAreaSparklineChart(
+                                items = moodItems,
+                                lineColor = kansoColors.warning,
+                                selectedIndex = selectedMoodIdx,
+                                onSelectIndex = { selectedMoodIdx = it },
+                                zeroAnchored = false,
+                                referenceValue = 3.0f
+                            )
+                            Text(
+                                text = focusedMood?.mood?.let { score ->
+                                    val label = when (score) {
+                                        1 -> "Low"
+                                        2 -> "Tired"
+                                        3 -> "Okay"
+                                        4 -> "Good"
+                                        else -> "Great"
+                                    }
+                                    "${KansoDateFormatters.formatFullDate(focusedMood.epochDay)}: $label ($score/5)"
+                                } ?: "Tap a point to inspect daily mood.",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
             }
         }
 

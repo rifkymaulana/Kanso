@@ -81,7 +81,7 @@ fun HubRoute(
         listOf(
             HubMiniAppItem(
                 title = "Money & Budgets",
-                subtitle = "Expenses, caps, bills, IOUs",
+                subtitle = "Wallets, goals, caps, bills, IOUs",
                 icon = Icons.Outlined.AccountBalanceWallet,
                 accent = kansoColors.moneyAccent,
                 badgeText = "${stats.transactionCount} entries",

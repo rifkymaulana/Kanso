@@ -7,6 +7,7 @@ import androidx.room.Query
 import com.kanso.core.database.entity.CategoryBudgetEntity
 import com.kanso.core.database.entity.IouEntity
 import com.kanso.core.database.entity.RecurringBillEntity
+import com.kanso.core.database.entity.SavingsGoalEntity
 import com.kanso.core.database.entity.TransactionEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -111,4 +112,36 @@ interface MoneyDao {
 
     @Query("DELETE FROM ious")
     suspend fun deleteAllIous()
+
+    @Query("SELECT * FROM savings_goals ORDER BY isArchived ASC, updatedAtMillis DESC, id DESC")
+    fun observeSavingsGoals(): Flow<List<SavingsGoalEntity>>
+
+    @Query(
+        """
+        SELECT * FROM savings_goals
+        WHERE name LIKE '%' || :query || '%'
+           OR note LIKE '%' || :query || '%'
+           OR category LIKE '%' || :query || '%'
+        ORDER BY isArchived ASC, updatedAtMillis DESC
+        """
+    )
+    fun searchSavingsGoals(query: String): Flow<List<SavingsGoalEntity>>
+
+    @Query("SELECT * FROM savings_goals ORDER BY createdAtMillis ASC")
+    suspend fun getAllSavingsGoals(): List<SavingsGoalEntity>
+
+    @Query("SELECT * FROM savings_goals WHERE id = :id LIMIT 1")
+    suspend fun getSavingsGoalById(id: Long): SavingsGoalEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertSavingsGoal(entity: SavingsGoalEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertSavingsGoals(items: List<SavingsGoalEntity>)
+
+    @Query("DELETE FROM savings_goals WHERE id = :id")
+    suspend fun deleteSavingsGoalById(id: Long)
+
+    @Query("DELETE FROM savings_goals")
+    suspend fun deleteAllSavingsGoals()
 }

@@ -8,27 +8,34 @@ import com.kanso.core.model.AppCurrency
 import com.kanso.core.model.BillFrequency
 import com.kanso.core.model.CategoryBudget
 import com.kanso.core.model.CoachInsight
+import com.kanso.core.model.CsvExportScope
 import com.kanso.core.model.ExpenseCategory
+import com.kanso.core.model.GoalCategory
 import com.kanso.core.model.IouDirection
 import com.kanso.core.model.IouEntry
 import com.kanso.core.model.MoneyCalculations
+import com.kanso.core.model.MoneyCsvExporter
 import com.kanso.core.model.MoneyTransaction
 import com.kanso.core.model.RecurringBill
 import com.kanso.core.model.SafeToSpendReport
+import com.kanso.core.model.SavingsGoal
 import com.kanso.core.model.SmartCoachCalculations
 import com.kanso.core.model.TransactionType
 import com.kanso.core.model.WalletBalanceSummary
 import com.kanso.core.model.WalletType
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneId
@@ -43,6 +50,7 @@ data class MoneyUiState(
     val overallMonthlyBudgetCents: Long = 0L,
     val summary: MoneyCalculations.MonthlySummary = MoneyCalculations.MonthlySummary(0L, 0L, 0L, emptyMap()),
     val transactions: List<MoneyTransaction> = emptyList(),
+    val allTransactionsCount: Int = 0,
     val transactionFilter: MoneyCalculations.TransactionFilter = MoneyCalculations.TransactionFilter(),
     val filteredTransactions: List<MoneyTransaction> = emptyList(),
     val dailyGroups: List<MoneyCalculations.DailyTransactionGroup> = emptyList(),
@@ -53,6 +61,19 @@ data class MoneyUiState(
     val settledIous: List<IouEntry> = emptyList(),
     val owesMeTotalCents: Long = 0L,
     val iOweTotalCents: Long = 0L,
+    val goalStatuses: List<MoneyCalculations.GoalStatus> = emptyList(),
+    val archivedGoalStatuses: List<MoneyCalculations.GoalStatus> = emptyList(),
+    val goalsOverview: MoneyCalculations.GoalsOverview = MoneyCalculations.GoalsOverview(
+        activeGoalsCount = 0,
+        reachedGoalsCount = 0,
+        totalSavedCents = 0L,
+        totalTargetCents = 0L,
+        overallProgressRatio = 0f,
+        unallocatedBalanceCents = 0L,
+        reservedByWallet = emptyMap()
+    ),
+    val monthlyTrend: List<MoneyCalculations.MonthlyTrendPoint> = emptyList(),
+    val dailySpendSeries: List<MoneyCalculations.DailySpendPoint> = emptyList(),
     val safeToSpend: SafeToSpendReport? = null,
     val coachInsights: List<CoachInsight> = emptyList(),
     val walletBalances: List<WalletBalanceSummary> = emptyList(),
@@ -88,19 +109,30 @@ class MoneyViewModel @Inject constructor(
         CoreMoneyBundle(month, transactions, previousTransactions, allTransactions, budgets)
     }
 
-    val uiState: StateFlow<MoneyUiState> = combine(
-        coreMoneyFlow,
+    private val metaMoneyFlow = combine(
         moneyRepository.observeBills(),
         moneyRepository.observeIous(),
-        preferencesRepository.preferences,
+        moneyRepository.observeSavingsGoals(),
         filterFlow
-    ) { bundle, bills, ious, prefs, filter ->
+    ) { bills, ious, goals, filter ->
+        MetaMoneyBundle(bills, ious, goals, filter)
+    }
+
+    val uiState: StateFlow<MoneyUiState> = combine(
+        coreMoneyFlow,
+        metaMoneyFlow,
+        preferencesRepository.preferences
+    ) { bundle, meta, prefs ->
         val month = bundle.month
         val transactions = bundle.transactions
         val budgets = bundle.budgets
+        val bills = meta.bills
+        val ious = meta.ious
+        val filter = meta.filter
 
         val zone = ZoneId.systemDefault()
         val today = LocalDate.now(zone)
+        val todayEpoch = today.toEpochDay()
         val currentMonth = YearMonth.from(today)
         val startOfTodayMillis = today.atStartOfDay(zone).toInstant().toEpochMilli()
         val endOfTodayMillis = today.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
@@ -141,6 +173,24 @@ class MoneyViewModel @Inject constructor(
             allTransactions = bundle.allTransactions,
             openingBalances = prefs.walletOpeningBalancesCents
         )
+        val totalWalletBalanceCents = walletBalances.sumOf { it.currentBalanceCents }
+        val activeGoals = meta.goals.filter { !it.isArchived }
+        val archivedGoals = meta.goals.filter { it.isArchived }
+        val goalStatuses = activeGoals.map { MoneyCalculations.computeGoalStatus(it, todayEpoch) }
+        val archivedGoalStatuses = archivedGoals.map { MoneyCalculations.computeGoalStatus(it, todayEpoch) }
+        val goalsOverview = MoneyCalculations.computeGoalsOverview(meta.goals, totalWalletBalanceCents)
+        val monthlyTrend = MoneyCalculations.computeMonthlyTrend(
+            allTransactions = bundle.allTransactions,
+            anchorMonth = month,
+            monthsCount = 6,
+            zone = zone
+        )
+        val dailySpendSeries = MoneyCalculations.computeDailyExpenseSeries(
+            monthTransactions = transactions,
+            month = month,
+            today = today,
+            zone = zone
+        )
         val openIous = ious.filter { !it.isSettled }
         val settledIous = ious.filter { it.isSettled }
 
@@ -151,6 +201,7 @@ class MoneyViewModel @Inject constructor(
             overallMonthlyBudgetCents = prefs.overallMonthlyBudgetCents,
             summary = summary,
             transactions = transactions,
+            allTransactionsCount = bundle.allTransactions.size,
             transactionFilter = filter,
             filteredTransactions = filteredTransactions,
             dailyGroups = dailyGroups,
@@ -161,10 +212,15 @@ class MoneyViewModel @Inject constructor(
             settledIous = settledIous,
             owesMeTotalCents = openIous.filter { it.direction == IouDirection.OWES_ME }.sumOf { it.amountCents },
             iOweTotalCents = openIous.filter { it.direction == IouDirection.I_OWE }.sumOf { it.amountCents },
+            goalStatuses = goalStatuses,
+            archivedGoalStatuses = archivedGoalStatuses,
+            goalsOverview = goalsOverview,
+            monthlyTrend = monthlyTrend,
+            dailySpendSeries = dailySpendSeries,
             safeToSpend = safeToSpend,
             coachInsights = coachInsights,
             walletBalances = walletBalances,
-            totalWalletBalanceCents = walletBalances.sumOf { it.currentBalanceCents },
+            totalWalletBalanceCents = totalWalletBalanceCents,
             hideBalances = prefs.hideBalances
         )
     }.stateIn(
@@ -391,11 +447,100 @@ class MoneyViewModel @Inject constructor(
         }
     }
 
+    fun saveSavingsGoal(
+        existing: SavingsGoal? = null,
+        name: String,
+        category: GoalCategory,
+        targetAmountCents: Long,
+        savedAmountCents: Long,
+        linkedWallet: WalletType?,
+        targetEpochDay: Long?,
+        note: String,
+        isArchived: Boolean = false
+    ) {
+        viewModelScope.launch {
+            val now = System.currentTimeMillis()
+            moneyRepository.upsertSavingsGoal(
+                SavingsGoal(
+                    id = existing?.id ?: 0L,
+                    name = name.trim(),
+                    category = category,
+                    targetAmountCents = targetAmountCents,
+                    savedAmountCents = savedAmountCents.coerceAtLeast(0L),
+                    linkedWallet = linkedWallet,
+                    targetEpochDay = targetEpochDay,
+                    note = note.trim(),
+                    isArchived = isArchived,
+                    createdAtMillis = existing?.createdAtMillis ?: now,
+                    updatedAtMillis = now
+                )
+            )
+        }
+    }
+
+    fun adjustSavingsGoal(
+        goalId: Long,
+        deltaCents: Long,
+        recordExpense: Boolean = false,
+        expenseCategory: ExpenseCategory = ExpenseCategory.OTHER,
+        expenseWallet: WalletType = WalletType.BANK,
+        note: String = ""
+    ) {
+        viewModelScope.launch {
+            moneyRepository.adjustSavingsGoal(
+                goalId = goalId,
+                deltaCents = deltaCents,
+                recordExpense = recordExpense,
+                expenseCategory = expenseCategory,
+                expenseWallet = expenseWallet,
+                note = note
+            )
+        }
+    }
+
+    fun deleteSavingsGoal(id: Long) {
+        viewModelScope.launch {
+            moneyRepository.deleteSavingsGoal(id)
+        }
+    }
+
+    fun restoreSavingsGoal(goal: SavingsGoal) {
+        viewModelScope.launch {
+            moneyRepository.upsertSavingsGoal(goal)
+        }
+    }
+
+    suspend fun generateCsvContent(scope: CsvExportScope): Pair<String, String> = withContext(Dispatchers.Default) {
+        val state = uiState.value
+        val sourceTxs = when (scope) {
+            CsvExportScope.SELECTED_MONTH -> {
+                if (state.transactionFilter.isActive) state.filteredTransactions else state.transactions
+            }
+            CsvExportScope.ALL_HISTORY -> moneyRepository.observeAllTransactions().first()
+        }
+        val fileName = when (scope) {
+            CsvExportScope.SELECTED_MONTH -> "kanso-money-${state.selectedMonth}.csv"
+            CsvExportScope.ALL_HISTORY -> "kanso-money-all.csv"
+        }
+        val csv = MoneyCsvExporter.buildTransactionsCsv(
+            transactions = sourceTxs,
+            currency = state.currency
+        )
+        fileName to csv
+    }
+
     private data class CoreMoneyBundle(
         val month: YearMonth,
         val transactions: List<MoneyTransaction>,
         val previousTransactions: List<MoneyTransaction>,
         val allTransactions: List<MoneyTransaction>,
         val budgets: List<CategoryBudget>
+    )
+
+    private data class MetaMoneyBundle(
+        val bills: List<RecurringBill>,
+        val ious: List<IouEntry>,
+        val goals: List<SavingsGoal>,
+        val filter: MoneyCalculations.TransactionFilter
     )
 }

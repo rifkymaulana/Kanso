@@ -1,5 +1,9 @@
 package com.kanso.feature.money
 
+import android.content.ClipData
+import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
@@ -34,8 +38,10 @@ import androidx.compose.material.icons.outlined.ChevronLeft
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material.icons.outlined.Handshake
 import androidx.compose.material.icons.outlined.PieChart
+import androidx.compose.material.icons.outlined.Savings
 import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -47,6 +53,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -54,11 +61,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.kanso.core.model.AppCurrency
@@ -67,6 +76,7 @@ import com.kanso.core.model.CategoryBudget
 import com.kanso.core.model.CoachActionTarget
 import com.kanso.core.model.CoachInsight
 import com.kanso.core.model.CoachInsightTone
+import com.kanso.core.model.CsvExportScope
 import com.kanso.core.model.CurrencyFormatter
 import com.kanso.core.model.ExpenseCategory
 import com.kanso.core.model.IouDirection
@@ -75,22 +85,27 @@ import com.kanso.core.model.MoneyCalculations
 import com.kanso.core.model.MoneyTransaction
 import com.kanso.core.model.RecurringBill
 import com.kanso.core.model.SafeToSpendReport
+import com.kanso.core.model.SavingsGoal
 import com.kanso.core.model.SpendPaceStatus
 import com.kanso.core.model.TransactionType
 import com.kanso.core.model.WalletBalanceSummary
 import com.kanso.core.model.WalletType
 import com.kanso.core.ui.components.DonutSlice
+import com.kanso.core.ui.components.GroupedBarItem
 import com.kanso.core.ui.components.KansoAccentIconBadge
 import com.kanso.core.ui.components.KansoAnimatedCurrencyText
 import com.kanso.core.ui.components.KansoAnimatedIntText
 import com.kanso.core.ui.components.KansoAnimatedProgressBar
+import com.kanso.core.ui.components.KansoAreaSparklineChart
 import com.kanso.core.ui.components.KansoBentoCard
 import com.kanso.core.ui.components.KansoButtonSize
 import com.kanso.core.ui.components.KansoCategoryDonutChart
 import com.kanso.core.ui.components.KansoDateFormatters
 import com.kanso.core.ui.components.KansoEmptyState
+import com.kanso.core.ui.components.KansoGroupedBarChart
 import com.kanso.core.ui.components.KansoHeroCard
 import com.kanso.core.ui.components.KansoMotion
+import com.kanso.core.ui.components.KansoOutlinedButton
 import com.kanso.core.ui.components.KansoPillBadge
 import com.kanso.core.ui.components.KansoPrivacyEyeButton
 import com.kanso.core.ui.components.KansoProgressRing
@@ -98,6 +113,7 @@ import com.kanso.core.ui.components.KansoSegmentedRow
 import com.kanso.core.ui.components.KansoTonalButton
 import com.kanso.core.ui.components.MoneyAmountBadge
 import com.kanso.core.ui.components.SectionHeader
+import com.kanso.core.ui.components.SparklineItem
 import com.kanso.core.ui.components.accentColor
 import com.kanso.core.ui.components.expenseSemanticColor
 import com.kanso.core.ui.components.icon
@@ -105,6 +121,10 @@ import com.kanso.core.ui.components.incomeSemanticColor
 import com.kanso.core.ui.components.warningSemanticColor
 import com.kanso.core.ui.theme.KansoTheme
 import com.kanso.core.ui.theme.kansoColors
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 import java.time.Instant
 import java.time.YearMonth
 import java.time.ZoneId
@@ -136,6 +156,38 @@ fun MoneyRoute(
     var showNewIouDialog by remember { mutableStateOf(false) }
     var settlingIou by remember { mutableStateOf<IouEntry?>(null) }
 
+    var editingGoal by remember { mutableStateOf<SavingsGoal?>(null) }
+    var showNewGoalDialog by remember { mutableStateOf(false) }
+    var allocatingGoal by remember { mutableStateOf<Pair<MoneyCalculations.GoalStatus, Boolean>?>(null) }
+
+    var showCsvExportDialog by remember { mutableStateOf(false) }
+    var pendingCsvSaveScope by remember { mutableStateOf<CsvExportScope?>(null) }
+
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    val createCsvLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri ->
+        val scope = pendingCsvSaveScope
+        pendingCsvSaveScope = null
+        if (uri == null || scope == null) return@rememberLauncherForActivityResult
+        coroutineScope.launch {
+            runCatching {
+                val (fileName, csv) = viewModel.generateCsvContent(scope)
+                withContext(Dispatchers.IO) {
+                    context.contentResolver.openOutputStream(uri)?.use { stream ->
+                        stream.write(csv.toByteArray(Charsets.UTF_8))
+                    } ?: error("Unable to open destination file.")
+                }
+                fileName
+            }.onSuccess { fileName ->
+                onShowMessage("Saved $fileName")
+            }.onFailure { err ->
+                onShowMessage(err.message ?: "CSV export failed")
+            }
+        }
+    }
+
     MoneyScreenContent(
         uiState = uiState,
         onPreviousMonth = viewModel::previousMonth,
@@ -149,6 +201,10 @@ fun MoneyRoute(
         onEditCategoryBudget = { category ->
             editingCategoryBudget = uiState.budgets.firstOrNull { it.category == category }
         },
+        onAddGoal = { showNewGoalDialog = true },
+        onEditGoal = { editingGoal = it },
+        onOpenGoalAllocation = { status, withdraw -> allocatingGoal = status to withdraw },
+        onOpenCsvExport = { showCsvExportDialog = true },
         onAddBill = { showNewBillDialog = true },
         onEditBill = { editingBill = it },
         onPayBill = { bill ->
@@ -348,6 +404,120 @@ fun MoneyRoute(
             }
         )
     }
+
+    if (showNewGoalDialog || editingGoal != null) {
+        val current = editingGoal
+        SavingsGoalEditorDialog(
+            currency = uiState.currency,
+            initial = current,
+            onDismiss = {
+                showNewGoalDialog = false
+                editingGoal = null
+            },
+            onSave = { name, category, targetCents, savedCents, wallet, targetDay, note, isArchived ->
+                viewModel.saveSavingsGoal(
+                    existing = current,
+                    name = name,
+                    category = category,
+                    targetAmountCents = targetCents,
+                    savedAmountCents = savedCents,
+                    linkedWallet = wallet,
+                    targetEpochDay = targetDay,
+                    note = note,
+                    isArchived = isArchived
+                )
+                showNewGoalDialog = false
+                editingGoal = null
+            },
+            onDelete = current?.let { goal ->
+                {
+                    viewModel.deleteSavingsGoal(goal.id)
+                    editingGoal = null
+                    onShowUndoMessage("Goal deleted") {
+                        viewModel.restoreSavingsGoal(goal)
+                    }
+                }
+            }
+        )
+    }
+
+    allocatingGoal?.let { (goalStatus, initialWithdraw) ->
+        GoalAllocationDialog(
+            goalStatus = goalStatus,
+            initialWithdraw = initialWithdraw,
+            currency = uiState.currency,
+            onDismiss = { allocatingGoal = null },
+            onConfirm = { deltaCents, recordExpense, category, wallet, note ->
+                viewModel.adjustSavingsGoal(
+                    goalId = goalStatus.goal.id,
+                    deltaCents = deltaCents,
+                    recordExpense = recordExpense,
+                    expenseCategory = category,
+                    expenseWallet = wallet,
+                    note = note
+                )
+                allocatingGoal = null
+                onShowMessage(
+                    if (deltaCents >= 0L) "Allocated to ${goalStatus.goal.name}"
+                    else "Withdrew from ${goalStatus.goal.name}"
+                )
+            }
+        )
+    }
+
+    if (showCsvExportDialog) {
+        val monthCount = if (uiState.transactionFilter.isActive) {
+            uiState.filteredTransactions.size
+        } else {
+            uiState.transactions.size
+        }
+        CsvExportDialog(
+            selectedMonthLabel = uiState.selectedMonthLabel,
+            monthCount = monthCount,
+            allCount = uiState.allTransactionsCount,
+            hasActiveFilter = uiState.transactionFilter.isActive,
+            onDismiss = { showCsvExportDialog = false },
+            onShareCsv = { scope ->
+                showCsvExportDialog = false
+                coroutineScope.launch {
+                    runCatching {
+                        val (fileName, csv) = viewModel.generateCsvContent(scope)
+                        withContext(Dispatchers.IO) {
+                            val exportDir = File(context.cacheDir, "exports").apply { mkdirs() }
+                            val outFile = File(exportDir, fileName)
+                            outFile.writeText(csv, Charsets.UTF_8)
+                            FileProvider.getUriForFile(
+                                context,
+                                "${context.packageName}.fileprovider",
+                                outFile
+                            )
+                        } to fileName
+                    }.onSuccess { (uri, fileName) ->
+                        val intent = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/csv"
+                            putExtra(Intent.EXTRA_STREAM, uri)
+                            putExtra(Intent.EXTRA_SUBJECT, fileName)
+                            clipData = ClipData.newRawUri(fileName, uri)
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        context.startActivity(Intent.createChooser(intent, "Export Transactions CSV"))
+                    }.onFailure { err ->
+                        onShowMessage(err.message ?: "CSV share failed")
+                    }
+                }
+            },
+            onSaveCsvToDevice = { scope ->
+                showCsvExportDialog = false
+                pendingCsvSaveScope = scope
+                val suggestedName = if (scope == CsvExportScope.SELECTED_MONTH) {
+                    "kanso-money-${uiState.selectedMonth}.csv"
+                } else {
+                    "kanso-money-all.csv"
+                }
+                createCsvLauncher.launch(suggestedName)
+            }
+        )
+    }
 }
 
 @Composable
@@ -362,6 +532,10 @@ fun MoneyScreenContent(
     onEditOverallBudget: () -> Unit,
     onAddCategoryBudget: () -> Unit,
     onEditCategoryBudget: (ExpenseCategory) -> Unit,
+    onAddGoal: () -> Unit = {},
+    onEditGoal: (SavingsGoal) -> Unit = {},
+    onOpenGoalAllocation: (MoneyCalculations.GoalStatus, Boolean) -> Unit = { _, _ -> },
+    onOpenCsvExport: () -> Unit = {},
     onAddBill: () -> Unit,
     onEditBill: (RecurringBill) -> Unit,
     onPayBill: (RecurringBill) -> Unit,
@@ -377,6 +551,7 @@ fun MoneyScreenContent(
 ) {
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var iouFilterSettled by rememberSaveable { mutableStateOf(false) }
+    var showArchivedGoals by rememberSaveable { mutableStateOf(false) }
 
     Column(
         modifier = modifier
@@ -412,7 +587,7 @@ fun MoneyScreenContent(
         }
 
         KansoSegmentedRow(
-            options = listOf("Log", "Budgets", "Bills", "IOUs"),
+            options = listOf("Log", "Goals", "Budgets", "Bills", "IOUs"),
             selectedIndex = selectedTab,
             onSelect = { selectedTab = it }
         )
@@ -430,20 +605,30 @@ fun MoneyScreenContent(
                     onEditOverallBudget = onEditOverallBudget,
                     onAddTransaction = onAddTransaction,
                     onEditTransaction = onEditTransaction,
+                    onOpenCsvExport = onOpenCsvExport,
                     onToggleTypeFilter = onToggleTypeFilter,
                     onToggleWalletFilter = onToggleWalletFilter,
                     onToggleCategoryFilter = onToggleCategoryFilter,
                     onClearFilters = onClearFilters
                 )
 
-                1 -> BudgetsTabContent(
+                1 -> GoalsTabContent(
+                    uiState = uiState,
+                    showArchived = showArchivedGoals,
+                    onToggleShowArchived = { showArchivedGoals = it },
+                    onAddGoal = onAddGoal,
+                    onEditGoal = onEditGoal,
+                    onOpenGoalAllocation = onOpenGoalAllocation
+                )
+
+                2 -> BudgetsTabContent(
                     uiState = uiState,
                     onEditOverallBudget = onEditOverallBudget,
                     onAddCategoryBudget = onAddCategoryBudget,
                     onEditCategoryBudget = onEditCategoryBudget
                 )
 
-                2 -> BillsTabContent(
+                3 -> BillsTabContent(
                     uiState = uiState,
                     onAddBill = onAddBill,
                     onEditBill = onEditBill,
@@ -527,6 +712,7 @@ private fun LogTabContent(
     onEditOverallBudget: () -> Unit,
     onAddTransaction: () -> Unit,
     onEditTransaction: (MoneyTransaction) -> Unit,
+    onOpenCsvExport: () -> Unit,
     onToggleTypeFilter: (TransactionType) -> Unit,
     onToggleWalletFilter: (WalletType) -> Unit,
     onToggleCategoryFilter: (ExpenseCategory) -> Unit,
@@ -637,6 +823,7 @@ private fun LogTabContent(
                 WalletsBentoCard(
                     wallets = uiState.walletBalances,
                     totalBalanceCents = uiState.totalWalletBalanceCents,
+                    goalsOverview = uiState.goalsOverview,
                     currency = uiState.currency,
                     hideBalances = uiState.hideBalances,
                     selectedWalletFilter = uiState.transactionFilter.wallet,
@@ -655,6 +842,21 @@ private fun LogTabContent(
                     hideBalances = uiState.hideBalances,
                     insights = uiState.coachInsights,
                     onEditOverallBudget = onEditOverallBudget
+                )
+            }
+        }
+
+        if (uiState.monthlyTrend.any { it.incomeCents > 0L || it.expenseCents > 0L } ||
+            uiState.summary.expenseCents > 0L
+        ) {
+            item {
+                CashflowTrendsBentoCard(
+                    selectedMonth = uiState.selectedMonth,
+                    monthlyTrend = uiState.monthlyTrend,
+                    dailySpendSeries = uiState.dailySpendSeries,
+                    dailySafeAllowanceCents = uiState.safeToSpend?.takeIf { it.isCurrentMonth && it.hasAnchor }?.dailySafeAllowanceCents,
+                    currency = uiState.currency,
+                    hideBalances = uiState.hideBalances
                 )
             }
         }
@@ -761,11 +963,37 @@ private fun LogTabContent(
         }
 
         item {
-            SectionHeader(
-                title = "Transactions",
-                actionLabel = "Add",
-                onAction = onAddTransaction
-            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Transactions",
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (uiState.allTransactionsCount > 0) {
+                        KansoOutlinedButton(
+                            text = "CSV",
+                            leadingIcon = Icons.Outlined.FileDownload,
+                            size = KansoButtonSize.COMPACT,
+                            onClick = onOpenCsvExport
+                        )
+                    }
+                    KansoTonalButton(
+                        text = "Add",
+                        leadingIcon = Icons.Outlined.Add,
+                        size = KansoButtonSize.COMPACT,
+                        onClick = onAddTransaction
+                    )
+                }
+            }
         }
 
         if (uiState.transactions.isNotEmpty() || uiState.transactionFilter.isActive) {
@@ -924,6 +1152,7 @@ private fun DailyTransactionGroupHeader(
 private fun WalletsBentoCard(
     wallets: List<WalletBalanceSummary>,
     totalBalanceCents: Long,
+    goalsOverview: MoneyCalculations.GoalsOverview,
     currency: AppCurrency,
     hideBalances: Boolean,
     selectedWalletFilter: WalletType?,
@@ -932,6 +1161,7 @@ private fun WalletsBentoCard(
     onAdjustWallet: (WalletBalanceSummary) -> Unit
 ) {
     val haptic = LocalHapticFeedback.current
+    val hasReserved = goalsOverview.totalSavedCents > 0L
     KansoBentoCard(contentPadding = PaddingValues(16.dp)) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(
@@ -957,6 +1187,27 @@ private fun WalletsBentoCard(
                             MaterialTheme.colorScheme.onSurfaceVariant
                         }
                     )
+                    if (hasReserved) {
+                        Text(
+                            text = "Free ${
+                                CurrencyFormatter.formatOrMask(
+                                    goalsOverview.unallocatedBalanceCents,
+                                    currency,
+                                    hidden = hideBalances
+                                )
+                            } · Reserved ${
+                                CurrencyFormatter.formatOrMask(
+                                    goalsOverview.totalSavedCents,
+                                    currency,
+                                    hidden = hideBalances
+                                )
+                            }",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
                 KansoTonalButton(
                     text = "Transfer",
@@ -975,6 +1226,7 @@ private fun WalletsBentoCard(
                         pair.forEach { summary ->
                             val isNegative = summary.currentBalanceCents < 0L
                             val isFiltered = selectedWalletFilter == summary.wallet
+                            val walletReserved = goalsOverview.reservedByWallet[summary.wallet] ?: 0L
                             Surface(
                                 modifier = Modifier
                                     .weight(1f)
@@ -1064,11 +1316,237 @@ private fun WalletsBentoCard(
                                             color = MaterialTheme.colorScheme.onSurface
                                         )
                                     }
+                                    if (walletReserved > 0L) {
+                                        Text(
+                                            text = "Free ${
+                                                CurrencyFormatter.formatOrMask(
+                                                    summary.currentBalanceCents - walletReserved,
+                                                    currency,
+                                                    hidden = hideBalances
+                                                )
+                                            }",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
                                 }
                             }
                         }
                         if (pair.size == 1) {
                             Spacer(modifier = Modifier.weight(1f))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CashflowTrendsBentoCard(
+    selectedMonth: YearMonth,
+    monthlyTrend: List<MoneyCalculations.MonthlyTrendPoint>,
+    dailySpendSeries: List<MoneyCalculations.DailySpendPoint>,
+    dailySafeAllowanceCents: Long?,
+    currency: AppCurrency,
+    hideBalances: Boolean
+) {
+    var mode by rememberSaveable { mutableIntStateOf(0) }
+    var selectedMonthBarIndex by remember(monthlyTrend) {
+        mutableStateOf(monthlyTrend.lastIndex.takeIf { it >= 0 })
+    }
+    var selectedDayIndex by remember(dailySpendSeries) {
+        mutableStateOf(dailySpendSeries.indexOfLast { it.expenseCents != null }.takeIf { it >= 0 })
+    }
+
+    val incomeColor = incomeSemanticColor()
+    val expenseColor = expenseSemanticColor()
+    val monthShortFormatter = remember { DateTimeFormatter.ofPattern("MMM", Locale.getDefault()) }
+    val monthTitleFormatter = remember { DateTimeFormatter.ofPattern("MMM yyyy", Locale.getDefault()) }
+
+    KansoBentoCard(contentPadding = PaddingValues(16.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Cashflow Trends",
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FilterChip(
+                        selected = mode == 0,
+                        onClick = { mode = 0 },
+                        label = { Text("6M") }
+                    )
+                    FilterChip(
+                        selected = mode == 1,
+                        onClick = { mode = 1 },
+                        label = { Text("Daily") }
+                    )
+                }
+            }
+
+            if (mode == 0) {
+                val barItems = remember(monthlyTrend) {
+                    monthlyTrend.map { pt ->
+                        GroupedBarItem(
+                            label = pt.yearMonth.format(monthShortFormatter),
+                            firstValue = pt.incomeCents.toFloat(),
+                            secondValue = pt.expenseCents.toFloat(),
+                            isCurrent = pt.yearMonth == selectedMonth
+                        )
+                    }
+                }
+                KansoGroupedBarChart(
+                    items = barItems,
+                    firstColor = incomeColor,
+                    secondColor = expenseColor,
+                    selectedIndex = selectedMonthBarIndex,
+                    onSelectIndex = { selectedMonthBarIndex = it }
+                )
+
+                val focused = selectedMonthBarIndex?.let { monthlyTrend.getOrNull(it) } ?: monthlyTrend.lastOrNull()
+                if (focused != null) {
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = focused.yearMonth.format(monthTitleFormatter),
+                                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold)
+                                )
+                                Text(
+                                    text = "Net ${
+                                        CurrencyFormatter.formatOrMask(
+                                            focused.netCents,
+                                            currency,
+                                            hidden = hideBalances,
+                                            showSign = true
+                                        )
+                                    }",
+                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                                    color = if (focused.netCents >= 0L) incomeColor else expenseColor
+                                )
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(7.dp)
+                                            .clip(CircleShape)
+                                            .background(incomeColor)
+                                    )
+                                    Text(
+                                        text = "In ${CurrencyFormatter.formatOrMask(focused.incomeCents, currency, hidden = hideBalances)}",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(7.dp)
+                                            .clip(CircleShape)
+                                            .background(expenseColor)
+                                    )
+                                    Text(
+                                        text = "Out ${CurrencyFormatter.formatOrMask(focused.expenseCents, currency, hidden = hideBalances)}",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                val sparkItems = remember(dailySpendSeries) {
+                    dailySpendSeries.map { pt ->
+                        SparklineItem(
+                            label = pt.dayOfMonth.toString(),
+                            value = pt.expenseCents?.toFloat()
+                        )
+                    }
+                }
+                val hasAnyData = sparkItems.any { it.value != null }
+                if (!hasAnyData) {
+                    Text(
+                        text = "No daily spend data recorded yet for this month.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    KansoAreaSparklineChart(
+                        items = sparkItems,
+                        lineColor = expenseColor,
+                        selectedIndex = selectedDayIndex,
+                        onSelectIndex = { selectedDayIndex = it },
+                        zeroAnchored = true,
+                        referenceValue = dailySafeAllowanceCents?.toFloat()
+                    )
+
+                    val focusedDay = selectedDayIndex?.let { dailySpendSeries.getOrNull(it) }
+                    val elapsedDays = dailySpendSeries.filter { it.expenseCents != null }
+                    val avgDayCents = if (elapsedDays.isNotEmpty()) {
+                        elapsedDays.sumOf { it.expenseCents ?: 0L } / elapsedDays.size.toLong()
+                    } else 0L
+
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = focusedDay?.let {
+                                    "${KansoDateFormatters.formatFullDate(it.epochDay)}: ${
+                                        CurrencyFormatter.formatOrMask(
+                                            it.expenseCents ?: 0L,
+                                            currency,
+                                            hidden = hideBalances
+                                        )
+                                    }"
+                                } ?: "Tap a point to inspect day spend",
+                                style = MaterialTheme.typography.labelLarge,
+                                modifier = Modifier.weight(1f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = "Avg ${CurrencyFormatter.formatOrMask(avgDayCents, currency, hidden = hideBalances)}/d",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
                 }
@@ -1391,6 +1869,274 @@ private fun TransactionRowCard(
                 currency = currency,
                 type = transaction.type
             )
+        }
+    }
+}
+
+@Composable
+private fun GoalsTabContent(
+    uiState: MoneyUiState,
+    showArchived: Boolean,
+    onToggleShowArchived: (Boolean) -> Unit,
+    onAddGoal: () -> Unit,
+    onEditGoal: (SavingsGoal) -> Unit,
+    onOpenGoalAllocation: (MoneyCalculations.GoalStatus, Boolean) -> Unit
+) {
+    val overview = uiState.goalsOverview
+    val moneyAccent = MaterialTheme.kansoColors.moneyAccent
+    val displayed = if (showArchived) uiState.archivedGoalStatuses else uiState.goalStatuses
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(bottom = 28.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item {
+            KansoBentoCard(contentPadding = PaddingValues(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    KansoProgressRing(
+                        progress = overview.overallProgressRatio,
+                        color = moneyAccent,
+                        size = 70.dp,
+                        strokeWidth = 7.dp
+                    ) {
+                        KansoAnimatedIntText(
+                            value = (overview.overallProgressRatio * 100f).toInt(),
+                            format = { "$it%" },
+                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                            color = moneyAccent
+                        )
+                    }
+
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        Text("Sinking Funds", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            text = "${
+                                CurrencyFormatter.formatOrMask(overview.totalSavedCents, uiState.currency, hidden = uiState.hideBalances)
+                            } saved",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold)
+                        )
+                        Text(
+                            text = if (overview.totalTargetCents > 0L) {
+                                "of ${
+                                    CurrencyFormatter.formatOrMask(overview.totalTargetCents, uiState.currency, hidden = uiState.hideBalances)
+                                } · Free ${
+                                    CurrencyFormatter.formatOrMask(overview.unallocatedBalanceCents, uiState.currency, hidden = uiState.hideBalances)
+                                }"
+                            } else {
+                                "Free ${
+                                    CurrencyFormatter.formatOrMask(overview.unallocatedBalanceCents, uiState.currency, hidden = uiState.hideBalances)
+                                } across wallets"
+                            },
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+
+                    KansoTonalButton(
+                        text = "Add Goal",
+                        leadingIcon = Icons.Outlined.Add,
+                        size = KansoButtonSize.COMPACT,
+                        onClick = onAddGoal
+                    )
+                }
+            }
+        }
+
+        if (uiState.archivedGoalStatuses.isNotEmpty()) {
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = !showArchived,
+                        onClick = { onToggleShowArchived(false) },
+                        label = { Text("Active (${uiState.goalStatuses.size})") }
+                    )
+                    FilterChip(
+                        selected = showArchived,
+                        onClick = { onToggleShowArchived(true) },
+                        label = { Text("Archived (${uiState.archivedGoalStatuses.size})") }
+                    )
+                }
+            }
+        }
+
+        if (displayed.isEmpty()) {
+            item {
+                KansoEmptyState(
+                    icon = Icons.Outlined.Savings,
+                    title = if (showArchived) "No archived goals" else "No savings goals yet",
+                    subtitle = "Reserve money for an emergency fund, trip, gadget, or annual tax with target pace guidance.",
+                    actionLabel = if (!showArchived) "Create Goal" else null,
+                    onAction = if (!showArchived) onAddGoal else null
+                )
+            }
+        } else {
+            items(displayed, key = { it.goal.id }) { status ->
+                val goal = status.goal
+                val catAccent = goal.category.accentColor()
+                val ringColor = when (status.paceState) {
+                    MoneyCalculations.GoalPaceState.COMPLETED -> incomeSemanticColor()
+                    MoneyCalculations.GoalPaceState.DEADLINE_PASSED -> warningSemanticColor()
+                    else -> catAccent
+                }
+                val paceLine = when (status.paceState) {
+                    MoneyCalculations.GoalPaceState.COMPLETED -> "Target reached!"
+                    MoneyCalculations.GoalPaceState.DEADLINE_PASSED -> {
+                        val dateText = goal.targetEpochDay?.let { KansoDateFormatters.formatFullDate(it) } ?: "Target date"
+                        "Past $dateText · ${
+                            CurrencyFormatter.formatOrMask(status.remainingCents, uiState.currency, hidden = uiState.hideBalances)
+                        } left"
+                    }
+                    MoneyCalculations.GoalPaceState.ON_TRACK -> {
+                        val monthly = CurrencyFormatter.formatOrMask(
+                            status.requiredMonthlyCents ?: 0L,
+                            uiState.currency,
+                            hidden = uiState.hideBalances
+                        )
+                        val daysLeft = status.daysRemaining ?: 0L
+                        if (daysLeft > 30L) {
+                            "Save $monthly/mo · ${daysLeft}d left"
+                        } else {
+                            "Save ${
+                                CurrencyFormatter.formatOrMask(status.remainingCents, uiState.currency, hidden = uiState.hideBalances)
+                            } · ${daysLeft}d left"
+                        }
+                    }
+                    MoneyCalculations.GoalPaceState.NO_DEADLINE -> {
+                        if (status.remainingCents > 0L) {
+                            "${
+                                CurrencyFormatter.formatOrMask(status.remainingCents, uiState.currency, hidden = uiState.hideBalances)
+                            } to go · Flexible target"
+                        } else {
+                            "Flexible target"
+                        }
+                    }
+                }
+
+                KansoBentoCard(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .animateItem(),
+                    onClick = { onEditGoal(goal) },
+                    cornerRadius = 20.dp,
+                    contentPadding = PaddingValues(15.dp)
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            KansoAccentIconBadge(
+                                icon = goal.category.icon(),
+                                accent = catAccent,
+                                size = 40.dp,
+                                iconSize = 20.dp,
+                                cornerRadius = 13.dp
+                            )
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                Text(
+                                    text = goal.name,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                val subtitle = buildString {
+                                    append(goal.category.label)
+                                    goal.linkedWallet?.let { append(" · ${it.label}") }
+                                }
+                                Text(
+                                    text = subtitle,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            KansoProgressRing(
+                                progress = status.progressRatio,
+                                color = ringColor,
+                                size = 50.dp,
+                                strokeWidth = 5.dp
+                            ) {
+                                Text(
+                                    text = "${(status.progressRatio * 100f).toInt()}%",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                    color = ringColor
+                                )
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "${
+                                    CurrencyFormatter.formatOrMask(goal.savedAmountCents, uiState.currency, hidden = uiState.hideBalances)
+                                } / ${
+                                    CurrencyFormatter.formatOrMask(goal.targetAmountCents, uiState.currency, hidden = uiState.hideBalances)
+                                }",
+                                style = MaterialTheme.typography.titleSmall.copy(
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontFeatureSettings = "tnum"
+                                ),
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            KansoPillBadge(
+                                text = paceLine,
+                                color = ringColor
+                            )
+                        }
+
+                        if (goal.note.isNotBlank()) {
+                            Text(
+                                text = goal.note,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+
+                        if (!goal.isArchived) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                KansoOutlinedButton(
+                                    text = "Withdraw",
+                                    size = KansoButtonSize.COMPACT,
+                                    enabled = goal.savedAmountCents > 0L,
+                                    modifier = Modifier.weight(1f),
+                                    onClick = { onOpenGoalAllocation(status, true) }
+                                )
+                                KansoTonalButton(
+                                    text = "+ Allocate",
+                                    size = KansoButtonSize.COMPACT,
+                                    containerColor = catAccent.copy(alpha = 0.14f),
+                                    contentColor = catAccent,
+                                    modifier = Modifier.weight(1f),
+                                    onClick = { onOpenGoalAllocation(status, false) }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

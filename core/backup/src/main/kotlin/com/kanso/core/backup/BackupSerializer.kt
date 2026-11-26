@@ -46,7 +46,8 @@ object BackupSerializer {
             snapshot.expiries.size +
             snapshot.maintenanceLogs.size +
             snapshot.vaultItems.size +
-            snapshot.countdowns.size
+            snapshot.countdowns.size +
+            snapshot.savingsGoals.size
     }
 
     /**
@@ -105,6 +106,9 @@ object BackupSerializer {
             ),
             countdowns = snapshot.countdowns.sortedWith(
                 compareBy({ it.id }, { it.targetEpochDay }, { it.title })
+            ),
+            savingsGoals = snapshot.savingsGoals.sortedWith(
+                compareBy({ it.id }, { it.createdAtMillis }, { it.name })
             )
         )
         val digest = MessageDigest.getInstance("SHA-256").digest(encode(canonical))

@@ -29,9 +29,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.ArrowDownward
 import androidx.compose.material.icons.outlined.ArrowUpward
+import androidx.compose.material.icons.outlined.EventAvailable
+import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material.icons.outlined.Handshake
+import androidx.compose.material.icons.outlined.Savings
+import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -64,17 +69,22 @@ import androidx.compose.ui.unit.dp
 import com.kanso.core.model.AppCurrency
 import com.kanso.core.model.BillFrequency
 import com.kanso.core.model.CategoryBudget
+import com.kanso.core.model.CsvExportScope
 import com.kanso.core.model.CurrencyFormatter
 import com.kanso.core.model.ExpenseCategory
+import com.kanso.core.model.GoalCategory
 import com.kanso.core.model.IouDirection
 import com.kanso.core.model.IouEntry
 import com.kanso.core.model.MoneyCalculations
 import com.kanso.core.model.MoneyTransaction
 import com.kanso.core.model.RecurringBill
+import com.kanso.core.model.SavingsGoal
 import com.kanso.core.model.TransactionType
 import com.kanso.core.model.WalletBalanceSummary
 import com.kanso.core.model.WalletType
 import com.kanso.core.ui.components.CurrencyAmountVisualTransformation
+import com.kanso.core.ui.components.KansoDateFormatters
+import com.kanso.core.ui.components.KansoDatePickerDialog
 import com.kanso.core.ui.components.KansoFormBottomSheet
 import com.kanso.core.ui.components.KansoMotion
 import com.kanso.core.ui.components.KansoSegmentedRow
@@ -1139,12 +1149,556 @@ private fun CategoryChipRow(
                         style = MaterialTheme.typography.labelLarge.copy(
                             fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium
                         ),
-                        color = when {
+                color = when {
                             isSelected -> catAccent
                             enabled -> MaterialTheme.colorScheme.onSurface
                             else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
                         }
                     )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SavingsGoalEditorDialog(
+    currency: AppCurrency,
+    initial: SavingsGoal?,
+    onDismiss: () -> Unit,
+    onSave: (
+        name: String,
+        category: GoalCategory,
+        targetAmountCents: Long,
+        savedAmountCents: Long,
+        linkedWallet: WalletType?,
+        targetEpochDay: Long?,
+        note: String,
+        isArchived: Boolean
+    ) -> Unit,
+    onDelete: (() -> Unit)? = null
+) {
+    val haptic = LocalHapticFeedback.current
+    var name by remember { mutableStateOf(initial?.name.orEmpty()) }
+    var category by remember { mutableStateOf(initial?.category ?: GoalCategory.EMERGENCY) }
+    var targetText by remember {
+        mutableStateOf(initial?.let { CurrencyFormatter.formatCompactInput(it.targetAmountCents, currency) }.orEmpty())
+    }
+    var savedText by remember {
+        mutableStateOf(
+            initial?.takeIf { it.savedAmountCents > 0L }
+                ?.let { CurrencyFormatter.formatCompactInput(it.savedAmountCents, currency) }
+                .orEmpty()
+        )
+    }
+    var linkedWallet by remember { mutableStateOf<WalletType?>(initial?.linkedWallet ?: WalletType.BANK) }
+    var targetEpochDay by remember { mutableStateOf<Long?>(initial?.targetEpochDay) }
+    var showDatePicker by remember { mutableStateOf(false) }
+    var note by remember { mutableStateOf(initial?.note.orEmpty()) }
+    var isArchived by remember { mutableStateOf(initial?.isArchived ?: false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    val goalAccent = category.accentColor()
+
+    MoneySheetScaffold(
+        title = if (initial == null) "New Savings Goal" else "Edit Goal",
+        badgeText = category.label,
+        badgeColor = goalAccent,
+        badgeIcon = category.icon(),
+        primaryLabel = if (initial == null) "Create Goal" else "Save Goal",
+        primaryColor = goalAccent,
+        errorText = error,
+        onDismiss = onDismiss,
+        onDelete = onDelete,
+        onPrimaryClick = {
+            val targetCents = CurrencyFormatter.parseInputToCents(targetText, currency)
+            val savedCents = if (savedText.isBlank()) 0L else CurrencyFormatter.parseInputToCents(savedText, currency)
+            when {
+                name.isBlank() -> error = "Enter a goal name."
+                targetCents == null || targetCents <= 0L -> error = "Enter a target amount greater than 0."
+                savedCents == null -> error = "Enter a valid saved amount."
+                else -> {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onSave(name, category, targetCents, savedCents, linkedWallet, targetEpochDay, note, isArchived)
+                }
+            }
+        }
+    ) {
+        MoneyAmountHeroInput(
+            label = "TARGET AMOUNT",
+            value = targetText,
+            onValueChange = {
+                targetText = it
+                error = null
+            },
+            currency = currency,
+            accentColor = goalAccent,
+            presets = currency.quickPresets.map { it * 20L }
+        )
+
+        OutlinedTextField(
+            value = name,
+            onValueChange = {
+                name = it
+                error = null
+            },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Goal name") },
+            placeholder = { Text("Emergency Fund, Japan Trip...") },
+            singleLine = true,
+            shape = RoundedCornerShape(14.dp),
+            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words)
+        )
+
+        val savedVisualTransformation = remember(currency) { CurrencyAmountVisualTransformation(currency) }
+        OutlinedTextField(
+            value = savedText,
+            onValueChange = {
+                savedText = CurrencyFormatter.sanitizeInput(it, currency)
+                error = null
+            },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text(if (initial == null) "Starting saved amount (optional)" else "Current saved amount") },
+            singleLine = true,
+            shape = RoundedCornerShape(14.dp),
+            visualTransformation = savedVisualTransformation,
+            keyboardOptions = KeyboardOptions(
+                keyboardType = if (currency.decimalDigits == 0) KeyboardType.Number else KeyboardType.Decimal
+            )
+        )
+
+        Text("Category", style = MaterialTheme.typography.labelLarge)
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(GoalCategory.entries, key = { it.name }) { item ->
+                val isSelected = category == item
+                val accent = item.accentColor()
+                Surface(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(14.dp))
+                        .clickable {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            category = item
+                        },
+                    shape = RoundedCornerShape(14.dp),
+                    color = if (isSelected) accent.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    border = BorderStroke(1.dp, if (isSelected) accent else MaterialTheme.colorScheme.outlineVariant)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            imageVector = item.icon(),
+                            contentDescription = null,
+                            tint = if (isSelected) accent else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = item.label,
+                            style = MaterialTheme.typography.labelLarge.copy(
+                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium
+                            ),
+                            color = if (isSelected) accent else MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+            }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Reserve in Wallet", style = MaterialTheme.typography.labelLarge)
+            FilterChip(
+                selected = linkedWallet == null,
+                onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    linkedWallet = if (linkedWallet == null) WalletType.BANK else null
+                },
+                label = { Text("Track separately") }
+            )
+        }
+
+        AnimatedVisibility(
+            visible = linkedWallet != null,
+            enter = expandVertically(KansoMotion.SizeSpring) + fadeIn(tween(180)),
+            exit = shrinkVertically() + fadeOut(tween(140))
+        ) {
+            WalletTileRow(
+                selected = linkedWallet ?: WalletType.BANK,
+                selectedColor = goalAccent,
+                onSelect = { linkedWallet = it }
+            )
+        }
+
+        Text("Target Date", style = MaterialTheme.typography.labelLarge)
+        val today = remember { LocalDate.now() }
+        val in3Months = remember { today.plusMonths(3).toEpochDay() }
+        val in6Months = remember { today.plusMonths(6).toEpochDay() }
+        val in1Year = remember { today.plusYears(1).toEpochDay() }
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            item(key = "goal_date_none") {
+                FilterChip(
+                    selected = targetEpochDay == null,
+                    onClick = { targetEpochDay = null },
+                    label = { Text("Flexible") }
+                )
+            }
+            item(key = "goal_date_3m") {
+                FilterChip(
+                    selected = targetEpochDay == in3Months,
+                    onClick = { targetEpochDay = in3Months },
+                    label = { Text("3 Months") }
+                )
+            }
+            item(key = "goal_date_6m") {
+                FilterChip(
+                    selected = targetEpochDay == in6Months,
+                    onClick = { targetEpochDay = in6Months },
+                    label = { Text("6 Months") }
+                )
+            }
+            item(key = "goal_date_1y") {
+                FilterChip(
+                    selected = targetEpochDay == in1Year,
+                    onClick = { targetEpochDay = in1Year },
+                    label = { Text("1 Year") }
+                )
+            }
+            item(key = "goal_date_pick") {
+                val customSelected = targetEpochDay != null &&
+                    targetEpochDay != in3Months &&
+                    targetEpochDay != in6Months &&
+                    targetEpochDay != in1Year
+                FilterChip(
+                    selected = customSelected,
+                    onClick = { showDatePicker = true },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Outlined.EventAvailable,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    },
+                    label = {
+                        Text(
+                            if (customSelected && targetEpochDay != null) {
+                                KansoDateFormatters.formatFullDate(targetEpochDay!!)
+                            } else {
+                                "Pick Date"
+                            }
+                        )
+                    }
+                )
+            }
+        }
+
+        OutlinedTextField(
+            value = note,
+            onValueChange = { note = it },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Note (optional)") },
+            singleLine = true,
+            shape = RoundedCornerShape(14.dp),
+            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences)
+        )
+
+        if (initial != null) {
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Archive goal", style = MaterialTheme.typography.bodyMedium)
+                    Switch(checked = isArchived, onCheckedChange = { isArchived = it })
+                }
+            }
+        }
+    }
+
+    if (showDatePicker) {
+        KansoDatePickerDialog(
+            initialEpochDay = targetEpochDay ?: LocalDate.now().plusMonths(3).toEpochDay(),
+            onSelect = { targetEpochDay = it },
+            onDismiss = { showDatePicker = false }
+        )
+    }
+}
+
+@Composable
+fun GoalAllocationDialog(
+    goalStatus: MoneyCalculations.GoalStatus,
+    initialWithdraw: Boolean,
+    currency: AppCurrency,
+    onDismiss: () -> Unit,
+    onConfirm: (
+        deltaCents: Long,
+        recordExpense: Boolean,
+        expenseCategory: ExpenseCategory,
+        expenseWallet: WalletType,
+        note: String
+    ) -> Unit
+) {
+    val goal = goalStatus.goal
+    val haptic = LocalHapticFeedback.current
+    var isWithdraw by remember { mutableStateOf(initialWithdraw) }
+    var amountText by remember { mutableStateOf("") }
+    var recordExpense by remember { mutableStateOf(false) }
+    var expenseCategory by remember { mutableStateOf(ExpenseCategory.OTHER) }
+    var expenseWallet by remember { mutableStateOf(goal.linkedWallet ?: WalletType.BANK) }
+    var note by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    val activeAccent = if (isWithdraw) expenseSemanticColor() else goal.category.accentColor()
+    val parsedCents = CurrencyFormatter.parseInputToCents(amountText, currency) ?: 0L
+    val previewSavedCents = if (isWithdraw) {
+        (goal.savedAmountCents - parsedCents).coerceAtLeast(0L)
+    } else {
+        goal.savedAmountCents + parsedCents
+    }
+    val previewPct = if (goal.targetAmountCents > 0L) {
+        ((previewSavedCents.toFloat() / goal.targetAmountCents.toFloat()) * 100f).toInt().coerceIn(0, 100)
+    } else {
+        0
+    }
+
+    MoneySheetScaffold(
+        title = goal.name,
+        badgeText = "$previewPct% funded",
+        badgeColor = activeAccent,
+        badgeIcon = Icons.Outlined.Savings,
+        primaryLabel = if (isWithdraw) "Withdraw from Goal" else "Allocate to Goal",
+        primaryColor = activeAccent,
+        errorText = error,
+        onDismiss = onDismiss,
+        onPrimaryClick = {
+            val cents = CurrencyFormatter.parseInputToCents(amountText, currency)
+            when {
+                cents == null || cents <= 0L -> error = "Enter an amount greater than 0."
+                isWithdraw && cents > goal.savedAmountCents ->
+                    error = "Cannot withdraw more than saved (${CurrencyFormatter.format(goal.savedAmountCents, currency)})."
+                else -> {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onConfirm(
+                        if (isWithdraw) -cents else cents,
+                        isWithdraw && recordExpense,
+                        expenseCategory,
+                        expenseWallet,
+                        note
+                    )
+                }
+            }
+        }
+    ) {
+        KansoSegmentedRow(
+            options = listOf("Allocate", "Withdraw"),
+            selectedIndex = if (isWithdraw) 1 else 0,
+            onSelect = { idx ->
+                isWithdraw = idx == 1
+                error = null
+            }
+        )
+
+        Surface(
+            shape = RoundedCornerShape(14.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(
+                    text = "Saved ${CurrencyFormatter.format(goal.savedAmountCents, currency)} of ${
+                        CurrencyFormatter.format(goal.targetAmountCents, currency)
+                    }",
+                    style = MaterialTheme.typography.titleSmall
+                )
+                if (parsedCents > 0L) {
+                    Text(
+                        text = "After update: ${CurrencyFormatter.format(previewSavedCents, currency)} ($previewPct%)",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = activeAccent
+                    )
+                }
+            }
+        }
+
+        val quickPresets = remember(currency, isWithdraw, goalStatus.remainingCents, goal.savedAmountCents) {
+            val extra = if (isWithdraw) goal.savedAmountCents else goalStatus.remainingCents
+            buildList {
+                if (extra > 0L) add(extra)
+                currency.quickPresets.forEach { add(it) }
+            }.distinct()
+        }
+
+        MoneyAmountHeroInput(
+            label = if (isWithdraw) "WITHDRAW AMOUNT" else "ALLOCATE AMOUNT",
+            value = amountText,
+            onValueChange = {
+                amountText = it
+                error = null
+            },
+            currency = currency,
+            accentColor = activeAccent,
+            presets = quickPresets
+        )
+
+        AnimatedVisibility(
+            visible = isWithdraw,
+            enter = expandVertically(KansoMotion.SizeSpring) + fadeIn(tween(180)),
+            exit = shrinkVertically() + fadeOut(tween(140))
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Also log as Expense transaction",
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Switch(checked = recordExpense, onCheckedChange = { recordExpense = it })
+                    }
+                }
+
+                AnimatedVisibility(
+                    visible = recordExpense,
+                    enter = expandVertically(KansoMotion.SizeSpring) + fadeIn(tween(180)),
+                    exit = shrinkVertically() + fadeOut(tween(140))
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("Expense Category", style = MaterialTheme.typography.labelLarge)
+                        CategoryChipRow(
+                            categories = ExpenseCategory.expenseCategories,
+                            selected = expenseCategory,
+                            onSelect = { expenseCategory = it }
+                        )
+
+                        Text("Pay From Wallet", style = MaterialTheme.typography.labelLarge)
+                        WalletTileRow(
+                            selected = expenseWallet,
+                            selectedColor = activeAccent,
+                            onSelect = { expenseWallet = it }
+                        )
+
+                        OutlinedTextField(
+                            value = note,
+                            onValueChange = { note = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("Note (optional)") },
+                            placeholder = { Text("Goal spent: ${goal.name}") },
+                            singleLine = true,
+                            shape = RoundedCornerShape(14.dp),
+                            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun CsvExportDialog(
+    selectedMonthLabel: String,
+    monthCount: Int,
+    allCount: Int,
+    hasActiveFilter: Boolean,
+    onDismiss: () -> Unit,
+    onShareCsv: (CsvExportScope) -> Unit,
+    onSaveCsvToDevice: (CsvExportScope) -> Unit
+) {
+    val haptic = LocalHapticFeedback.current
+    var scope by remember {
+        mutableStateOf(
+            if (monthCount > 0) CsvExportScope.SELECTED_MONTH else CsvExportScope.ALL_HISTORY
+        )
+    }
+    val chosenCount = if (scope == CsvExportScope.SELECTED_MONTH) monthCount else allCount
+    val moneyAccent = MaterialTheme.kansoColors.moneyAccent
+
+    KansoFormBottomSheet(
+        title = "Export Transactions CSV",
+        onDismiss = onDismiss,
+        primaryLabel = "Share CSV",
+        onPrimaryClick = {
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            onShareCsv(scope)
+        },
+        primaryColor = moneyAccent,
+        primaryEnabled = chosenCount > 0,
+        badgeText = "$chosenCount rows",
+        badgeColor = moneyAccent,
+        badgeIcon = Icons.Outlined.Share,
+        secondaryLabel = "Save File",
+        onSecondaryClick = {
+            if (chosenCount > 0) {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                onSaveCsvToDevice(scope)
+            }
+        },
+        secondaryIsDestructive = false
+    ) {
+        KansoSegmentedRow(
+            options = listOf("$selectedMonthLabel ($monthCount)", "All History ($allCount)"),
+            selectedIndex = if (scope == CsvExportScope.SELECTED_MONTH) 0 else 1,
+            onSelect = { idx ->
+                scope = if (idx == 0) CsvExportScope.SELECTED_MONTH else CsvExportScope.ALL_HISTORY
+            }
+        )
+
+        Surface(
+            shape = RoundedCornerShape(14.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.FileDownload,
+                    contentDescription = null,
+                    tint = moneyAccent,
+                    modifier = Modifier.size(20.dp)
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        text = if (chosenCount == 0) {
+                            "No transactions in the selected scope."
+                        } else {
+                            "UTF-8 CSV formatted for Excel, Google Sheets, and accounting apps."
+                        },
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    if (scope == CsvExportScope.SELECTED_MONTH && hasActiveFilter) {
+                        Text(
+                            text = "Includes only transactions matching your active filters.",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
                 }
             }
         }

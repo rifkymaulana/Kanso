@@ -8,6 +8,7 @@ import com.kanso.core.model.DailyHealthLog
 import com.kanso.core.model.ExpenseCategory
 import com.kanso.core.model.ExpiryCategory
 import com.kanso.core.model.ExpiryItem
+import com.kanso.core.model.GoalCategory
 import com.kanso.core.model.HabitCompletion
 import com.kanso.core.model.HabitItem
 import com.kanso.core.model.IouDirection
@@ -18,6 +19,7 @@ import com.kanso.core.model.MaintenanceLog
 import com.kanso.core.model.MoneyTransaction
 import com.kanso.core.model.NoteItem
 import com.kanso.core.model.RecurringBill
+import com.kanso.core.model.SavingsGoal
 import com.kanso.core.model.SnippetCategory
 import com.kanso.core.model.SnippetItem
 import com.kanso.core.model.TaskItem
@@ -29,6 +31,7 @@ import com.kanso.core.model.VaultCategory
 import com.kanso.core.model.VaultItem
 import com.kanso.core.model.WalletType
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -201,6 +204,21 @@ class BackupSerializerTest {
                     note = "Kyoto autumn",
                     createdAtMillis = 1_759_200_000_000L
                 )
+            ),
+            savingsGoals = listOf(
+                SavingsGoal(
+                    id = 12L,
+                    name = "Emergency Fund",
+                    category = GoalCategory.EMERGENCY,
+                    targetAmountCents = 25_000_000_00L,
+                    savedAmountCents = 10_000_000_00L,
+                    linkedWallet = WalletType.BANK,
+                    targetEpochDay = 20_800L,
+                    note = "6 months runway",
+                    isArchived = false,
+                    createdAtMillis = 1_759_100_000_000L,
+                    updatedAtMillis = 1_759_150_000_000L
+                )
             )
         )
 
@@ -210,6 +228,13 @@ class BackupSerializerTest {
         val restored = BackupSerializer.decode(decrypted)
 
         assertEquals(snapshot, restored)
+        val modified = snapshot.copy(
+            savingsGoals = listOf(snapshot.savingsGoals.first().copy(savedAmountCents = 12_000_000_00L))
+        )
+        assertNotEquals(
+            BackupSerializer.computeContentHash(snapshot),
+            BackupSerializer.computeContentHash(modified)
+        )
     }
 
     @Test
@@ -243,6 +268,7 @@ class BackupSerializerTest {
         assertTrue(restored.habits.isEmpty())
         assertTrue(restored.vaultItems.isEmpty())
         assertTrue(restored.countdowns.isEmpty())
+        assertTrue(restored.savingsGoals.isEmpty())
     }
 
     @Test(expected = BackupDecryptionException::class)

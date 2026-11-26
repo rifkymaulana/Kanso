@@ -49,6 +49,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.TrendingUp
 import androidx.compose.material.icons.outlined.AccountBalance
 import androidx.compose.material.icons.outlined.AttachMoney
 import androidx.compose.material.icons.outlined.Bolt
@@ -58,12 +59,15 @@ import androidx.compose.material.icons.outlined.CreditCard
 import androidx.compose.material.icons.outlined.DirectionsCar
 import androidx.compose.material.icons.outlined.EventAvailable
 import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.Flight
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.LaptopMac
 import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.Restaurant
+import androidx.compose.material.icons.outlined.Savings
 import androidx.compose.material.icons.outlined.School
+import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.ShoppingBag
 import androidx.compose.material.icons.outlined.ShoppingCart
 import androidx.compose.material.icons.outlined.Smartphone
@@ -119,6 +123,7 @@ import androidx.compose.ui.unit.dp
 import com.kanso.core.model.AppCurrency
 import com.kanso.core.model.CurrencyFormatter
 import com.kanso.core.model.ExpenseCategory
+import com.kanso.core.model.GoalCategory
 import com.kanso.core.model.TransactionType
 import com.kanso.core.model.WalletType
 import com.kanso.core.ui.theme.LocalBalancesHidden
@@ -1313,6 +1318,12 @@ fun KansoSegmentedRow(
                             animationSpec = tween(180),
                             label = "segTextColor"
                         )
+                        val labelStyle = if (safeOptions.size >= 5) {
+                            MaterialTheme.typography.labelMedium
+                        } else {
+                            MaterialTheme.typography.labelLarge
+                        }
+                        val labelHorizontalPadding = if (safeOptions.size >= 5) 2.dp else 6.dp
                         Box(
                             modifier = Modifier
                                 .weight(1f)
@@ -1332,11 +1343,12 @@ fun KansoSegmentedRow(
                                 text = label,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(vertical = 9.dp, horizontal = 6.dp),
+                                    .padding(vertical = 9.dp, horizontal = labelHorizontalPadding),
                                 textAlign = TextAlign.Center,
                                 maxLines = 1,
+                                softWrap = false,
                                 overflow = TextOverflow.Ellipsis,
-                                style = MaterialTheme.typography.labelLarge.copy(
+                                style = labelStyle.copy(
                                     fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
                                 ),
                                 color = pillTextColor
@@ -1479,6 +1491,30 @@ fun WalletType.icon(): ImageVector = when (this) {
     WalletType.BANK -> Icons.Outlined.AccountBalance
     WalletType.EWALLET -> Icons.Outlined.Smartphone
     WalletType.CARD -> Icons.Outlined.CreditCard
+}
+
+fun GoalCategory.icon(): ImageVector = when (this) {
+    GoalCategory.EMERGENCY -> Icons.Outlined.Shield
+    GoalCategory.TRAVEL -> Icons.Outlined.Flight
+    GoalCategory.GADGET -> Icons.Outlined.LaptopMac
+    GoalCategory.VEHICLE -> Icons.Outlined.DirectionsCar
+    GoalCategory.HOME -> Icons.Outlined.Home
+    GoalCategory.EDUCATION -> Icons.Outlined.School
+    GoalCategory.INVESTMENT -> Icons.AutoMirrored.Outlined.TrendingUp
+    GoalCategory.GIFT -> Icons.Outlined.CardGiftcard
+    GoalCategory.OTHER -> Icons.Outlined.Savings
+}
+
+fun GoalCategory.accentColor(): Color = when (this) {
+    GoalCategory.EMERGENCY -> Color(0xFF059669)
+    GoalCategory.TRAVEL -> Color(0xFF0EA5E9)
+    GoalCategory.GADGET -> Color(0xFF8B5CF6)
+    GoalCategory.VEHICLE -> Color(0xFFF59E0B)
+    GoalCategory.HOME -> Color(0xFF6366F1)
+    GoalCategory.EDUCATION -> Color(0xFF14B8A6)
+    GoalCategory.INVESTMENT -> Color(0xFF10B981)
+    GoalCategory.GIFT -> Color(0xFFEC4899)
+    GoalCategory.OTHER -> Color(0xFF0F766E)
 }
 
 object KansoDateFormatters {

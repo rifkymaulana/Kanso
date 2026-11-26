@@ -6,10 +6,12 @@ import com.kanso.core.database.dao.MoneyDao
 import com.kanso.core.database.entity.toDomain
 import com.kanso.core.database.entity.toEntity
 import com.kanso.core.model.CategoryBudget
+import com.kanso.core.model.ExpenseCategory
 import com.kanso.core.model.IouDirection
 import com.kanso.core.model.IouEntry
 import com.kanso.core.model.MoneyTransaction
 import com.kanso.core.model.RecurringBill
+import com.kanso.core.model.SavingsGoal
 import com.kanso.core.model.TransactionType
 import com.kanso.core.model.WalletType
 import kotlinx.coroutines.flow.Flow
@@ -183,6 +185,56 @@ class MoneyRepository @Inject constructor(
                     category = com.kanso.core.model.ExpenseCategory.OTHER,
                     wallet = wallet,
                     note = note,
+                    timestampMillis = nowMillis
+                )
+                moneyDao.upsertTransaction(tx.toEntity())
+            }
+        }
+    }
+
+    fun observeSavingsGoals(): Flow<List<SavingsGoal>> {
+        return moneyDao.observeSavingsGoals().map { entities -> entities.map { it.toDomain() } }
+    }
+
+    fun searchSavingsGoals(query: String): Flow<List<SavingsGoal>> {
+        val trimmed = query.trim()
+        return moneyDao.searchSavingsGoals(trimmed).map { entities -> entities.map { it.toDomain() } }
+    }
+
+    suspend fun upsertSavingsGoal(goal: SavingsGoal): Long {
+        return moneyDao.upsertSavingsGoal(goal.toEntity())
+    }
+
+    suspend fun deleteSavingsGoal(id: Long) {
+        moneyDao.deleteSavingsGoalById(id)
+    }
+
+    suspend fun adjustSavingsGoal(
+        goalId: Long,
+        deltaCents: Long,
+        recordExpense: Boolean = false,
+        expenseCategory: ExpenseCategory = ExpenseCategory.OTHER,
+        expenseWallet: WalletType = WalletType.BANK,
+        note: String = "",
+        nowMillis: Long = System.currentTimeMillis()
+    ) {
+        database.withTransaction {
+            val existing = moneyDao.getSavingsGoalById(goalId) ?: return@withTransaction
+            val updatedSaved = (existing.savedAmountCents + deltaCents).coerceAtLeast(0L)
+            moneyDao.upsertSavingsGoal(
+                existing.copy(
+                    savedAmountCents = updatedSaved,
+                    updatedAtMillis = nowMillis
+                )
+            )
+            if (deltaCents < 0L && recordExpense) {
+                val txNote = note.trim().ifBlank { "Goal spent: ${existing.name}" }
+                val tx = MoneyTransaction(
+                    type = TransactionType.EXPENSE,
+                    amountCents = -deltaCents,
+                    category = expenseCategory,
+                    wallet = expenseWallet,
+                    note = txNote,
                     timestampMillis = nowMillis
                 )
                 moneyDao.upsertTransaction(tx.toEntity())

@@ -20,10 +20,11 @@ data class KansoBackupSnapshot(
     val expiries: List<ExpiryItem> = emptyList(),
     val maintenanceLogs: List<MaintenanceLog> = emptyList(),
     val vaultItems: List<VaultItem> = emptyList(),
-    val countdowns: List<CountdownItem> = emptyList()
+    val countdowns: List<CountdownItem> = emptyList(),
+    val savingsGoals: List<SavingsGoal> = emptyList()
 ) {
     companion object {
-        const val CURRENT_SCHEMA_VERSION = 3
+        const val CURRENT_SCHEMA_VERSION = 4
     }
 }
 
@@ -39,7 +40,8 @@ data class RestoreSummary(
     val expiriesCount: Int = 0,
     val maintenanceCount: Int = 0,
     val vaultCount: Int = 0,
-    val countdownsCount: Int = 0
+    val countdownsCount: Int = 0,
+    val savingsGoalsCount: Int = 0
 )
 
 data class StorageStats(

@@ -45,6 +45,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.kanso.core.model.CurrencyFormatter
 import com.kanso.core.model.SnippetMasker
 import com.kanso.core.ui.components.KansoAccentIconBadge
 import com.kanso.core.ui.components.KansoBentoCard
@@ -55,6 +56,7 @@ import com.kanso.core.ui.components.MoneyAmountBadge
 import com.kanso.core.ui.components.SectionHeader
 import com.kanso.core.ui.components.accentColor
 import com.kanso.core.ui.components.icon
+import com.kanso.core.ui.theme.LocalBalancesHidden
 import com.kanso.core.ui.theme.kansoColors
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -309,6 +311,56 @@ fun GlobalSearchRoute(
                                         currency = uiState.currency,
                                         type = tx.type
                                     )
+                                }
+                            }
+                        }
+                    }
+
+                    if (uiState.savingsGoals.isNotEmpty()) {
+                        item { SectionHeader(title = "Savings Goals (${uiState.savingsGoals.size})") }
+                        items(uiState.savingsGoals, key = { "goal-${it.id}" }) { goal ->
+                            val hidden = LocalBalancesHidden.current
+                            val catAccent = goal.category.accentColor()
+                            KansoBentoCard(
+                                modifier = Modifier.fillMaxWidth(),
+                                onClick = onOpenMoney,
+                                cornerRadius = 18.dp,
+                                contentPadding = PaddingValues(14.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    KansoAccentIconBadge(
+                                        icon = goal.category.icon(),
+                                        accent = catAccent,
+                                        size = 38.dp,
+                                        iconSize = 19.dp
+                                    )
+                                    Column(
+                                        modifier = Modifier.weight(1f),
+                                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                                    ) {
+                                        Text(goal.name, style = MaterialTheme.typography.titleMedium)
+                                        Text(
+                                            text = "${
+                                                CurrencyFormatter.formatOrMask(goal.savedAmountCents, uiState.currency, hidden = hidden)
+                                            } / ${
+                                                CurrencyFormatter.formatOrMask(goal.targetAmountCents, uiState.currency, hidden = hidden)
+                                            }",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    val pct = if (goal.targetAmountCents > 0L) {
+                                        ((goal.savedAmountCents.toFloat() / goal.targetAmountCents.toFloat()) * 100f)
+                                            .toInt()
+                                            .coerceIn(0, 100)
+                                    } else {
+                                        0
+                                    }
+                                    KansoPillBadge(text = "$pct%", color = catAccent)
                                 }
                             }
                         }

@@ -5,9 +5,11 @@ import androidx.lifecycle.viewModelScope
 import com.kanso.core.database.preferences.PreferencesRepository
 import com.kanso.core.database.repository.HabitsRepository
 import com.kanso.core.model.DailyHealthLog
+import com.kanso.core.model.DailyHealthTrendPoint
 import com.kanso.core.model.HabitCalculations
 import com.kanso.core.model.HabitCompletion
 import com.kanso.core.model.HabitItem
+import com.kanso.core.model.HealthTrendWindow
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -44,7 +46,12 @@ data class HabitsUiState(
     val recentHealthLogs: List<DailyHealthLog> = emptyList(),
     val avgWaterMl7d: Int = 0,
     val avgSleepHours7d: Float? = null,
-    val avgMood7d: Float? = null
+    val avgMood7d: Float? = null,
+    val trendWindow: HealthTrendWindow = HealthTrendWindow.DAYS_14,
+    val healthTrendPoints: List<DailyHealthTrendPoint> = emptyList(),
+    val latestWeightKg: Float? = null,
+    val weightDeltaKg: Float? = null,
+    val waterGoalHitDays: Int = 0
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -55,6 +62,7 @@ class HabitsViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val selectedDateFlow = MutableStateFlow(LocalDate.now())
+    private val trendWindowFlow = MutableStateFlow(HealthTrendWindow.DAYS_14)
     private val selectedHealthLogFlow = selectedDateFlow.flatMapLatest { date ->
         habitsRepository.observeHealthLog(date.toEpochDay())
     }
@@ -70,18 +78,22 @@ class HabitsViewModel @Inject constructor(
     private val healthCoreFlow = combine(
         selectedDateFlow,
         selectedHealthLogFlow,
-        habitsRepository.observeRecentHealthLogs(14)
-    ) { date, log, recent ->
-        Triple(date, log, recent)
+        habitsRepository.observeRecentHealthLogs(35),
+        trendWindowFlow
+    ) { date, log, recent, window ->
+        HealthCoreBundle(date, log, recent, window)
     }
 
     val uiState: StateFlow<HabitsUiState> = combine(
         habitsCoreFlow,
         healthCoreFlow,
         preferencesRepository.preferences
-    ) { habitsPair, healthTriple, prefs ->
+    ) { habitsPair, healthBundle, prefs ->
         val (habits, completions) = habitsPair
-        val (selectedDate, selectedLog, recentLogs) = healthTriple
+        val selectedDate = healthBundle.date
+        val selectedLog = healthBundle.selectedLog
+        val recentLogs = healthBundle.recentLogs
+        val trendWindow = healthBundle.trendWindow
         val today = LocalDate.now()
         val todayEpoch = today.toEpochDay()
 
@@ -110,6 +122,18 @@ class HabitsViewModel @Inject constructor(
         val moodEntries = last7Logs.mapNotNull { it.mood }
         val avgMood = if (moodEntries.isNotEmpty()) moodEntries.average().toFloat() else null
 
+        val trendPoints = HabitCalculations.buildHealthTrendSeries(
+            logs = recentLogs,
+            todayEpochDay = todayEpoch,
+            days = trendWindow.days
+        )
+        val latestWeight = recentLogs
+            .sortedByDescending { it.epochDay }
+            .firstOrNull { it.weightKg != null }
+            ?.weightKg
+        val weightDelta = HabitCalculations.computeWeightDelta(trendPoints)
+        val goalHitDays = trendPoints.count { it.waterMl >= prefs.waterGoalMl }
+
         val dateLabel = when (selectedDate) {
             today -> "Today"
             today.minusDays(1) -> "Yesterday"
@@ -128,13 +152,22 @@ class HabitsViewModel @Inject constructor(
             recentHealthLogs = recentLogs,
             avgWaterMl7d = avgWater,
             avgSleepHours7d = avgSleep,
-            avgMood7d = avgMood
+            avgMood7d = avgMood,
+            trendWindow = trendWindow,
+            healthTrendPoints = trendPoints,
+            latestWeightKg = latestWeight,
+            weightDeltaKg = weightDelta,
+            waterGoalHitDays = goalHitDays
         )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = HabitsUiState()
     )
+
+    fun selectTrendWindow(window: HealthTrendWindow) {
+        trendWindowFlow.value = window
+    }
 
     fun toggleHabitForToday(habitId: Long) {
         toggleHabitForDay(habitId, LocalDate.now().toEpochDay())
@@ -230,4 +263,11 @@ class HabitsViewModel @Inject constructor(
             )
         }
     }
+
+    private data class HealthCoreBundle(
+        val date: LocalDate,
+        val selectedLog: DailyHealthLog?,
+        val recentLogs: List<DailyHealthLog>,
+        val trendWindow: HealthTrendWindow
+    )
 }

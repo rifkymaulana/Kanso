@@ -88,7 +88,8 @@ class BackupManager @Inject constructor(
             expiries = lifeAdminDao.getAllExpiries().map { it.toDomain() },
             maintenanceLogs = lifeAdminDao.getAllMaintenanceLogs().map { it.toDomain() },
             vaultItems = decryptedVault,
-            countdowns = utilitiesDao.getAllCountdowns().map { it.toDomain() }
+            countdowns = utilitiesDao.getAllCountdowns().map { it.toDomain() },
+            savingsGoals = moneyDao.getAllSavingsGoals().map { it.toDomain() }
         )
     }
 
@@ -172,6 +173,7 @@ class BackupManager @Inject constructor(
                 lifeAdminDao.deleteAllMaintenanceLogs()
                 lifeAdminDao.deleteAllVaultItems()
                 utilitiesDao.deleteAllCountdowns()
+                moneyDao.deleteAllSavingsGoals()
 
                 if (snapshot.transactions.isNotEmpty()) {
                     moneyDao.insertTransactions(snapshot.transactions.map { it.toEntity() })
@@ -215,6 +217,9 @@ class BackupManager @Inject constructor(
                 if (snapshot.countdowns.isNotEmpty()) {
                     utilitiesDao.insertCountdowns(snapshot.countdowns.map { it.toEntity() })
                 }
+                if (snapshot.savingsGoals.isNotEmpty()) {
+                    moneyDao.insertSavingsGoals(snapshot.savingsGoals.map { it.toEntity() })
+                }
             }
 
             preferencesRepository.restorePreferences(snapshot.preferences)
@@ -231,7 +236,8 @@ class BackupManager @Inject constructor(
                 expiriesCount = snapshot.expiries.size,
                 maintenanceCount = snapshot.maintenanceLogs.size,
                 vaultCount = snapshot.vaultItems.size,
-                countdownsCount = snapshot.countdowns.size
+                countdownsCount = snapshot.countdowns.size,
+                savingsGoalsCount = snapshot.savingsGoals.size
             )
             RestoredSnapshotResult(
                 summary = summary,

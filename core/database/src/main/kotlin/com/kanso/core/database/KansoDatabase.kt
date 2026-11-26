@@ -20,6 +20,7 @@ import com.kanso.core.database.entity.MaintenanceLogEntity
 import com.kanso.core.database.entity.NoteEntity
 import com.kanso.core.database.entity.NoteFtsEntity
 import com.kanso.core.database.entity.RecurringBillEntity
+import com.kanso.core.database.entity.SavingsGoalEntity
 import com.kanso.core.database.entity.SnippetEntity
 import com.kanso.core.database.entity.TaskEntity
 import com.kanso.core.database.entity.TransactionEntity
@@ -31,6 +32,7 @@ import com.kanso.core.database.entity.VaultEntity
         CategoryBudgetEntity::class,
         RecurringBillEntity::class,
         IouEntity::class,
+        SavingsGoalEntity::class,
         NoteEntity::class,
         NoteFtsEntity::class,
         TaskEntity::class,
@@ -43,7 +45,7 @@ import com.kanso.core.database.entity.VaultEntity
         VaultEntity::class,
         CountdownEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class KansoDatabase : RoomDatabase() {
@@ -158,6 +160,28 @@ abstract class KansoDatabase : RoomDatabase() {
         val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `transactions` ADD COLUMN `toWallet` TEXT")
+            }
+        }
+
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `savings_goals` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `category` TEXT NOT NULL,
+                        `targetAmountCents` INTEGER NOT NULL,
+                        `savedAmountCents` INTEGER NOT NULL,
+                        `linkedWallet` TEXT,
+                        `targetEpochDay` INTEGER,
+                        `note` TEXT NOT NULL,
+                        `isArchived` INTEGER NOT NULL,
+                        `createdAtMillis` INTEGER NOT NULL,
+                        `updatedAtMillis` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
             }
         }
     }

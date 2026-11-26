@@ -2,10 +2,12 @@ package com.kanso.core.model
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDate
 import java.time.LocalTime
+import java.time.YearMonth
 import java.time.ZoneOffset
 
 class MoneyCalculationsTest {
@@ -241,5 +243,98 @@ class MoneyCalculationsTest {
         assertEquals(1_000_000_00L, groups[1].dayIncomeCents)
         assertEquals(150_000_00L, groups[1].dayExpenseCents)
         assertEquals(850_000_00L, groups[1].dayNetCents)
+    }
+
+    @Test
+    fun `computeGoalStatus computes pace for active deadline, reached, overdue, and flexible goals`() {
+        val today = LocalDate.of(2026, 11, 26).toEpochDay()
+
+        val active = SavingsGoal(
+            id = 1L,
+            name = "Japan Trip",
+            category = GoalCategory.TRAVEL,
+            targetAmountCents = 10_000_000_00L,
+            savedAmountCents = 4_000_000_00L,
+            linkedWallet = WalletType.BANK,
+            targetEpochDay = today + 60L,
+            createdAtMillis = 1L
+        )
+        val activeStatus = MoneyCalculations.computeGoalStatus(active, today)
+        assertEquals(6_000_000_00L, activeStatus.remainingCents)
+        assertEquals(0.4f, activeStatus.progressRatio, 0.001f)
+        assertFalse(activeStatus.isTargetReached)
+        assertEquals(60L, activeStatus.daysRemaining)
+        assertEquals(100_000_00L, activeStatus.requiredDailyCents)
+        assertEquals(3_000_000_00L, activeStatus.requiredMonthlyCents)
+        assertEquals(MoneyCalculations.GoalPaceState.ON_TRACK, activeStatus.paceState)
+
+        val reached = active.copy(savedAmountCents = 10_500_000_00L)
+        val reachedStatus = MoneyCalculations.computeGoalStatus(reached, today)
+        assertEquals(0L, reachedStatus.remainingCents)
+        assertEquals(1.0f, reachedStatus.progressRatio, 0.001f)
+        assertTrue(reachedStatus.isTargetReached)
+        assertEquals(MoneyCalculations.GoalPaceState.COMPLETED, reachedStatus.paceState)
+
+        val overdue = active.copy(targetEpochDay = today - 2L)
+        val overdueStatus = MoneyCalculations.computeGoalStatus(overdue, today)
+        assertEquals(MoneyCalculations.GoalPaceState.DEADLINE_PASSED, overdueStatus.paceState)
+        assertEquals(6_000_000_00L, overdueStatus.requiredMonthlyCents)
+
+        val flexible = active.copy(targetEpochDay = null)
+        val flexibleStatus = MoneyCalculations.computeGoalStatus(flexible, today)
+        assertEquals(MoneyCalculations.GoalPaceState.NO_DEADLINE, flexibleStatus.paceState)
+        assertNull(flexibleStatus.daysRemaining)
+        assertNull(flexibleStatus.requiredMonthlyCents)
+    }
+
+    @Test
+    fun `computeGoalsOverview calculates unallocated balance and wallet reservations excluding archived goals`() {
+        val goals = listOf(
+            SavingsGoal(1L, "Emergency", GoalCategory.EMERGENCY, 10_000_000_00L, 3_000_000_00L, WalletType.BANK, createdAtMillis = 1L),
+            SavingsGoal(2L, "Gadget", GoalCategory.GADGET, 5_000_000_00L, 1_500_000_00L, WalletType.EWALLET, createdAtMillis = 2L),
+            SavingsGoal(3L, "Completed Old", GoalCategory.OTHER, 2_000_000_00L, 2_000_000_00L, WalletType.BANK, isArchived = true, createdAtMillis = 3L)
+        )
+        val overview = MoneyCalculations.computeGoalsOverview(goals, totalWalletBalanceCents = 8_000_000_00L)
+        assertEquals(2, overview.activeGoalsCount)
+        assertEquals(0, overview.reachedGoalsCount)
+        assertEquals(4_500_000_00L, overview.totalSavedCents)
+        assertEquals(15_000_000_00L, overview.totalTargetCents)
+        assertEquals(3_500_000_00L, overview.unallocatedBalanceCents)
+        assertEquals(3_000_000_00L, overview.reservedByWallet[WalletType.BANK])
+        assertEquals(1_500_000_00L, overview.reservedByWallet[WalletType.EWALLET])
+    }
+
+    @Test
+    fun `computeMonthlyTrend and computeDailyExpenseSeries summarize cashflow and mark future days null`() {
+        val zone = ZoneOffset.UTC
+        val oct10 = LocalDate.of(2026, 10, 10).atTime(LocalTime.NOON).toInstant(zone).toEpochMilli()
+        val nov05 = LocalDate.of(2026, 11, 5).atTime(LocalTime.NOON).toInstant(zone).toEpochMilli()
+        val nov12 = LocalDate.of(2026, 11, 12).atTime(LocalTime.NOON).toInstant(zone).toEpochMilli()
+
+        val txs = listOf(
+            MoneyTransaction(1L, TransactionType.INCOME, 5_000_00L, ExpenseCategory.SALARY, WalletType.BANK, timestampMillis = oct10),
+            MoneyTransaction(2L, TransactionType.EXPENSE, 1_200_00L, ExpenseCategory.FOOD, WalletType.EWALLET, timestampMillis = nov05),
+            MoneyTransaction(3L, TransactionType.TRANSFER, 9_000_00L, ExpenseCategory.OTHER, WalletType.BANK, toWallet = WalletType.EWALLET, timestampMillis = nov12)
+        )
+
+        val trend = MoneyCalculations.computeMonthlyTrend(txs, YearMonth.of(2026, 11), monthsCount = 6, zone = zone)
+        assertEquals(6, trend.size)
+        assertEquals(YearMonth.of(2026, 6), trend.first().yearMonth)
+        assertEquals(YearMonth.of(2026, 10), trend[4].yearMonth)
+        assertEquals(5_000_00L, trend[4].incomeCents)
+        assertEquals(YearMonth.of(2026, 11), trend[5].yearMonth)
+        assertEquals(1_200_00L, trend[5].expenseCents)
+        assertEquals(-1_200_00L, trend[5].netCents)
+
+        val daily = MoneyCalculations.computeDailyExpenseSeries(
+            monthTransactions = txs,
+            month = YearMonth.of(2026, 11),
+            today = LocalDate.of(2026, 11, 15),
+            zone = zone
+        )
+        assertEquals(30, daily.size)
+        assertEquals(1_200_00L, daily[4].expenseCents) // Nov 5
+        assertEquals(0L, daily[11].expenseCents) // Nov 12 transfer excluded
+        assertNull(daily[15].expenseCents) // Nov 16 is in the future relative to Nov 15
     }
 }

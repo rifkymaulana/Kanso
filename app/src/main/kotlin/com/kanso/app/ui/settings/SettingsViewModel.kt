@@ -245,8 +245,8 @@ class SettingsViewModel @Inject constructor(
             backupStatusFlow.value = result.fold(
                 onSuccess = { summary ->
                     BackupOperationStatus.Success(
-                        "Restored ${summary.transactionsCount} transactions, ${summary.notesCount} notes, " +
-                            "${summary.tasksCount} tasks, ${summary.habitsCount} habits, " +
+                        "Restored ${summary.transactionsCount} transactions, ${summary.savingsGoalsCount} goals, " +
+                            "${summary.notesCount} notes, ${summary.tasksCount} tasks, ${summary.habitsCount} habits, " +
                             "${summary.expiriesCount} expiries, and ${summary.vaultCount} vault items."
                     )
                 },
