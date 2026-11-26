@@ -25,6 +25,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.LocalFireDepartment
@@ -60,6 +61,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import com.kanso.core.model.AppCurrency
 import com.kanso.core.model.BudgetAnchorSource
+import com.kanso.core.model.CoachActionTarget
 import com.kanso.core.model.CoachInsight
 import com.kanso.core.model.CoachInsightTone
 import com.kanso.core.model.CurrencyFormatter
@@ -94,7 +96,7 @@ import com.kanso.core.ui.components.KansoMotion
 import com.kanso.core.ui.components.KansoNoteChecklistPreview
 import com.kanso.core.ui.components.KansoPillBadge
 import com.kanso.core.ui.components.KansoPrivacyEyeButton
-import com.kanso.core.ui.components.KansoSmallIconButton
+import com.kanso.core.ui.components.KansoProgressRing
 import com.kanso.core.ui.components.KansoStaggeredEntrance
 import com.kanso.core.ui.components.KansoTonalButton
 import com.kanso.core.ui.components.SectionHeader
@@ -217,28 +219,47 @@ fun TodayScreenContent(
                             overflow = TextOverflow.Ellipsis
                         )
                     }
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(2.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         KansoPrivacyEyeButton(
                             hidden = uiState.hideBalances,
-                            onToggle = onToggleHideBalances,
-                            size = 36.dp,
-                            bordered = false
+                            onToggle = onToggleHideBalances
                         )
-                        KansoSmallIconButton(
-                            icon = Icons.Outlined.Search,
-                            contentDescription = "Global Search",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            onClick = onOpenSearch
-                        )
-                        KansoSmallIconButton(
-                            icon = Icons.Outlined.Settings,
-                            contentDescription = "Settings",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            onClick = onOpenSettings
-                        )
+                        Surface(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .clickable(onClick = onOpenSearch),
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surface,
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Search,
+                                    contentDescription = "Global Search",
+                                    modifier = Modifier.size(20.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                        Surface(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .clickable(onClick = onOpenSettings),
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surface,
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Settings,
+                                    contentDescription = "Settings",
+                                    modifier = Modifier.size(20.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -271,6 +292,22 @@ fun TodayScreenContent(
             }
         }
 
+        if (uiState.safeToSpend != null || uiState.coachInsights.isNotEmpty()) {
+            item {
+                KansoStaggeredEntrance(index = 2) {
+                    SmartCoachBentoCard(
+                        uiState = uiState,
+                        onOpenMoney = onOpenMoney,
+                        onOpenHabits = onOpenHabits,
+                        onAddWater250 = {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onAddWater250()
+                        }
+                    )
+                }
+            }
+        }
+
         item {
             KansoStaggeredEntrance(index = 3) {
                 BentoPulseRow(
@@ -279,24 +316,76 @@ fun TodayScreenContent(
                     onAddWater250 = {
                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         onAddWater250()
-                    },
-                    onToggleHabit = { habit ->
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        onToggleHabit(habit)
                     }
                 )
             }
         }
 
-        if (uiState.focusTasks.isNotEmpty()) {
+        if (uiState.pendingTodayHabits.isNotEmpty()) {
             item {
                 KansoStaggeredEntrance(index = 4) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         SectionHeader(
-                            title = "Focus Tasks",
-                            actionLabel = "See all",
-                            onAction = { onOpenBrainTab(1) }
+                            title = "Quick Habits",
+                            actionLabel = "All",
+                            onAction = onOpenHabits
                         )
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(uiState.pendingTodayHabits, key = { it.id }) { habit ->
+                                Surface(
+                                    modifier = Modifier
+                                        .animateItem()
+                                        .clip(RoundedCornerShape(14.dp))
+                                        .clickable {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            onToggleHabit(habit)
+                                        },
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = MaterialTheme.colorScheme.surface,
+                                    border = BorderStroke(1.dp, kansoColors.habitsAccent.copy(alpha = 0.35f))
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(14.dp)
+                                                .border(1.75.dp, kansoColors.habitsAccent, CircleShape)
+                                        )
+                                        Text(
+                                            text = habit.name,
+                                            style = MaterialTheme.typography.labelLarge,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
+            KansoStaggeredEntrance(index = 5) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SectionHeader(
+                        title = "Focus Tasks",
+                        actionLabel = "See all",
+                        onAction = { onOpenBrainTab(1) }
+                    )
+                    if (uiState.focusTasks.isEmpty()) {
+                        KansoCompactEmptyHint(
+                            icon = Icons.Outlined.TaskAlt,
+                            title = "All clear for today",
+                            subtitle = "Tap + below anytime to add a task.",
+                            accentColor = kansoColors.brainAccent,
+                            actionLabel = "Add",
+                            onAction = onOpenQuickCapture
+                        )
+                    } else {
                         KansoBentoCard(
                             contentPadding = PaddingValues(vertical = 4.dp)
                         ) {
@@ -311,7 +400,7 @@ fun TodayScreenContent(
                                     if (index < uiState.focusTasks.lastIndex) {
                                         HorizontalDivider(
                                             modifier = Modifier.padding(horizontal = 16.dp),
-                                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
+                                            color = MaterialTheme.colorScheme.outlineVariant
                                         )
                                     }
                                 }
@@ -324,7 +413,7 @@ fun TodayScreenContent(
 
         if (uiState.pinnedSnippets.isNotEmpty()) {
             item {
-                KansoStaggeredEntrance(index = 5) {
+                KansoStaggeredEntrance(index = 6) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         SectionHeader(
                             title = "1-Tap Snippets",
@@ -350,93 +439,101 @@ fun TodayScreenContent(
             }
         }
 
-        if (uiState.recentNotes.isNotEmpty()) {
-            item {
-                KansoStaggeredEntrance(index = 6) {
+        item {
+            KansoStaggeredEntrance(index = 7) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                SectionHeader(
+                    title = "Recent Notes",
+                    actionLabel = "All",
+                    onAction = { onOpenBrainTab(0) }
+                )
+                if (uiState.recentNotes.isEmpty()) {
+                    KansoCompactEmptyHint(
+                        icon = Icons.Outlined.Description,
+                        title = "No notes yet",
+                        subtitle = "Capture thoughts & quick references in Second Brain.",
+                        accentColor = kansoColors.brainAccent,
+                        actionLabel = "Open",
+                        onAction = { onOpenBrainTab(0) }
+                    )
+                } else {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        SectionHeader(
-                            title = "Recent Notes",
-                            actionLabel = "All",
-                            onAction = { onOpenBrainTab(0) }
-                        )
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            uiState.recentNotes.take(2).forEach { note ->
-                                KansoBentoCard(
+                        uiState.recentNotes.forEach { note ->
+                            KansoBentoCard(
+                                modifier = Modifier.fillMaxWidth(),
+                                onClick = { onOpenBrainTab(0) },
+                                contentPadding = PaddingValues(14.dp)
+                            ) {
+                                Row(
                                     modifier = Modifier.fillMaxWidth(),
-                                    onClick = { onOpenBrainTab(0) },
-                                    contentPadding = PaddingValues(14.dp)
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    verticalAlignment = Alignment.Top
                                 ) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                        verticalAlignment = Alignment.Top
+                                    if (note.isPinned) {
+                                        Box(
+                                            modifier = Modifier
+                                                .width(3.dp)
+                                                .height(34.dp)
+                                                .clip(RoundedCornerShape(50))
+                                                .background(kansoColors.brainAccent)
+                                        )
+                                    }
+                                    Column(
+                                        modifier = Modifier.weight(1f),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
                                     ) {
-                                        if (note.isPinned) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .width(3.dp)
-                                                    .height(34.dp)
-                                                    .clip(RoundedCornerShape(50))
-                                                    .background(kansoColors.brainAccent)
-                                            )
-                                        }
-                                        Column(
-                                            modifier = Modifier.weight(1f),
-                                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                                        val parsed = remember(note.content) { NoteChecklistParser.parse(note.content) }
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            val parsed = remember(note.content) { NoteChecklistParser.parse(note.content) }
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.SpaceBetween,
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                Text(
-                                                    text = note.title,
-                                                    style = MaterialTheme.typography.titleMedium,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                    modifier = Modifier.weight(1f)
-                                                )
-                                                if (parsed.hasChecklist) {
-                                                    Spacer(modifier = Modifier.width(6.dp))
-                                                    KansoPillBadge(
-                                                        text = "${parsed.checkedCount}/${parsed.totalCount}",
-                                                        color = if (parsed.isAllChecked) kansoColors.income else kansoColors.brainAccent
-                                                    )
-                                                }
-                                                Spacer(modifier = Modifier.width(8.dp))
-                                                Text(
-                                                    text = KansoDateFormatters.formatShortDate(note.updatedAtMillis),
-                                                    style = MaterialTheme.typography.labelMedium,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            Text(
+                                                text = note.title,
+                                                style = MaterialTheme.typography.titleMedium,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                            if (parsed.hasChecklist) {
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                KansoPillBadge(
+                                                    text = "${parsed.checkedCount}/${parsed.totalCount}",
+                                                    color = if (parsed.isAllChecked) kansoColors.income else kansoColors.brainAccent
                                                 )
                                             }
-                                            if (parsed.hasChecklist) {
-                                                val plainText = parsed.plainPreviewLines.take(1).joinToString("\n")
-                                                if (plainText.isNotBlank()) {
-                                                    Text(
-                                                        text = plainText,
-                                                        style = MaterialTheme.typography.bodyMedium,
-                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                        maxLines = 1,
-                                                        overflow = TextOverflow.Ellipsis
-                                                    )
-                                                }
-                                                KansoNoteChecklistPreview(
-                                                    items = parsed.items,
-                                                    accentColor = kansoColors.brainAccent,
-                                                    onToggleLine = { lineIdx -> onToggleNoteChecklistLine(note, lineIdx) },
-                                                    maxVisible = 3
-                                                )
-                                            } else if (note.content.isNotBlank()) {
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                text = KansoDateFormatters.formatShortDate(note.updatedAtMillis),
+                                                style = MaterialTheme.typography.labelMedium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                        if (parsed.hasChecklist) {
+                                            val plainText = parsed.plainPreviewLines.take(1).joinToString("\n")
+                                            if (plainText.isNotBlank()) {
                                                 Text(
-                                                    text = note.content,
+                                                    text = plainText,
                                                     style = MaterialTheme.typography.bodyMedium,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                    maxLines = 2,
+                                                    maxLines = 1,
                                                     overflow = TextOverflow.Ellipsis
                                                 )
                                             }
+                                            KansoNoteChecklistPreview(
+                                                items = parsed.items,
+                                                accentColor = kansoColors.brainAccent,
+                                                onToggleLine = { lineIdx -> onToggleNoteChecklistLine(note, lineIdx) },
+                                                maxVisible = 4
+                                            )
+                                        } else if (note.content.isNotBlank()) {
+                                            Text(
+                                                text = note.content,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 2,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
                                         }
                                     }
                                 }
@@ -445,20 +542,6 @@ fun TodayScreenContent(
                     }
                 }
             }
-        }
-
-        if (uiState.focusTasks.isEmpty() && uiState.pinnedSnippets.isEmpty() && uiState.recentNotes.isEmpty()) {
-            item {
-                KansoStaggeredEntrance(index = 4) {
-                    KansoCompactEmptyHint(
-                        icon = Icons.Outlined.TaskAlt,
-                        title = "All clear for today",
-                        subtitle = "Tap + below anytime to log an expense, task, or note.",
-                        accentColor = kansoColors.brainAccent,
-                        actionLabel = "Capture",
-                        onAction = onOpenQuickCapture
-                    )
-                }
             }
         }
     }
@@ -471,123 +554,74 @@ private fun MoneyHeroPulseCard(
 ) {
     val kansoColors = MaterialTheme.kansoColors
     val netCents = uiState.monthIncomeCents - uiState.monthExpenseCents
-    val report = uiState.safeToSpend
-    val hasAnchor = report != null && report.hasAnchor
-    val isExceeded = hasAnchor && report!!.todayRemainingAllowanceCents < 0L
-    val statusColor = when (report?.paceStatus) {
-        SpendPaceStatus.UNDER_PACE -> Color(0xFF34D399)
-        SpendPaceStatus.ON_TRACK -> Color(0xFF2DD4BF)
-        SpendPaceStatus.WATCH_PACE -> Color(0xFFFBBF24)
-        SpendPaceStatus.OVER_BUDGET -> Color(0xFFF87171)
-        else -> kansoColors.moneyAccent
-    }
 
     KansoHeroCard(
         onClick = onClick,
-        glowColor = if (isExceeded) Color(0xFFF87171) else statusColor
+        glowColor = kansoColors.moneyAccent
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = when {
-                        isExceeded -> "OVER TODAY'S ALLOWANCE"
-                        hasAnchor -> "SAFE TO SPEND TODAY"
-                        else -> "SPENT THIS MONTH"
-                    },
+                    text = "THIS MONTH",
                     style = MaterialTheme.typography.labelSmall,
-                    color = if (isExceeded) Color(0xFFFCA5A5) else kansoColors.heroOnSurfaceMuted
+                    color = kansoColors.heroOnSurfaceMuted
                 )
                 Surface(
                     shape = RoundedCornerShape(50),
-                    color = if (hasAnchor) statusColor.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.12f)
+                    color = Color.White.copy(alpha = 0.12f)
                 ) {
-                    if (hasAnchor) {
-                        Text(
-                            text = report!!.paceStatus.badgeLabel,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = statusColor,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                        )
-                    } else {
-                        KansoAnimatedCurrencyText(
-                            amountCents = uiState.todayExpenseCents,
-                            currency = uiState.currency,
-                            prefix = "Today · ",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = kansoColors.heroOnSurface,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                        )
-                    }
+                    KansoAnimatedCurrencyText(
+                        amountCents = uiState.todayExpenseCents,
+                        currency = uiState.currency,
+                        prefix = "Today · ",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = kansoColors.heroOnSurface,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                    )
                 }
             }
 
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                if (hasAnchor) {
-                    val r = report!!
-                    if (isExceeded) {
-                        Text(
-                            text = "Over by ${
-                                CurrencyFormatter.formatOrMask(
-                                    -r.todayRemainingAllowanceCents,
-                                    uiState.currency,
-                                    hidden = uiState.hideBalances
-                                )
-                            }",
-                            style = MaterialTheme.typography.headlineLarge.copy(
-                                fontWeight = FontWeight.Bold,
-                                fontFeatureSettings = "tnum"
-                            ),
-                            color = Color(0xFFFCA5A5),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    } else {
-                        KansoAnimatedCurrencyText(
-                            amountCents = r.todayRemainingAllowanceCents.coerceAtLeast(0L),
-                            currency = uiState.currency,
-                            style = MaterialTheme.typography.displaySmall,
-                            color = kansoColors.heroOnSurface
-                        )
-                    }
-                    Text(
-                        text = "${
-                            CurrencyFormatter.formatOrMask(
-                                r.dailySafeAllowanceCents,
-                                uiState.currency,
-                                hidden = uiState.hideBalances
-                            )
-                        }/day · ${r.daysRemainingIncludingToday}d left",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = kansoColors.heroOnSurfaceMuted,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                } else {
-                    KansoAnimatedCurrencyText(
-                        amountCents = uiState.monthExpenseCents,
-                        currency = uiState.currency,
-                        style = MaterialTheme.typography.displaySmall,
-                        color = kansoColors.heroOnSurface
-                    )
-                    Text(
-                        text = "Tap to log expenses or set a monthly budget →",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = Color(0xFF5EEAD4)
-                    )
-                }
+                Text(
+                    text = "Spent this month",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = kansoColors.heroOnSurfaceMuted
+                )
+                KansoAnimatedCurrencyText(
+                    amountCents = uiState.monthExpenseCents,
+                    currency = uiState.currency,
+                    style = MaterialTheme.typography.displaySmall,
+                    color = kansoColors.heroOnSurface
+                )
             }
 
-            val anchorCents = if (uiState.monthlyBudgetCents > 0L) {
-                uiState.monthlyBudgetCents
-            } else {
-                report?.anchorAmountCents ?: 0L
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                HeroStatMiniPill(
+                    label = "Income",
+                    amountCents = uiState.monthIncomeCents,
+                    currency = uiState.currency,
+                    dotColor = Color(0xFF34D399),
+                    modifier = Modifier.weight(1f)
+                )
+                HeroStatMiniPill(
+                    label = "Net",
+                    amountCents = netCents,
+                    currency = uiState.currency,
+                    showSign = true,
+                    dotColor = if (netCents >= 0L) Color(0xFF34D399) else Color(0xFFF87171),
+                    modifier = Modifier.weight(1f)
+                )
             }
-            if (anchorCents > 0L) {
-                val rawProgress = uiState.monthExpenseCents.toFloat() / anchorCents.toFloat()
+
+            if (uiState.monthlyBudgetCents > 0L) {
+                val rawProgress = uiState.monthExpenseCents.toFloat() / uiState.monthlyBudgetCents.toFloat()
                 val barColor = when {
                     rawProgress > 1f -> Color(0xFFF87171)
                     rawProgress >= 0.8f -> Color(0xFFFBBF24)
@@ -596,50 +630,83 @@ private fun MoneyHeroPulseCard(
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     KansoAnimatedProgressBar(
                         progress = rawProgress.coerceIn(0f, 1f),
-                        height = 6.dp,
+                        height = 7.dp,
                         color = barColor,
-                        trackColor = Color.White.copy(alpha = 0.14f)
+                        trackColor = Color.White.copy(alpha = 0.15f)
                     )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text(
-                            text = "Month spent ${
-                                CurrencyFormatter.formatOrMask(
-                                    uiState.monthExpenseCents,
-                                    uiState.currency,
-                                    hidden = uiState.hideBalances
-                                )
-                            }",
+                        KansoAnimatedIntText(
+                            value = (rawProgress * 100).toInt(),
+                            format = { "$it% of budget" },
                             style = MaterialTheme.typography.labelMedium,
                             color = kansoColors.heroOnSurfaceMuted
                         )
                         Text(
-                            text = if (uiState.monthlyBudgetCents > 0L) {
-                                "of ${
-                                    CurrencyFormatter.formatOrMask(
-                                        uiState.monthlyBudgetCents,
-                                        uiState.currency,
-                                        hidden = uiState.hideBalances
-                                    )
-                                }"
-                            } else {
-                                "Net ${
-                                    CurrencyFormatter.formatOrMask(
-                                        netCents,
-                                        uiState.currency,
-                                        hidden = uiState.hideBalances,
-                                        showSign = true
-                                    )
-                                }"
-                            },
+                            text = CurrencyFormatter.formatOrMask(uiState.monthlyBudgetCents, uiState.currency, hidden = uiState.hideBalances),
                             style = MaterialTheme.typography.labelMedium,
                             color = kansoColors.heroOnSurface
                         )
                     }
                 }
+            } else {
+                Text(
+                    text = "Tap to log expenses or set a monthly budget →",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Color(0xFF5EEAD4)
+                )
             }
+        }
+    }
+}
+
+@Composable
+private fun HeroStatMiniPill(
+    label: String,
+    amountCents: Long,
+    currency: AppCurrency,
+    dotColor: Color,
+    modifier: Modifier = Modifier,
+    showSign: Boolean = false
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(14.dp),
+        color = Color.White.copy(alpha = 0.08f),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f))
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(7.dp)
+                        .clip(CircleShape)
+                        .background(dotColor)
+                )
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.kansoColors.heroOnSurfaceMuted
+                )
+            }
+            KansoAnimatedCurrencyText(
+                amountCents = amountCents,
+                currency = currency,
+                showSign = showSign,
+                style = MaterialTheme.typography.titleSmall.copy(
+                    fontWeight = FontWeight.SemiBold,
+                    fontFeatureSettings = "tnum"
+                ),
+                color = MaterialTheme.kansoColors.heroOnSurface
+            )
         }
     }
 }
@@ -648,8 +715,7 @@ private fun MoneyHeroPulseCard(
 private fun BentoPulseRow(
     uiState: TodayUiState,
     onOpenHabits: () -> Unit,
-    onAddWater250: () -> Unit,
-    onToggleHabit: (HabitItem) -> Unit
+    onAddWater250: () -> Unit
 ) {
     val kansoColors = MaterialTheme.kansoColors
     val goal = uiState.waterGoalMl.coerceAtLeast(250)
@@ -658,195 +724,162 @@ private fun BentoPulseRow(
     val habitProgress = if (habitTotal > 0) {
         (uiState.todayHabitsDone.toFloat() / habitTotal.toFloat()).coerceIn(0f, 1f)
     } else 0f
-    val remaining = (habitTotal - uiState.todayHabitsDone).coerceAtLeast(0)
 
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Row(
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(IntrinsicSize.Max),
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        KansoBentoCard(
             modifier = Modifier
-                .fillMaxWidth()
-                .height(IntrinsicSize.Max),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                .weight(1f)
+                .fillMaxHeight(),
+            onClick = onOpenHabits,
+            contentPadding = PaddingValues(14.dp)
         ) {
-            KansoBentoCard(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight(),
-                onClick = onOpenHabits,
-                contentPadding = PaddingValues(14.dp)
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.SpaceBetween
             ) {
-                Column(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.SpaceBetween
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                    Text(
+                        text = "Hydration",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    KansoProgressRing(
+                        progress = waterProgress,
+                        color = kansoColors.hydrationAccent,
+                        size = 46.dp,
+                        strokeWidth = 5.dp
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(5.dp)
-                        ) {
+                        KansoBounceOnChange(trigger = uiState.todayWaterMl) {
                             Icon(
                                 imageVector = Icons.Outlined.WaterDrop,
                                 contentDescription = null,
                                 tint = kansoColors.hydrationAccent,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Text(
-                                text = "Water",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Surface(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(50))
-                                .clickable(onClick = onAddWater250),
-                            shape = RoundedCornerShape(50),
-                            color = kansoColors.hydrationAccent.copy(alpha = 0.14f)
-                        ) {
-                            Text(
-                                text = "+250ml",
-                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-                                color = kansoColors.hydrationAccent,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                modifier = Modifier.size(18.dp)
                             )
                         }
                     }
+                }
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
-                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        KansoAnimatedIntText(
-                            value = uiState.todayWaterMl,
-                            format = { "$it ml" },
-                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = "Goal $goal ml",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    KansoAnimatedProgressBar(
-                        progress = waterProgress,
-                        height = 5.dp,
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    KansoAnimatedIntText(
+                        value = uiState.todayWaterMl,
+                        format = { "$it ml" },
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                         color = kansoColors.hydrationAccent
                     )
+                    KansoAnimatedIntText(
+                        value = (waterProgress * 100).toInt(),
+                        format = { "Goal $goal ml · $it%" },
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
-            }
 
-            KansoBentoCard(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight(),
-                onClick = onOpenHabits,
-                contentPadding = PaddingValues(14.dp)
+                Spacer(modifier = Modifier.height(10.dp))
+
+                KansoTonalButton(
+                    text = "+250 ml",
+                    size = KansoButtonSize.COMPACT,
+                    modifier = Modifier.fillMaxWidth(),
+                    containerColor = kansoColors.hydrationAccent.copy(alpha = 0.14f),
+                    contentColor = kansoColors.hydrationAccent,
+                    onClick = onAddWater250
+                )
+            }
+        }
+
+        KansoBentoCard(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight(),
+            onClick = onOpenHabits,
+            contentPadding = PaddingValues(14.dp)
+        ) {
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.SpaceBetween
             ) {
-                Column(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.SpaceBetween
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                    Text(
+                        text = "Habits",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    KansoProgressRing(
+                        progress = habitProgress,
+                        color = kansoColors.habitsAccent,
+                        size = 46.dp,
+                        strokeWidth = 5.dp
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(5.dp)
-                        ) {
+                        KansoBounceOnChange(trigger = uiState.todayHabitsDone) {
                             Icon(
                                 imageVector = Icons.Outlined.LocalFireDepartment,
                                 contentDescription = null,
                                 tint = kansoColors.habitsAccent,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Text(
-                                text = "Habits",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        if (habitTotal > 0) {
-                            Text(
-                                text = if (remaining == 0) "Done" else "$remaining left",
-                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-                                color = if (remaining == 0) kansoColors.income else kansoColors.habitsAccent
+                                modifier = Modifier.size(18.dp)
                             )
                         }
                     }
+                }
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
-                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        if (habitTotal > 0) {
-                            KansoAnimatedIntText(
-                                value = uiState.todayHabitsDone,
-                                format = { "$it / $habitTotal" },
-                                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        } else {
-                            Text(
-                                text = "0 habits",
-                                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    if (habitTotal > 0) {
+                        KansoAnimatedIntText(
+                            value = uiState.todayHabitsDone,
+                            format = { "$it/$habitTotal done" },
+                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    } else {
                         Text(
-                            text = if (habitTotal > 0) "completed today" else "Tap to add",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            text = "No habits",
+                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                     }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    KansoAnimatedProgressBar(
-                        progress = habitProgress,
-                        height = 5.dp,
-                        color = kansoColors.habitsAccent
+                    val remaining = (habitTotal - uiState.todayHabitsDone).coerceAtLeast(0)
+                    Text(
+                        text = when {
+                            habitTotal == 0 -> "Build a streak"
+                            remaining == 0 -> "All done today!"
+                            else -> "$remaining left today"
+                        },
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (habitTotal > 0 && remaining == 0) {
+                            kansoColors.income
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
                     )
                 }
-            }
-        }
 
-        if (uiState.pendingTodayHabits.isNotEmpty()) {
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(uiState.pendingTodayHabits, key = { it.id }) { habit ->
-                    Surface(
-                        modifier = Modifier
-                            .animateItem()
-                            .clip(RoundedCornerShape(14.dp))
-                            .clickable { onToggleHabit(habit) },
-                        shape = RoundedCornerShape(14.dp),
-                        color = MaterialTheme.colorScheme.surface,
-                        border = BorderStroke(1.dp, kansoColors.habitsAccent.copy(alpha = 0.35f))
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(7.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(13.dp)
-                                    .border(1.75.dp, kansoColors.habitsAccent, CircleShape)
-                            )
-                            Text(
-                                text = habit.name,
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                    }
-                }
+                Spacer(modifier = Modifier.height(10.dp))
+
+                KansoTonalButton(
+                    text = if (habitTotal == 0) "Create habit →" else "Open tracker →",
+                    size = KansoButtonSize.COMPACT,
+                    modifier = Modifier.fillMaxWidth(),
+                    containerColor = kansoColors.habitsAccent.copy(alpha = 0.14f),
+                    contentColor = kansoColors.habitsAccent,
+                    onClick = onOpenHabits
+                )
             }
         }
     }
@@ -1180,6 +1213,203 @@ private fun SnippetQuickCard(
     }
 }
 
+@Composable
+private fun coachToneColor(tone: CoachInsightTone): Color = when (tone) {
+    CoachInsightTone.POSITIVE -> incomeSemanticColor()
+    CoachInsightTone.NEUTRAL -> MaterialTheme.colorScheme.primary
+    CoachInsightTone.WARNING -> warningSemanticColor()
+    CoachInsightTone.CRITICAL -> expenseSemanticColor()
+}
+
+@Composable
+private fun SmartCoachBentoCard(
+    uiState: TodayUiState,
+    onOpenMoney: () -> Unit,
+    onOpenHabits: () -> Unit,
+    onAddWater250: () -> Unit
+) {
+    val report = uiState.safeToSpend
+    val statusColor = when (report?.paceStatus) {
+        SpendPaceStatus.UNDER_PACE -> incomeSemanticColor()
+        SpendPaceStatus.ON_TRACK -> MaterialTheme.kansoColors.moneyAccent
+        SpendPaceStatus.WATCH_PACE -> warningSemanticColor()
+        SpendPaceStatus.OVER_BUDGET -> expenseSemanticColor()
+        else -> MaterialTheme.colorScheme.primary
+    }
+
+    KansoBentoCard(
+        onClick = onOpenMoney,
+        contentPadding = PaddingValues(16.dp)
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    KansoAccentIconBadge(
+                        icon = Icons.Outlined.AutoAwesome,
+                        accent = statusColor,
+                        size = 34.dp,
+                        iconSize = 18.dp,
+                        cornerRadius = 10.dp
+                    )
+                    Text(
+                        text = "Smart Coach",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+                if (report != null) {
+                    KansoPillBadge(
+                        text = report.paceStatus.badgeLabel,
+                        color = statusColor
+                    )
+                }
+            }
+
+            if (report != null && report.hasAnchor) {
+                val isExceeded = report.todayRemainingAllowanceCents < 0L
+                val usageRatio = if (report.dailySafeAllowanceCents > 0L) {
+                    (report.todayExpenseCents.toFloat() / report.dailySafeAllowanceCents.toFloat()).coerceIn(0f, 1f)
+                } else {
+                    1f
+                }
+                val ringColor = if (isExceeded) expenseSemanticColor() else statusColor
+                val anchorTag = if (report.anchorSource == BudgetAnchorSource.MONTHLY_INCOME) {
+                    " · Income-based"
+                } else {
+                    ""
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Text(
+                                text = if (isExceeded) "TODAY'S ALLOWANCE EXCEEDED" else "SAFE TO SPEND TODAY",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (isExceeded) expenseSemanticColor() else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            if (isExceeded) {
+                                Text(
+                                    text = "Over by ${CurrencyFormatter.formatOrMask(-report.todayRemainingAllowanceCents, uiState.currency, hidden = uiState.hideBalances)}",
+                                    style = MaterialTheme.typography.titleLarge.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        fontFeatureSettings = "tnum"
+                                    ),
+                                    color = expenseSemanticColor(),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            } else {
+                                KansoAnimatedCurrencyText(
+                                    amountCents = report.todayRemainingAllowanceCents.coerceAtLeast(0L),
+                                    currency = uiState.currency,
+                                    style = MaterialTheme.typography.titleLarge.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        fontFeatureSettings = "tnum"
+                                    ),
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            Text(
+                                text = "${CurrencyFormatter.formatOrMask(report.dailySafeAllowanceCents, uiState.currency, hidden = uiState.hideBalances)}/day · ${report.daysRemainingIncludingToday}d left$anchorTag",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        KansoProgressRing(
+                            progress = usageRatio,
+                            color = ringColor,
+                            size = 44.dp,
+                            strokeWidth = 5.dp
+                        ) {
+                            Text(
+                                text = "${(usageRatio * 100).toInt()}%",
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                color = ringColor
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (uiState.coachInsights.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    uiState.coachInsights.forEach { insight ->
+                        val toneColor = coachToneColor(insight.tone)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(7.dp)
+                                    .clip(CircleShape)
+                                    .background(toneColor)
+                            )
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                Text(
+                                    text = insight.title,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = insight.body,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            if (insight.actionLabel != null && insight.actionTarget != null) {
+                                KansoTonalButton(
+                                    text = insight.actionLabel!!,
+                                    size = KansoButtonSize.COMPACT,
+                                    onClick = {
+                                        when (insight.actionTarget) {
+                                            CoachActionTarget.ADD_WATER_250 -> onAddWater250()
+                                            CoachActionTarget.OPEN_HABITS -> onOpenHabits()
+                                            CoachActionTarget.OPEN_MONEY_BUDGETS -> onOpenMoney()
+                                            null -> Unit
+                                        }
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Preview(showBackground = true)
 @Composable
 fun TodayScreenPreview() {
     val sampleReport = SmartCoachCalculations.computeSafeToSpend(
