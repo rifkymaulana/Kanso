@@ -50,6 +50,12 @@ class PreferencesRepository @Inject constructor(
         val APP_LOCK_TIMEOUT = stringPreferencesKey("app_lock_timeout")
         val HIDE_RECENT_APPS_PREVIEW = booleanPreferencesKey("hide_recent_apps_preview")
         val HIDE_BALANCES = booleanPreferencesKey("hide_balances")
+        val MORNING_REMINDER_ENABLED = booleanPreferencesKey("morning_reminder_enabled")
+        val MORNING_REMINDER_HOUR = intPreferencesKey("morning_reminder_hour")
+        val MORNING_REMINDER_MINUTE = intPreferencesKey("morning_reminder_minute")
+        val EVENING_REMINDER_ENABLED = booleanPreferencesKey("evening_reminder_enabled")
+        val EVENING_REMINDER_HOUR = intPreferencesKey("evening_reminder_hour")
+        val EVENING_REMINDER_MINUTE = intPreferencesKey("evening_reminder_minute")
 
         val DRIVE_SYNC_CONNECTED = booleanPreferencesKey("drive_sync_connected")
         val DRIVE_AUTO_SYNC = booleanPreferencesKey("drive_auto_sync")
@@ -91,7 +97,13 @@ class PreferencesRepository @Inject constructor(
                 AppLockTimeout.valueOf(prefs[Keys.APP_LOCK_TIMEOUT] ?: AppLockTimeout.IMMEDIATE.name)
             }.getOrDefault(AppLockTimeout.IMMEDIATE),
             hideRecentAppsPreview = prefs[Keys.HIDE_RECENT_APPS_PREVIEW] ?: false,
-            hideBalances = prefs[Keys.HIDE_BALANCES] ?: false
+            hideBalances = prefs[Keys.HIDE_BALANCES] ?: false,
+            morningReminderEnabled = prefs[Keys.MORNING_REMINDER_ENABLED] ?: true,
+            morningReminderHour = (prefs[Keys.MORNING_REMINDER_HOUR] ?: 8).coerceIn(0, 23),
+            morningReminderMinute = (prefs[Keys.MORNING_REMINDER_MINUTE] ?: 0).coerceIn(0, 59),
+            eveningReminderEnabled = prefs[Keys.EVENING_REMINDER_ENABLED] ?: true,
+            eveningReminderHour = (prefs[Keys.EVENING_REMINDER_HOUR] ?: 20).coerceIn(0, 23),
+            eveningReminderMinute = (prefs[Keys.EVENING_REMINDER_MINUTE] ?: 30).coerceIn(0, 59)
         )
     }
 
@@ -291,6 +303,28 @@ class PreferencesRepository @Inject constructor(
         }
     }
 
+    suspend fun setMorningReminderEnabled(enabled: Boolean) {
+        context.kansoDataStore.edit { it[Keys.MORNING_REMINDER_ENABLED] = enabled }
+    }
+
+    suspend fun setMorningReminderTime(hour: Int, minute: Int) {
+        context.kansoDataStore.edit { prefs ->
+            prefs[Keys.MORNING_REMINDER_HOUR] = hour.coerceIn(0, 23)
+            prefs[Keys.MORNING_REMINDER_MINUTE] = minute.coerceIn(0, 59)
+        }
+    }
+
+    suspend fun setEveningReminderEnabled(enabled: Boolean) {
+        context.kansoDataStore.edit { it[Keys.EVENING_REMINDER_ENABLED] = enabled }
+    }
+
+    suspend fun setEveningReminderTime(hour: Int, minute: Int) {
+        context.kansoDataStore.edit { prefs ->
+            prefs[Keys.EVENING_REMINDER_HOUR] = hour.coerceIn(0, 23)
+            prefs[Keys.EVENING_REMINDER_MINUTE] = minute.coerceIn(0, 59)
+        }
+    }
+
     suspend fun restorePreferences(userPreferences: UserPreferences) {
         context.kansoDataStore.edit { prefs ->
             prefs[Keys.DISPLAY_NAME] = userPreferences.displayName
@@ -302,6 +336,12 @@ class PreferencesRepository @Inject constructor(
             prefs[Keys.REMINDERS_ENABLED] = userPreferences.remindersEnabled
             prefs[Keys.AUTO_CHECK_UPDATES] = userPreferences.autoCheckUpdates
             prefs[Keys.HIDE_BALANCES] = userPreferences.hideBalances
+            prefs[Keys.MORNING_REMINDER_ENABLED] = userPreferences.morningReminderEnabled
+            prefs[Keys.MORNING_REMINDER_HOUR] = userPreferences.morningReminderHour.coerceIn(0, 23)
+            prefs[Keys.MORNING_REMINDER_MINUTE] = userPreferences.morningReminderMinute.coerceIn(0, 59)
+            prefs[Keys.EVENING_REMINDER_ENABLED] = userPreferences.eveningReminderEnabled
+            prefs[Keys.EVENING_REMINDER_HOUR] = userPreferences.eveningReminderHour.coerceIn(0, 23)
+            prefs[Keys.EVENING_REMINDER_MINUTE] = userPreferences.eveningReminderMinute.coerceIn(0, 59)
             if (userPreferences.customRatesVsUsd.isEmpty()) {
                 prefs.remove(Keys.CUSTOM_RATES_JSON)
             } else {

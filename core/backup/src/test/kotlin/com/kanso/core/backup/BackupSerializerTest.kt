@@ -24,6 +24,7 @@ import com.kanso.core.model.SnippetCategory
 import com.kanso.core.model.SnippetItem
 import com.kanso.core.model.TaskItem
 import com.kanso.core.model.TaskPriority
+import com.kanso.core.model.TaskRecurrence
 import com.kanso.core.model.ThemeMode
 import com.kanso.core.model.TransactionType
 import com.kanso.core.model.UserPreferences
@@ -52,7 +53,13 @@ class BackupSerializerTest {
                 waterGoalMl = 2500,
                 remindersEnabled = true,
                 customRatesVsUsd = mapOf("IDR" to 16000.0),
-                walletOpeningBalancesCents = mapOf("BANK" to 5_000_000_00L)
+                walletOpeningBalancesCents = mapOf("BANK" to 5_000_000_00L),
+                morningReminderEnabled = true,
+                morningReminderHour = 7,
+                morningReminderMinute = 15,
+                eveningReminderEnabled = false,
+                eveningReminderHour = 21,
+                eveningReminderMinute = 0
             ),
             transactions = listOf(
                 MoneyTransaction(
@@ -121,6 +128,7 @@ class BackupSerializerTest {
                     note = "Bring STNK",
                     priority = TaskPriority.HIGH,
                     dueDateEpochDay = 20_420L,
+                    recurrence = TaskRecurrence.WEEKLY,
                     isCompleted = false,
                     createdAtMillis = 1_759_700_000_000L
                 )
@@ -265,6 +273,10 @@ class BackupSerializerTest {
         assertEquals(1, restored.schemaVersion)
         assertEquals("Aria", restored.preferences.displayName)
         assertEquals(2000, restored.preferences.waterGoalMl)
+        assertEquals(8, restored.preferences.morningReminderHour)
+        assertEquals(0, restored.preferences.morningReminderMinute)
+        assertEquals(20, restored.preferences.eveningReminderHour)
+        assertEquals(30, restored.preferences.eveningReminderMinute)
         assertTrue(restored.habits.isEmpty())
         assertTrue(restored.vaultItems.isEmpty())
         assertTrue(restored.countdowns.isEmpty())

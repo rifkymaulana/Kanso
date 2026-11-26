@@ -3,11 +3,13 @@ package com.kanso.feature.brain
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.kanso.core.database.repository.BrainRepository
+import com.kanso.core.database.repository.TaskToggleOutcome
 import com.kanso.core.model.NoteItem
 import com.kanso.core.model.SnippetCategory
 import com.kanso.core.model.SnippetItem
 import com.kanso.core.model.TaskItem
 import com.kanso.core.model.TaskPriority
+import com.kanso.core.model.TaskRecurrence
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -169,6 +171,12 @@ class BrainViewModel @Inject constructor(
         }
     }
 
+    fun toggleNoteChecklistLine(note: NoteItem, lineIndex: Int) {
+        viewModelScope.launch {
+            brainRepository.toggleNoteChecklistLine(note, lineIndex)
+        }
+    }
+
     fun deleteNote(id: Long) {
         viewModelScope.launch {
             brainRepository.deleteNote(id)
@@ -186,7 +194,8 @@ class BrainViewModel @Inject constructor(
         title: String,
         note: String,
         priority: TaskPriority,
-        dueDateEpochDay: Long?
+        dueDateEpochDay: Long?,
+        recurrence: TaskRecurrence = TaskRecurrence.NONE
     ) {
         val now = System.currentTimeMillis()
         viewModelScope.launch {
@@ -197,6 +206,7 @@ class BrainViewModel @Inject constructor(
                     note = note.trim(),
                     priority = priority,
                     dueDateEpochDay = dueDateEpochDay,
+                    recurrence = recurrence,
                     isCompleted = existing?.isCompleted ?: false,
                     createdAtMillis = existing?.createdAtMillis ?: now,
                     completedAtMillis = existing?.completedAtMillis
@@ -205,9 +215,15 @@ class BrainViewModel @Inject constructor(
         }
     }
 
-    fun toggleTaskCompleted(task: TaskItem) {
+    fun toggleTaskCompleted(
+        task: TaskItem,
+        onRescheduled: (previous: TaskItem, nextDueEpochDay: Long) -> Unit = { _, _ -> }
+    ) {
         viewModelScope.launch {
-            brainRepository.toggleTaskCompleted(task)
+            val outcome = brainRepository.toggleTaskCompleted(task)
+            if (outcome is TaskToggleOutcome.Rescheduled) {
+                onRescheduled(outcome.previous, outcome.nextDueEpochDay)
+            }
         }
     }
 

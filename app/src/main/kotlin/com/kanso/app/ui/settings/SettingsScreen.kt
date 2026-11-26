@@ -48,11 +48,13 @@ import androidx.compose.material.icons.outlined.InstallMobile
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.Restore
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material.icons.outlined.WaterDrop
 import androidx.compose.material.icons.outlined.Widgets
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -65,11 +67,15 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TimeInput
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -98,6 +104,8 @@ import com.kanso.core.backup.EncryptedBackupCrypto
 import com.kanso.core.backup.drive.DriveSyncState
 import com.kanso.core.model.AppCurrency
 import com.kanso.core.model.AppLockTimeout
+import com.kanso.core.model.BriefingCalculations
+import com.kanso.core.model.BriefingSlot
 import com.kanso.core.model.CurrencyFormatter
 import com.kanso.core.model.ThemeMode
 import com.kanso.core.security.BiometricAuthHelper
@@ -141,6 +149,7 @@ fun SettingsRoute(
     var showBudgetDialog by remember { mutableStateOf(false) }
     var showWaterGoalDialog by remember { mutableStateOf(false) }
     var showGithubTokenDialog by remember { mutableStateOf(false) }
+    var editingBriefingSlot by remember { mutableStateOf<BriefingSlot?>(null) }
     var autoInstallPending by remember { mutableStateOf(false) }
 
     var showExportPassphraseDialog by remember { mutableStateOf(false) }
@@ -206,7 +215,11 @@ fun SettingsRoute(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
         viewModel.setRemindersEnabled(granted)
-        KansoReminderScheduler.syncSchedule(context, granted)
+        KansoReminderScheduler.syncSchedule(
+            context = context,
+            prefs = prefs.copy(remindersEnabled = granted),
+            replaceExisting = true
+        )
     }
 
     val createBackupLauncher = rememberLauncherForActivityResult(
@@ -326,7 +339,7 @@ fun SettingsRoute(
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text("Local Daily Reminders", style = MaterialTheme.typography.bodyLarge)
                                     Text(
-                                        text = "WorkManager alerts for bills, expiries, and habits",
+                                        text = "Briefings for bills, expiries, maintenance, tasks & habits",
                                         style = MaterialTheme.typography.labelMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -344,10 +357,45 @@ fun SettingsRoute(
                                             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                                         } else {
                                             viewModel.setRemindersEnabled(wantEnabled)
-                                            KansoReminderScheduler.syncSchedule(context, wantEnabled)
+                                            KansoReminderScheduler.syncSchedule(
+                                                context = context,
+                                                prefs = prefs.copy(remindersEnabled = wantEnabled),
+                                                replaceExisting = true
+                                            )
                                         }
                                     }
                                 )
+                            }
+                            AnimatedVisibility(
+                                visible = prefs.remindersEnabled,
+                                enter = expandVertically(KansoMotion.SizeSpring) + fadeIn(tween(180)),
+                                exit = shrinkVertically() + fadeOut(tween(140))
+                            ) {
+                                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                                    BriefingScheduleRow(
+                                        title = "Morning Briefing",
+                                        subtitle = "Bills, tasks, expiries, maintenance & IOUs",
+                                        enabled = prefs.morningReminderEnabled,
+                                        timeText = BriefingCalculations.formatClockTime(
+                                            prefs.morningReminderHour,
+                                            prefs.morningReminderMinute
+                                        ),
+                                        onToggle = viewModel::setMorningReminderEnabled,
+                                        onPickTime = { editingBriefingSlot = BriefingSlot.MORNING }
+                                    )
+                                    BriefingScheduleRow(
+                                        title = "Evening Check-In",
+                                        subtitle = "Pending habits, hydration goal & open tasks",
+                                        enabled = prefs.eveningReminderEnabled,
+                                        timeText = BriefingCalculations.formatClockTime(
+                                            prefs.eveningReminderHour,
+                                            prefs.eveningReminderMinute
+                                        ),
+                                        onToggle = viewModel::setEveningReminderEnabled,
+                                        onPickTime = { editingBriefingSlot = BriefingSlot.EVENING }
+                                    )
+                                }
                             }
                         }
                     }
@@ -734,6 +782,31 @@ fun SettingsRoute(
             onSave = { goal ->
                 viewModel.setWaterGoalMl(goal)
                 showWaterGoalDialog = false
+            }
+        )
+    }
+
+    editingBriefingSlot?.let { slot ->
+        val (initHour, initMinute) = when (slot) {
+            BriefingSlot.MORNING -> prefs.morningReminderHour to prefs.morningReminderMinute
+            BriefingSlot.EVENING -> prefs.eveningReminderHour to prefs.eveningReminderMinute
+        }
+        ReminderTimePickerDialog(
+            slot = slot,
+            initialHour = initHour,
+            initialMinute = initMinute,
+            onDismiss = { editingBriefingSlot = null },
+            onConfirm = { hour, minute ->
+                when (slot) {
+                    BriefingSlot.MORNING -> viewModel.setMorningReminderTime(hour, minute)
+                    BriefingSlot.EVENING -> viewModel.setEveningReminderTime(hour, minute)
+                }
+                editingBriefingSlot = null
+                onShowMessage(
+                    "${if (slot == BriefingSlot.MORNING) "Morning briefing" else "Evening check-in"} set to ${
+                        BriefingCalculations.formatClockTime(hour, minute)
+                    }"
+                )
             }
         )
     }
@@ -1813,6 +1886,126 @@ private fun RestorePassphraseDialog(
             visualTransformation = PasswordVisualTransformation(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
         )
+    }
+}
+
+@Composable
+private fun BriefingScheduleRow(
+    title: String,
+    subtitle: String,
+    enabled: Boolean,
+    timeText: String,
+    onToggle: (Boolean) -> Unit,
+    onPickTime: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium))
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Surface(
+            modifier = Modifier
+                .clip(RoundedCornerShape(10.dp))
+                .clickable(enabled = enabled, onClick = onPickTime),
+            shape = RoundedCornerShape(10.dp),
+            color = if (enabled) {
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            },
+            border = BorderStroke(
+                1.dp,
+                if (enabled) {
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
+                } else {
+                    MaterialTheme.colorScheme.outlineVariant
+                }
+            )
+        ) {
+            Text(
+                text = timeText,
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                style = MaterialTheme.typography.labelLarge.copy(
+                    fontWeight = FontWeight.SemiBold,
+                    fontFeatureSettings = "tnum"
+                ),
+                color = if (enabled) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                }
+            )
+        }
+        Switch(checked = enabled, onCheckedChange = onToggle)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ReminderTimePickerDialog(
+    slot: BriefingSlot,
+    initialHour: Int,
+    initialMinute: Int,
+    onDismiss: () -> Unit,
+    onConfirm: (Int, Int) -> Unit
+) {
+    val isMorning = slot == BriefingSlot.MORNING
+    val presets = remember(slot) {
+        if (isMorning) {
+            listOf(6 to 30, 7 to 30, 8 to 0, 9 to 0)
+        } else {
+            listOf(19 to 0, 20 to 0, 20 to 30, 21 to 30)
+        }
+    }
+    var chosenHour by remember(slot, initialHour) { mutableIntStateOf(initialHour) }
+    var chosenMinute by remember(slot, initialMinute) { mutableIntStateOf(initialMinute) }
+    var presetVersion by remember { mutableIntStateOf(0) }
+
+    key(presetVersion) {
+        val pickerState = rememberTimePickerState(
+            initialHour = chosenHour,
+            initialMinute = chosenMinute,
+            is24Hour = true
+        )
+        KansoFormBottomSheet(
+            title = if (isMorning) "Morning Briefing Time" else "Evening Check-In Time",
+            onDismiss = onDismiss,
+            primaryLabel = "Save Schedule",
+            onPrimaryClick = { onConfirm(pickerState.hour, pickerState.minute) },
+            badgeText = BriefingCalculations.formatClockTime(pickerState.hour, pickerState.minute),
+            badgeIcon = Icons.Outlined.Schedule
+        ) {
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(presets, key = { "${it.first}:${it.second}" }) { (h, m) ->
+                    FilterChip(
+                        selected = pickerState.hour == h && pickerState.minute == m,
+                        onClick = {
+                            chosenHour = h
+                            chosenMinute = m
+                            presetVersion++
+                        },
+                        label = { Text(BriefingCalculations.formatClockTime(h, m)) }
+                    )
+                }
+            }
+
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                TimeInput(state = pickerState)
+            }
+        }
     }
 }
 

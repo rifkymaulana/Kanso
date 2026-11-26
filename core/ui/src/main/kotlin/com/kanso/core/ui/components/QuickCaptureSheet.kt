@@ -67,9 +67,11 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -78,8 +80,10 @@ import com.kanso.core.model.CurrencyFormatter
 import com.kanso.core.model.ExpenseCategory
 import com.kanso.core.model.ExpiryCategory
 import com.kanso.core.model.MoneyCalculations
+import com.kanso.core.model.NoteChecklistParser
 import com.kanso.core.model.SnippetCategory
 import com.kanso.core.model.TaskPriority
+import com.kanso.core.model.TaskRecurrence
 import com.kanso.core.model.TransactionType
 import com.kanso.core.model.WalletType
 import com.kanso.core.ui.theme.kansoColors
@@ -139,7 +143,7 @@ fun QuickCaptureSheet(
         timestampMillis: Long
     ) -> Unit = { _, _, _, _, _, _ -> },
     onSaveNote: (title: String, content: String, tags: List<String>, isPinned: Boolean) -> Unit,
-    onSaveTask: (title: String, priority: TaskPriority, dueDateEpochDay: Long?) -> Unit,
+    onSaveTask: (title: String, priority: TaskPriority, dueDateEpochDay: Long?, recurrence: TaskRecurrence) -> Unit,
     onSaveSnippet: (
         label: String,
         value: String,
@@ -174,7 +178,7 @@ fun QuickCaptureSheet(
 
     // Note state
     var noteTitle by remember { mutableStateOf("") }
-    var noteContent by remember { mutableStateOf("") }
+    var noteContent by remember { mutableStateOf(TextFieldValue("")) }
     var noteTagsText by remember { mutableStateOf("") }
     var notePinned by remember { mutableStateOf(false) }
 
@@ -182,6 +186,7 @@ fun QuickCaptureSheet(
     var taskTitle by remember { mutableStateOf("") }
     var taskPriority by remember { mutableStateOf(TaskPriority.MEDIUM) }
     var taskDueOption by remember { mutableStateOf(0) } // 0=Today, 1=Tomorrow, 2=Next Week, 3=None
+    var taskRecurrence by remember { mutableStateOf(TaskRecurrence.NONE) }
 
     // Snippet state
     var snippetLabel by remember { mutableStateOf("") }
@@ -780,6 +785,22 @@ fun QuickCaptureSheet(
                         shape = RoundedCornerShape(14.dp),
                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences)
                     )
+                    AssistChip(
+                        onClick = {
+                            val updated = NoteChecklistParser.appendChecklistItem(noteContent.text)
+                            noteContent = TextFieldValue(updated, TextRange(updated.length))
+                            errorText = null
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Outlined.CheckCircle,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        },
+                        label = { Text("+ Checklist item") },
+                        shape = RoundedCornerShape(50)
+                    )
                     OutlinedTextField(
                         value = noteTagsText,
                         onValueChange = { noteTagsText = it },
@@ -830,6 +851,21 @@ fun QuickCaptureSheet(
                                 selected = taskDueOption == index,
                                 onClick = { taskDueOption = index },
                                 label = { Text(label) }
+                            )
+                        }
+                    }
+                    Text("Repeat", style = MaterialTheme.typography.labelLarge)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TaskRecurrence.entries.forEach { rec ->
+                            FilterChip(
+                                selected = taskRecurrence == rec,
+                                onClick = {
+                                    taskRecurrence = rec
+                                    if (rec != TaskRecurrence.NONE && taskDueOption == 3) {
+                                        taskDueOption = 0
+                                    }
+                                },
+                                label = { Text(rec.label) }
                             )
                         }
                     }
@@ -1033,17 +1069,17 @@ fun QuickCaptureSheet(
                         }
 
                         QuickCaptureMode.NOTE -> {
-                            if (noteTitle.isBlank() && noteContent.isBlank()) {
+                            if (noteTitle.isBlank() && noteContent.text.isBlank()) {
                                 errorText = "Add a title or some note text."
                             } else {
                                 val resolvedTitle = noteTitle.trim().ifEmpty {
-                                    noteContent.trim().lineSequence().first().take(40)
+                                    noteContent.text.trim().lineSequence().first().take(40)
                                 }
                                 val tags = noteTagsText.split(',')
                                     .map { it.trim() }
                                     .filter { it.isNotEmpty() }
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                onSaveNote(resolvedTitle, noteContent.trim(), tags, notePinned)
+                                onSaveNote(resolvedTitle, noteContent.text.trim(), tags, notePinned)
                                 onDismiss()
                             }
                         }
@@ -1060,7 +1096,7 @@ fun QuickCaptureSheet(
                                     else -> null
                                 }
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                onSaveTask(taskTitle.trim(), taskPriority, dueDay)
+                                onSaveTask(taskTitle.trim(), taskPriority, dueDay, taskRecurrence)
                                 onDismiss()
                             }
                         }

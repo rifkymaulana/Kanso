@@ -7,6 +7,7 @@ import com.kanso.core.database.repository.BrainRepository
 import com.kanso.core.database.repository.HabitsRepository
 import com.kanso.core.database.repository.LifeAdminRepository
 import com.kanso.core.database.repository.MoneyRepository
+import com.kanso.core.database.repository.TaskToggleOutcome
 import com.kanso.core.model.AppCurrency
 import com.kanso.core.model.CategoryBudget
 import com.kanso.core.model.CoachInsight
@@ -15,6 +16,7 @@ import com.kanso.core.model.HabitItem
 import com.kanso.core.model.IouDirection
 import com.kanso.core.model.IouEntry
 import com.kanso.core.model.LifeAdminCalculations
+import com.kanso.core.model.MaintenanceLog
 import com.kanso.core.model.MoneyCalculations
 import com.kanso.core.model.MoneyTransaction
 import com.kanso.core.model.NoteItem
@@ -49,8 +51,10 @@ data class TodayUiState(
     val monthlyBudgetCents: Long = 0L,
     val dueBills: List<RecurringBill> = emptyList(),
     val expiringItems: List<ExpiryItem> = emptyList(),
+    val dueMaintenanceLogs: List<MaintenanceLog> = emptyList(),
     val dueOrOverdueTasksCount: Int = 0,
     val openIouCount: Int = 0,
+    val dueSoonIousCount: Int = 0,
     val openIouNetCents: Long = 0L,
     val todayHabitsDone: Int = 0,
     val todayHabitsTotal: Int = 0,
@@ -65,7 +69,11 @@ data class TodayUiState(
     val hideBalances: Boolean = false
 ) {
     val hasAttentionItems: Boolean
-        get() = dueBills.isNotEmpty() || expiringItems.isNotEmpty() || dueOrOverdueTasksCount > 0 || openIouCount > 0
+        get() = dueBills.isNotEmpty() ||
+            expiringItems.isNotEmpty() ||
+            dueMaintenanceLogs.isNotEmpty() ||
+            dueOrOverdueTasksCount > 0 ||
+            openIouCount > 0
 }
 
 @HiltViewModel
@@ -108,9 +116,16 @@ class TodayViewModel @Inject constructor(
         habitsRepository.observeActiveHabits(),
         habitsRepository.observeCompletionsSince(todayEpoch),
         habitsRepository.observeHealthLog(todayEpoch),
-        lifeAdminRepository.observeExpiries()
-    ) { habits, todayCompletions, healthLog, expiries ->
-        LifeHabitsBundle(habits, todayCompletions.map { it.habitId }.toSet(), healthLog?.waterMl ?: 0, expiries)
+        lifeAdminRepository.observeExpiries(),
+        lifeAdminRepository.observeMaintenanceLogs()
+    ) { habits, todayCompletions, healthLog, expiries, maintenanceLogs ->
+        LifeHabitsBundle(
+            habits = habits,
+            completedTodayIds = todayCompletions.map { it.habitId }.toSet(),
+            todayWaterMl = healthLog?.waterMl ?: 0,
+            expiries = expiries,
+            maintenanceLogs = maintenanceLogs
+        )
     }
 
     val uiState: StateFlow<TodayUiState> = combine(
@@ -144,6 +159,11 @@ class TodayViewModel @Inject constructor(
         val expiring = lifeHabits.expiries
             .filter { LifeAdminCalculations.needsAttention(it, todayEpochDay) }
             .take(3)
+        val dueMaintenance = LifeAdminCalculations.activeDueMaintenanceLogs(
+            logs = lifeHabits.maintenanceLogs,
+            todayEpochDay = todayEpochDay,
+            withinDays = 14
+        ).take(3)
 
         val openTasks = tasks.filter { !it.isCompleted }
         val dueOrOverdueCount = openTasks.count { task ->
@@ -161,6 +181,7 @@ class TodayViewModel @Inject constructor(
             .take(5)
 
         val openIous = ious.filter { !it.isSettled }
+        val dueSoonIousCount = openIous.count { MoneyCalculations.isIouDueSoon(it, todayEpochDay, withinDays = 3) }
         val iouNet = openIous.sumOf { entry ->
             if (entry.direction == IouDirection.OWES_ME) entry.amountCents else -entry.amountCents
         }
@@ -220,8 +241,10 @@ class TodayViewModel @Inject constructor(
             monthlyBudgetCents = prefs.overallMonthlyBudgetCents,
             dueBills = dueBills,
             expiringItems = expiring,
+            dueMaintenanceLogs = dueMaintenance,
             dueOrOverdueTasksCount = dueOrOverdueCount,
             openIouCount = openIous.size,
+            dueSoonIousCount = dueSoonIousCount,
             openIouNetCents = iouNet,
             todayHabitsDone = doneHabitCount,
             todayHabitsTotal = lifeHabits.habits.size,
@@ -243,9 +266,27 @@ class TodayViewModel @Inject constructor(
         )
     )
 
-    fun toggleTaskComplete(task: TaskItem) {
+    fun toggleTaskComplete(
+        task: TaskItem,
+        onRescheduled: (previous: TaskItem, nextDueEpochDay: Long) -> Unit = { _, _ -> }
+    ) {
         viewModelScope.launch {
-            brainRepository.toggleTaskCompleted(task)
+            val outcome = brainRepository.toggleTaskCompleted(task)
+            if (outcome is TaskToggleOutcome.Rescheduled) {
+                onRescheduled(outcome.previous, outcome.nextDueEpochDay)
+            }
+        }
+    }
+
+    fun restoreTask(task: TaskItem) {
+        viewModelScope.launch {
+            brainRepository.upsertTask(task)
+        }
+    }
+
+    fun toggleNoteChecklistLine(note: NoteItem, lineIndex: Int) {
+        viewModelScope.launch {
+            brainRepository.toggleNoteChecklistLine(note, lineIndex)
         }
     }
 
@@ -289,6 +330,7 @@ class TodayViewModel @Inject constructor(
         val habits: List<HabitItem>,
         val completedTodayIds: Set<Long>,
         val todayWaterMl: Int,
-        val expiries: List<ExpiryItem>
+        val expiries: List<ExpiryItem>,
+        val maintenanceLogs: List<MaintenanceLog>
     )
 }

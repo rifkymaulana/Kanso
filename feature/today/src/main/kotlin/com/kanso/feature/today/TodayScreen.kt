@@ -30,6 +30,7 @@ import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.LocalFireDepartment
 import androidx.compose.material.icons.outlined.NotificationsActive
+import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.TaskAlt
@@ -57,6 +58,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import com.kanso.core.model.AppCurrency
 import com.kanso.core.model.BudgetAnchorSource
 import com.kanso.core.model.CoachActionTarget
@@ -66,6 +68,7 @@ import com.kanso.core.model.CurrencyFormatter
 import com.kanso.core.model.ExpenseCategory
 import com.kanso.core.model.HabitItem
 import com.kanso.core.model.LifeAdminCalculations
+import com.kanso.core.model.NoteChecklistParser
 import com.kanso.core.model.NoteItem
 import com.kanso.core.model.RecurringBill
 import com.kanso.core.model.SafeToSpendReport
@@ -76,6 +79,7 @@ import com.kanso.core.model.SnippetMasker
 import com.kanso.core.model.SpendPaceStatus
 import com.kanso.core.model.TaskItem
 import com.kanso.core.model.TaskPriority
+import com.kanso.core.model.TaskRecurrence
 import com.kanso.core.model.WalletType
 import com.kanso.core.ui.components.KansoAccentIconBadge
 import com.kanso.core.ui.components.KansoAnimatedCurrencyText
@@ -89,6 +93,7 @@ import com.kanso.core.ui.components.KansoCompactEmptyHint
 import com.kanso.core.ui.components.KansoDateFormatters
 import com.kanso.core.ui.components.KansoHeroCard
 import com.kanso.core.ui.components.KansoMotion
+import com.kanso.core.ui.components.KansoNoteChecklistPreview
 import com.kanso.core.ui.components.KansoPillBadge
 import com.kanso.core.ui.components.KansoPrivacyEyeButton
 import com.kanso.core.ui.components.KansoProgressRing
@@ -111,7 +116,9 @@ fun TodayRoute(
     onOpenBrainTab: (Int) -> Unit,
     onOpenHabits: () -> Unit = {},
     onOpenExpiries: () -> Unit = {},
+    onOpenMaintenance: () -> Unit = {},
     onShowMessage: (String) -> Unit,
+    onShowUndoMessage: (String, () -> Unit) -> Unit = { msg, _ -> onShowMessage(msg) },
     onBalancesVisibilityChanged: () -> Unit = {},
     viewModel: TodayViewModel = hiltViewModel()
 ) {
@@ -127,11 +134,21 @@ fun TodayRoute(
         onOpenBrainTab = onOpenBrainTab,
         onOpenHabits = onOpenHabits,
         onOpenExpiries = onOpenExpiries,
+        onOpenMaintenance = onOpenMaintenance,
         onToggleHideBalances = {
             viewModel.toggleHideBalances()
             onBalancesVisibilityChanged()
         },
-        onToggleTask = viewModel::toggleTaskComplete,
+        onToggleTask = { task ->
+            viewModel.toggleTaskComplete(task) { previous, nextDueDay ->
+                val nextLabel = KansoDateFormatters.formatEpochDayLabel(nextDueDay)
+                    ?: KansoDateFormatters.formatFullDate(nextDueDay)
+                onShowUndoMessage("Completed · Next due $nextLabel") {
+                    viewModel.restoreTask(previous)
+                }
+            }
+        },
+        onToggleNoteChecklistLine = viewModel::toggleNoteChecklistLine,
         onToggleHabit = { habit ->
             viewModel.toggleHabitToday(habit.id)
             onShowMessage("Completed ${habit.name}")
@@ -161,8 +178,10 @@ fun TodayScreenContent(
     onOpenBrainTab: (Int) -> Unit,
     onOpenHabits: () -> Unit = {},
     onOpenExpiries: () -> Unit = {},
+    onOpenMaintenance: () -> Unit = {},
     onToggleHideBalances: () -> Unit = {},
     onToggleTask: (TaskItem) -> Unit,
+    onToggleNoteChecklistLine: (NoteItem, Int) -> Unit = { _, _ -> },
     onToggleHabit: (HabitItem) -> Unit = {},
     onAddWater250: () -> Unit = {},
     onPayBill: (RecurringBill) -> Unit,
@@ -266,7 +285,8 @@ fun TodayScreenContent(
                         },
                         onOpenMoney = onOpenMoney,
                         onOpenTasks = { onOpenBrainTab(1) },
-                        onOpenExpiries = onOpenExpiries
+                        onOpenExpiries = onOpenExpiries,
+                        onOpenMaintenance = onOpenMaintenance
                     )
                 }
             }
@@ -462,6 +482,7 @@ fun TodayScreenContent(
                                         modifier = Modifier.weight(1f),
                                         verticalArrangement = Arrangement.spacedBy(4.dp)
                                     ) {
+                                        val parsed = remember(note.content) { NoteChecklistParser.parse(note.content) }
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
                                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -474,6 +495,13 @@ fun TodayScreenContent(
                                                 overflow = TextOverflow.Ellipsis,
                                                 modifier = Modifier.weight(1f)
                                             )
+                                            if (parsed.hasChecklist) {
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                KansoPillBadge(
+                                                    text = "${parsed.checkedCount}/${parsed.totalCount}",
+                                                    color = if (parsed.isAllChecked) kansoColors.income else kansoColors.brainAccent
+                                                )
+                                            }
                                             Spacer(modifier = Modifier.width(8.dp))
                                             Text(
                                                 text = KansoDateFormatters.formatShortDate(note.updatedAtMillis),
@@ -481,7 +509,24 @@ fun TodayScreenContent(
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
                                         }
-                                        if (note.content.isNotBlank()) {
+                                        if (parsed.hasChecklist) {
+                                            val plainText = parsed.plainPreviewLines.take(1).joinToString("\n")
+                                            if (plainText.isNotBlank()) {
+                                                Text(
+                                                    text = plainText,
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                            KansoNoteChecklistPreview(
+                                                items = parsed.items,
+                                                accentColor = kansoColors.brainAccent,
+                                                onToggleLine = { lineIdx -> onToggleNoteChecklistLine(note, lineIdx) },
+                                                maxVisible = 4
+                                            )
+                                        } else if (note.content.isNotBlank()) {
                                             Text(
                                                 text = note.content,
                                                 style = MaterialTheme.typography.bodyMedium,
@@ -846,12 +891,14 @@ private fun AttentionBentoCard(
     onPayBill: (RecurringBill) -> Unit,
     onOpenMoney: () -> Unit,
     onOpenTasks: () -> Unit,
-    onOpenExpiries: () -> Unit
+    onOpenExpiries: () -> Unit,
+    onOpenMaintenance: () -> Unit
 ) {
     val warning = warningSemanticColor()
     val count = uiState.dueBills.size +
         (if (uiState.dueOrOverdueTasksCount > 0) 1 else 0) +
         uiState.expiringItems.size +
+        uiState.dueMaintenanceLogs.size +
         (if (uiState.openIouCount > 0) 1 else 0)
 
     KansoBentoCard(
@@ -968,6 +1015,41 @@ private fun AttentionBentoCard(
                 }
             }
 
+            if (uiState.dueMaintenanceLogs.isNotEmpty()) {
+                val todayEpoch = LocalDate.now().toEpochDay()
+                uiState.dueMaintenanceLogs.forEach { log ->
+                    val dueDay = log.nextDueEpochDay ?: todayEpoch
+                    val delta = LifeAdminCalculations.daysUntilExpiry(dueDay, todayEpoch)
+                    val label = when {
+                        delta < 0L -> "${log.assetName} · ${log.serviceDescription} overdue ${-delta}d"
+                        delta == 0L -> "${log.assetName} · ${log.serviceDescription} due today"
+                        else -> "${log.assetName} · ${log.serviceDescription} due in ${delta}d"
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable(onClick = onOpenMaintenance)
+                            .padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = "Service →",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = warning
+                        )
+                    }
+                }
+            }
+
             if (uiState.openIouCount > 0) {
                 Row(
                     modifier = Modifier
@@ -978,15 +1060,23 @@ private fun AttentionBentoCard(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "${uiState.openIouCount} open IOU(s) · Net ${
+                    val iouSummary = buildString {
+                        append("${uiState.openIouCount} open IOU(s)")
+                        if (uiState.dueSoonIousCount > 0) {
+                            append(" (${uiState.dueSoonIousCount} due)")
+                        }
+                        append(" · Net ")
+                        append(
                             CurrencyFormatter.formatOrMask(
                                 uiState.openIouNetCents,
                                 uiState.currency,
                                 hidden = uiState.hideBalances,
                                 showSign = true
                             )
-                        }",
+                        )
+                    }
+                    Text(
+                        text = iouSummary,
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.weight(1f)
                     )
@@ -1042,7 +1132,7 @@ private fun FocusTaskRow(
                     MaterialTheme.colorScheme.onSurface
                 }
             )
-            if (dueLabel != null || task.priority == TaskPriority.HIGH) {
+            if (dueLabel != null || task.priority == TaskPriority.HIGH || task.recurrence != TaskRecurrence.NONE) {
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -1051,6 +1141,13 @@ private fun FocusTaskRow(
                         KansoPillBadge(
                             text = dueLabel,
                             color = if (isOverdue) expenseSemanticColor() else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    if (task.recurrence != TaskRecurrence.NONE) {
+                        KansoPillBadge(
+                            text = task.recurrence.shortLabel,
+                            color = accentColor,
+                            leadingIcon = Icons.Outlined.Repeat
                         )
                     }
                     if (task.priority == TaskPriority.HIGH) {

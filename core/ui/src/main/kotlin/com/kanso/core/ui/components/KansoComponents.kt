@@ -117,6 +117,7 @@ import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -124,6 +125,7 @@ import com.kanso.core.model.AppCurrency
 import com.kanso.core.model.CurrencyFormatter
 import com.kanso.core.model.ExpenseCategory
 import com.kanso.core.model.GoalCategory
+import com.kanso.core.model.NoteChecklistLine
 import com.kanso.core.model.TransactionType
 import com.kanso.core.model.WalletType
 import com.kanso.core.ui.theme.LocalBalancesHidden
@@ -1575,6 +1577,84 @@ object KansoDateFormatters {
             .atZone(ZoneId.systemDefault())
             .toLocalDateTime()
             .format(dateTimeFormatter)
+    }
+}
+
+@Composable
+fun KansoNoteChecklistPreview(
+    items: List<NoteChecklistLine>,
+    accentColor: Color,
+    onToggleLine: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+    maxVisible: Int = 5
+) {
+    if (items.isEmpty()) return
+    val haptic = LocalHapticFeedback.current
+    val visibleItems = items.take(maxVisible)
+    val hiddenCount = (items.size - visibleItems.size).coerceAtLeast(0)
+
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        visibleItems.forEach { item ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onToggleLine(item.lineIndex)
+                    }
+                    .padding(horizontal = 4.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(18.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(if (item.isChecked) accentColor else Color.Transparent)
+                        .border(
+                            width = 1.5.dp,
+                            color = if (item.isChecked) accentColor else MaterialTheme.colorScheme.outline,
+                            shape = RoundedCornerShape(6.dp)
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (item.isChecked) {
+                        Icon(
+                            imageVector = Icons.Rounded.Check,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(13.dp)
+                        )
+                    }
+                }
+                Text(
+                    text = item.text,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        textDecoration = if (item.isChecked) TextDecoration.LineThrough else TextDecoration.None
+                    ),
+                    color = if (item.isChecked) {
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    },
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+        if (hiddenCount > 0) {
+            Text(
+                text = "+$hiddenCount more item${if (hiddenCount == 1) "" else "s"}",
+                style = MaterialTheme.typography.labelMedium,
+                color = accentColor,
+                modifier = Modifier.padding(start = 4.dp, top = 2.dp)
+            )
+        }
     }
 }
 

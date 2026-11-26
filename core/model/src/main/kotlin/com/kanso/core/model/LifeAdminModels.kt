@@ -93,4 +93,34 @@ object LifeAdminCalculations {
     fun needsAttention(item: ExpiryItem, todayEpochDay: Long): Boolean {
         return urgency(item, todayEpochDay) != ExpiryUrgency.SAFE
     }
+
+    fun isMaintenanceDueSoon(
+        log: MaintenanceLog,
+        todayEpochDay: Long,
+        withinDays: Int = 14
+    ): Boolean {
+        val due = log.nextDueEpochDay ?: return false
+        return due <= todayEpochDay + withinDays.toLong()
+    }
+
+    fun activeDueMaintenanceLogs(
+        logs: List<MaintenanceLog>,
+        todayEpochDay: Long,
+        withinDays: Int = 14
+    ): List<MaintenanceLog> {
+        return logs
+            .groupBy {
+                Triple(
+                    it.category,
+                    it.assetName.trim().lowercase(),
+                    it.serviceDescription.trim().lowercase()
+                )
+            }
+            .values
+            .mapNotNull { group ->
+                group.maxWithOrNull(compareBy<MaintenanceLog> { it.serviceEpochDay }.thenBy { it.id })
+            }
+            .filter { isMaintenanceDueSoon(it, todayEpochDay, withinDays) }
+            .sortedBy { it.nextDueEpochDay ?: Long.MAX_VALUE }
+    }
 }

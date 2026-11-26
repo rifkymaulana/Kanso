@@ -49,6 +49,10 @@
                 android:resource="@xml/kanso_today_widget_info" />
         </receiver>
 
+        <receiver
+            android:name=".notifications.NotificationActionReceiver"
+            android:exported="false" />
+
         <service
             android:name=".tile.KansoQuickCaptureTileService"
             android:exported="true"

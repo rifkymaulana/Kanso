@@ -111,6 +111,22 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { preferencesRepository.setRemindersEnabled(enabled) }
     }
 
+    fun setMorningReminderEnabled(enabled: Boolean) {
+        viewModelScope.launch { preferencesRepository.setMorningReminderEnabled(enabled) }
+    }
+
+    fun setMorningReminderTime(hour: Int, minute: Int) {
+        viewModelScope.launch { preferencesRepository.setMorningReminderTime(hour, minute) }
+    }
+
+    fun setEveningReminderEnabled(enabled: Boolean) {
+        viewModelScope.launch { preferencesRepository.setEveningReminderEnabled(enabled) }
+    }
+
+    fun setEveningReminderTime(hour: Int, minute: Int) {
+        viewModelScope.launch { preferencesRepository.setEveningReminderTime(hour, minute) }
+    }
+
     fun setAutoCheckUpdates(enabled: Boolean) {
         viewModelScope.launch { preferencesRepository.setAutoCheckUpdates(enabled) }
     }

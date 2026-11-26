@@ -7,13 +7,16 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -29,13 +32,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
+import com.kanso.core.model.NoteChecklistParser
 import com.kanso.core.model.NoteItem
 import com.kanso.core.model.SnippetCategory
 import com.kanso.core.model.SnippetItem
 import com.kanso.core.model.TaskItem
 import com.kanso.core.model.TaskPriority
+import com.kanso.core.model.TaskRecurrence
 import com.kanso.core.ui.components.KansoButtonSize
 import com.kanso.core.ui.components.KansoDateFormatters
 import com.kanso.core.ui.components.KansoDatePickerDialog
@@ -52,7 +59,14 @@ fun NoteEditorDialog(
     onDelete: (() -> Unit)? = null
 ) {
     var title by remember { mutableStateOf(initial?.title.orEmpty()) }
-    var content by remember { mutableStateOf(initial?.content.orEmpty()) }
+    var content by remember {
+        mutableStateOf(
+            TextFieldValue(
+                text = initial?.content.orEmpty(),
+                selection = TextRange(initial?.content.orEmpty().length)
+            )
+        )
+    }
     var tagsText by remember { mutableStateOf(initial?.tags?.joinToString(", ").orEmpty()) }
     var isPinned by remember { mutableStateOf(initial?.isPinned ?: false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -70,14 +84,14 @@ fun NoteEditorDialog(
         onSecondaryClick = onDelete,
         errorText = error,
         onPrimaryClick = {
-            if (title.isBlank() && content.isBlank()) {
+            if (title.isBlank() && content.text.isBlank()) {
                 error = "Enter a title or note content."
             } else {
                 val resolvedTitle = title.trim().ifEmpty {
-                    content.trim().lineSequence().first().take(40)
+                    content.text.trim().lineSequence().first().take(40)
                 }
                 val tags = tagsText.split(',').map { it.trim() }.filter { it.isNotEmpty() }
-                onSave(resolvedTitle, content, tags, isPinned)
+                onSave(resolvedTitle, content.text, tags, isPinned)
             }
         }
     ) {
@@ -105,6 +119,22 @@ fun NoteEditorDialog(
             maxLines = 8,
             shape = RoundedCornerShape(14.dp),
             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences)
+        )
+        AssistChip(
+            onClick = {
+                val updated = NoteChecklistParser.appendChecklistItem(content.text)
+                content = TextFieldValue(updated, TextRange(updated.length))
+                error = null
+            },
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Outlined.CheckCircle,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp)
+                )
+            },
+            label = { Text("+ Checklist item") },
+            shape = RoundedCornerShape(50)
         )
         OutlinedTextField(
             value = tagsText,
@@ -137,12 +167,13 @@ fun NoteEditorDialog(
 fun TaskEditorDialog(
     initial: TaskItem?,
     onDismiss: () -> Unit,
-    onSave: (title: String, note: String, priority: TaskPriority, dueDateEpochDay: Long?) -> Unit,
+    onSave: (title: String, note: String, priority: TaskPriority, dueDateEpochDay: Long?, recurrence: TaskRecurrence) -> Unit,
     onDelete: (() -> Unit)? = null
 ) {
     var title by remember { mutableStateOf(initial?.title.orEmpty()) }
     var note by remember { mutableStateOf(initial?.note.orEmpty()) }
     var priority by remember { mutableStateOf(initial?.priority ?: TaskPriority.MEDIUM) }
+    var recurrence by remember { mutableStateOf(initial?.recurrence ?: TaskRecurrence.NONE) }
     val today = remember { LocalDate.now() }
     val initialDueChoice = remember(initial, today) {
         val due = initial?.dueDateEpochDay
@@ -185,7 +216,7 @@ fun TaskEditorDialog(
                     3 -> customDueEpochDay
                     else -> null
                 }
-                onSave(title, note, priority, dueDay)
+                onSave(title, note, priority, dueDay, recurrence)
             }
         }
     ) {
@@ -257,6 +288,21 @@ fun TaskEditorDialog(
                     text = "Change Date",
                     size = KansoButtonSize.COMPACT,
                     onClick = { showDatePicker = true }
+                )
+            }
+        }
+        Text("Repeat", style = MaterialTheme.typography.labelLarge)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TaskRecurrence.entries.forEach { rec ->
+                FilterChip(
+                    selected = recurrence == rec,
+                    onClick = {
+                        recurrence = rec
+                        if (rec != TaskRecurrence.NONE && dueChoice == 4) {
+                            dueChoice = 0
+                        }
+                    },
+                    label = { Text(rec.label) }
                 )
             }
         }

@@ -351,7 +351,9 @@ fun KansoAppRoot(
                         onOpenBrainTab = openBrainTab,
                         onOpenHabits = { navController.navigate(Routes.HABITS) },
                         onOpenExpiries = { navController.navigate(Routes.lifeAdmin(0)) },
+                        onOpenMaintenance = { navController.navigate(Routes.lifeAdmin(1)) },
                         onShowMessage = showMessage,
+                        onShowUndoMessage = showUndoMessage,
                         onBalancesVisibilityChanged = refreshWidgets
                     )
                 }
@@ -479,8 +481,8 @@ fun KansoAppRoot(
                 showMessage("Saved note")
                 scope.launch { KansoWidgetUpdater.updateAll(context) }
             },
-            onSaveTask = { title, priority, dueDateEpochDay ->
-                mainViewModel.saveQuickTask(title, priority, dueDateEpochDay)
+            onSaveTask = { title, priority, dueDateEpochDay, recurrence ->
+                mainViewModel.saveQuickTask(title, priority, dueDateEpochDay, recurrence)
                 showMessage("Saved task")
                 scope.launch { KansoWidgetUpdater.updateAll(context) }
             },

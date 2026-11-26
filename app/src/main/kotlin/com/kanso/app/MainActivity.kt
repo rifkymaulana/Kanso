@@ -134,8 +134,24 @@ class MainActivity : FragmentActivity() {
                 }
             }
 
-            LaunchedEffect(prefs.remindersEnabled) {
-                KansoReminderScheduler.syncSchedule(this@MainActivity, prefs.remindersEnabled)
+            var initialReminderSync by remember { mutableStateOf(true) }
+            LaunchedEffect(
+                isPrefsLoaded,
+                prefs.remindersEnabled,
+                prefs.morningReminderEnabled,
+                prefs.morningReminderHour,
+                prefs.morningReminderMinute,
+                prefs.eveningReminderEnabled,
+                prefs.eveningReminderHour,
+                prefs.eveningReminderMinute
+            ) {
+                if (!isPrefsLoaded) return@LaunchedEffect
+                KansoReminderScheduler.syncSchedule(
+                    context = this@MainActivity,
+                    prefs = prefs,
+                    replaceExisting = !initialReminderSync
+                )
+                initialReminderSync = false
             }
 
             LaunchedEffect(driveConfig.isConnected, driveConfig.autoSyncEnabled, driveConfig.hasPassphrase) {

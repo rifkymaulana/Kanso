@@ -32,6 +32,7 @@ import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.PushPin
+import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.SnippetFolder
 import androidx.compose.material.icons.outlined.TaskAlt
@@ -69,18 +70,21 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.kanso.core.model.NoteChecklistParser
 import com.kanso.core.model.NoteItem
 import com.kanso.core.model.SnippetCategory
 import com.kanso.core.model.SnippetItem
 import com.kanso.core.model.SnippetMasker
 import com.kanso.core.model.TaskItem
 import com.kanso.core.model.TaskPriority
+import com.kanso.core.model.TaskRecurrence
 import com.kanso.core.ui.components.KansoBentoCard
 import com.kanso.core.ui.components.KansoButtonSize
 import com.kanso.core.ui.components.KansoCheckCircle
 import com.kanso.core.ui.components.KansoDateFormatters
 import com.kanso.core.ui.components.KansoEmptyState
 import com.kanso.core.ui.components.KansoMotion
+import com.kanso.core.ui.components.KansoNoteChecklistPreview
 import com.kanso.core.ui.components.KansoPillBadge
 import com.kanso.core.ui.components.KansoSegmentedRow
 import com.kanso.core.ui.components.KansoSmallIconButton
@@ -118,10 +122,19 @@ fun BrainRoute(
         onAddNote = { showNewNoteDialog = true },
         onEditNote = { editingNote = it },
         onTogglePinNote = viewModel::togglePinNote,
+        onToggleNoteChecklistLine = viewModel::toggleNoteChecklistLine,
         onSelectTaskFilter = viewModel::setTaskFilter,
         onAddTask = { showNewTaskDialog = true },
         onEditTask = { editingTask = it },
-        onToggleTask = viewModel::toggleTaskCompleted,
+        onToggleTask = { task ->
+            viewModel.toggleTaskCompleted(task) { previous, nextDueDay ->
+                val nextLabel = KansoDateFormatters.formatEpochDayLabel(nextDueDay)
+                    ?: KansoDateFormatters.formatFullDate(nextDueDay)
+                onShowUndoMessage("Completed · Next due $nextLabel") {
+                    viewModel.restoreTask(previous)
+                }
+            }
+        },
         onSelectSnippetCategory = viewModel::setSnippetCategory,
         onAddSnippet = { showNewSnippetDialog = true },
         onEditSnippet = { editingSnippet = it },
@@ -165,8 +178,8 @@ fun BrainRoute(
                 showNewTaskDialog = false
                 editingTask = null
             },
-            onSave = { title, note, priority, dueDay ->
-                viewModel.saveTask(current, title, note, priority, dueDay)
+            onSave = { title, note, priority, dueDay, recurrence ->
+                viewModel.saveTask(current, title, note, priority, dueDay, recurrence)
                 showNewTaskDialog = false
                 editingTask = null
             },
@@ -217,6 +230,7 @@ fun BrainScreenContent(
     onAddNote: () -> Unit,
     onEditNote: (NoteItem) -> Unit,
     onTogglePinNote: (NoteItem) -> Unit,
+    onToggleNoteChecklistLine: (NoteItem, Int) -> Unit = { _, _ -> },
     onSelectTaskFilter: (TaskFilter) -> Unit,
     onAddTask: () -> Unit,
     onEditTask: (TaskItem) -> Unit,
@@ -285,7 +299,8 @@ fun BrainScreenContent(
                     onSelectTag = onSelectTag,
                     onAddNote = onAddNote,
                     onEditNote = onEditNote,
-                    onTogglePinNote = onTogglePinNote
+                    onTogglePinNote = onTogglePinNote,
+                    onToggleNoteChecklistLine = onToggleNoteChecklistLine
                 )
 
                 1 -> TasksTabContent(
@@ -316,7 +331,8 @@ private fun NotesTabContent(
     onSelectTag: (String?) -> Unit,
     onAddNote: () -> Unit,
     onEditNote: (NoteItem) -> Unit,
-    onTogglePinNote: (NoteItem) -> Unit
+    onTogglePinNote: (NoteItem) -> Unit,
+    onToggleNoteChecklistLine: (NoteItem, Int) -> Unit
 ) {
     val brainAccent = MaterialTheme.kansoColors.brainAccent
 
@@ -408,6 +424,7 @@ private fun NotesTabContent(
                             modifier = Modifier.weight(1f),
                             verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
+                            val parsed = remember(note.content) { NoteChecklistParser.parse(note.content) }
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -420,6 +437,17 @@ private fun NotesTabContent(
                                     overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier.weight(1f)
                                 )
+                                if (parsed.hasChecklist) {
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    KansoPillBadge(
+                                        text = "${parsed.checkedCount}/${parsed.totalCount}",
+                                        color = if (parsed.isAllChecked) {
+                                            MaterialTheme.kansoColors.income
+                                        } else {
+                                            brainAccent
+                                        }
+                                    )
+                                }
                                 KansoSmallIconButton(
                                     icon = if (note.isPinned) Icons.Filled.PushPin else Icons.Outlined.PushPin,
                                     contentDescription = if (note.isPinned) "Unpin" else "Pin",
@@ -428,7 +456,24 @@ private fun NotesTabContent(
                                 )
                             }
 
-                            if (note.content.isNotBlank()) {
+                            if (parsed.hasChecklist) {
+                                val plainText = parsed.plainPreviewLines.take(2).joinToString("\n")
+                                if (plainText.isNotBlank()) {
+                                    Text(
+                                        text = plainText,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                                KansoNoteChecklistPreview(
+                                    items = parsed.items,
+                                    accentColor = brainAccent,
+                                    onToggleLine = { lineIdx -> onToggleNoteChecklistLine(note, lineIdx) },
+                                    maxVisible = 6
+                                )
+                            } else if (note.content.isNotBlank()) {
                                 Text(
                                     text = note.content,
                                     style = MaterialTheme.typography.bodyMedium,
@@ -555,12 +600,19 @@ private fun TasksTabContent(
                                     overflow = TextOverflow.Ellipsis
                                 )
                             }
-                            if (dueLabel != null || task.priority != TaskPriority.MEDIUM) {
+                            if (dueLabel != null || task.priority != TaskPriority.MEDIUM || task.recurrence != TaskRecurrence.NONE) {
                                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                     if (dueLabel != null) {
                                         KansoPillBadge(
                                             text = dueLabel,
                                             color = if (isOverdue) expenseSemanticColor() else MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    if (task.recurrence != TaskRecurrence.NONE) {
+                                        KansoPillBadge(
+                                            text = task.recurrence.shortLabel,
+                                            color = brainAccent,
+                                            leadingIcon = Icons.Outlined.Repeat
                                         )
                                     }
                                     if (task.priority == TaskPriority.HIGH) {

@@ -32,7 +32,8 @@ object DatabaseModule {
             .addMigrations(
                 KansoDatabase.MIGRATION_1_2,
                 KansoDatabase.MIGRATION_2_3,
-                KansoDatabase.MIGRATION_3_4
+                KansoDatabase.MIGRATION_3_4,
+                KansoDatabase.MIGRATION_4_5
             )
             .build()
     }

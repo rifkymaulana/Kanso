@@ -349,6 +349,16 @@ object MoneyCalculations {
         return !dueDate.isAfter(today.plusDays(withinDays.toLong()))
     }
 
+    fun isIouDueSoon(
+        iou: IouEntry,
+        todayEpochDay: Long,
+        withinDays: Int = 3
+    ): Boolean {
+        if (iou.isSettled) return false
+        val due = iou.dueDateEpochDay ?: return false
+        return due <= todayEpochDay + withinDays.toLong()
+    }
+
     enum class GoalPaceState(val label: String) {
         COMPLETED("Target Reached"),
         ON_TRACK("Active Target"),

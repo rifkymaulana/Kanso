@@ -33,7 +33,13 @@ data class UserPreferences(
     val appLockEnabled: Boolean = false,
     val appLockTimeout: AppLockTimeout = AppLockTimeout.IMMEDIATE,
     val hideRecentAppsPreview: Boolean = false,
-    val hideBalances: Boolean = false
+    val hideBalances: Boolean = false,
+    val morningReminderEnabled: Boolean = true,
+    val morningReminderHour: Int = 8,
+    val morningReminderMinute: Int = 0,
+    val eveningReminderEnabled: Boolean = true,
+    val eveningReminderHour: Int = 20,
+    val eveningReminderMinute: Int = 30
 )
 
 data class AppLockSession(

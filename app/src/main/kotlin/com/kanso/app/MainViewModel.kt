@@ -23,6 +23,7 @@ import com.kanso.core.model.SnippetCategory
 import com.kanso.core.model.SnippetItem
 import com.kanso.core.model.TaskItem
 import com.kanso.core.model.TaskPriority
+import com.kanso.core.model.TaskRecurrence
 import com.kanso.core.model.TransactionType
 import com.kanso.core.model.UserPreferences
 import com.kanso.core.model.WalletType
@@ -208,7 +209,8 @@ class MainViewModel @Inject constructor(
     fun saveQuickTask(
         title: String,
         priority: TaskPriority,
-        dueDateEpochDay: Long?
+        dueDateEpochDay: Long?,
+        recurrence: TaskRecurrence = TaskRecurrence.NONE
     ) {
         viewModelScope.launch {
             brainRepository.upsertTask(
@@ -216,6 +218,7 @@ class MainViewModel @Inject constructor(
                     title = title,
                     priority = priority,
                     dueDateEpochDay = dueDateEpochDay,
+                    recurrence = recurrence,
                     createdAtMillis = System.currentTimeMillis()
                 )
             )
