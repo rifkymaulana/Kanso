@@ -46,9 +46,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
@@ -89,6 +88,7 @@ import com.kanso.core.ui.components.KansoBentoCard
 import com.kanso.core.ui.components.KansoBounceOnChange
 import com.kanso.core.ui.components.KansoButtonSize
 import com.kanso.core.ui.components.KansoCheckCircle
+import com.kanso.core.ui.components.KansoClipboard
 import com.kanso.core.ui.components.KansoCompactEmptyHint
 import com.kanso.core.ui.components.KansoDateFormatters
 import com.kanso.core.ui.components.KansoHeroCard
@@ -123,7 +123,7 @@ fun TodayRoute(
     viewModel: TodayViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
 
     TodayScreenContent(
         uiState = uiState,
@@ -162,7 +162,12 @@ fun TodayRoute(
             onShowMessage("Logged payment for ${bill.name}")
         },
         onCopySnippet = { snippet ->
-            clipboard.setText(AnnotatedString(snippet.value))
+            KansoClipboard.copyText(
+                context = context,
+                label = snippet.label,
+                text = snippet.value,
+                isSensitive = snippet.isSensitive
+            )
             onShowMessage("Copied ${snippet.label}")
         }
     )

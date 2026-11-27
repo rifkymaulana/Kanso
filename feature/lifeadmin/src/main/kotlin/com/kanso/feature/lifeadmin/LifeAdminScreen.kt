@@ -69,10 +69,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -99,6 +97,7 @@ import com.kanso.core.security.BiometricAvailability
 import com.kanso.core.ui.components.KansoAccentIconBadge
 import com.kanso.core.ui.components.KansoBentoCard
 import com.kanso.core.ui.components.KansoButtonSize
+import com.kanso.core.ui.components.KansoClipboard
 import com.kanso.core.ui.components.KansoDateFormatters
 import com.kanso.core.ui.components.KansoEmptyState
 import com.kanso.core.ui.components.KansoHeroCard
@@ -134,7 +133,6 @@ fun LifeAdminRoute(
     val context = LocalContext.current
     val activity = remember(context) { context.findFragmentActivity() }
     val lifecycleOwner = LocalLifecycleOwner.current
-    val clipboard = LocalClipboardManager.current
 
     var selectedTab by rememberSaveable { mutableIntStateOf(initialTab.coerceIn(0, 2)) }
     LaunchedEffect(initialTab) {
@@ -189,7 +187,12 @@ fun LifeAdminRoute(
         onAddExpiry = { showNewExpiry = true },
         onEditExpiry = { editingExpiry = it },
         onCopyReference = { ref ->
-            clipboard.setText(AnnotatedString(ref))
+            KansoClipboard.copyText(
+                context = context,
+                label = "Reference number",
+                text = ref,
+                isSensitive = false
+            )
             onShowMessage("Copied reference number")
         },
         onAddMaintenance = { showNewMaintenance = true },
@@ -227,7 +230,12 @@ fun LifeAdminRoute(
         onAddVaultItem = { showNewVault = true },
         onEditVaultItem = { editingVault = it },
         onCopyVaultSecret = { item ->
-            clipboard.setText(AnnotatedString(item.secretContent))
+            KansoClipboard.copyText(
+                context = context,
+                label = item.title,
+                text = item.secretContent,
+                isSensitive = true
+            )
             onShowMessage("Copied ${item.title}")
         }
     )

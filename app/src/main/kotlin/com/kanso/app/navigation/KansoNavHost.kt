@@ -192,6 +192,16 @@ fun KansoAppRoot(
         mainViewModel.triggerAutoDriveSync()
     }
 
+    LaunchedEffect(
+        prefs.hideBalances,
+        prefs.appLockEnabled,
+        prefs.overallMonthlyBudgetCents,
+        prefs.currency,
+        prefs.waterGoalMl
+    ) {
+        KansoWidgetUpdater.updateAll(context)
+    }
+
     LaunchedEffect(updateState) {
         val ready = updateState as? AppUpdateState.ReadyToInstall
         if (ready != null && autoLaunchInstallOnReady) {

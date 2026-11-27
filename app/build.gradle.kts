@@ -15,8 +15,8 @@ android {
         applicationId = "com.kanso.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = System.getenv("KANSO_VERSION_CODE")?.toIntOrNull() ?: 24
-        versionName = System.getenv("KANSO_VERSION_NAME")?.takeIf { it.isNotBlank() } ?: "1.11.0"
+        versionCode = System.getenv("KANSO_VERSION_CODE")?.toIntOrNull() ?: 25
+        versionName = System.getenv("KANSO_VERSION_NAME")?.takeIf { it.isNotBlank() } ?: "1.12.0"
     }
 
     signingConfigs {
@@ -45,7 +45,8 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

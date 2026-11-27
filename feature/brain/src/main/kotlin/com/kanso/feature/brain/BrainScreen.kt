@@ -59,9 +59,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
@@ -81,6 +80,7 @@ import com.kanso.core.model.TaskRecurrence
 import com.kanso.core.ui.components.KansoBentoCard
 import com.kanso.core.ui.components.KansoButtonSize
 import com.kanso.core.ui.components.KansoCheckCircle
+import com.kanso.core.ui.components.KansoClipboard
 import com.kanso.core.ui.components.KansoDateFormatters
 import com.kanso.core.ui.components.KansoEmptyState
 import com.kanso.core.ui.components.KansoMotion
@@ -103,7 +103,7 @@ fun BrainRoute(
     viewModel: BrainViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
 
     var editingNote by remember { mutableStateOf<NoteItem?>(null) }
     var showNewNoteDialog by remember { mutableStateOf(false) }
@@ -140,7 +140,12 @@ fun BrainRoute(
         onEditSnippet = { editingSnippet = it },
         onTogglePinSnippet = viewModel::togglePinSnippet,
         onCopySnippet = { snippet ->
-            clipboard.setText(AnnotatedString(snippet.value))
+            KansoClipboard.copyText(
+                context = context,
+                label = snippet.label,
+                text = snippet.value,
+                isSensitive = snippet.isSensitive
+            )
             onShowMessage("Copied ${snippet.label}")
         }
     )

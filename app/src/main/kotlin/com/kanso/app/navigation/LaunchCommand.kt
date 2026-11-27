@@ -32,6 +32,7 @@ object KansoUris {
     const val UTILITIES_DATES = "kanso://utilities/dates"
     const val HABITS = "kanso://habits"
     const val LIFEADMIN_EXPIRIES = "kanso://lifeadmin/expiries"
+    const val LIFEADMIN_MAINTENANCE = "kanso://lifeadmin/maintenance"
     const val LIFEADMIN_VAULT = "kanso://lifeadmin/vault"
     const val MONEY = "kanso://money"
 }

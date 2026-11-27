@@ -51,9 +51,10 @@ import com.kanso.core.database.dao.MoneyDao
 import com.kanso.core.database.entity.toDomain
 import com.kanso.core.database.preferences.PreferencesRepository
 import com.kanso.core.database.repository.HabitsRepository
-import com.kanso.core.model.CurrencyFormatter
 import com.kanso.core.model.LifeAdminCalculations
 import com.kanso.core.model.MoneyCalculations
+import com.kanso.core.model.RecurringBill
+import com.kanso.core.model.SmartCoachCalculations
 import com.kanso.core.model.TransactionType
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
@@ -108,14 +109,30 @@ class KansoTodayWidget : GlanceAppWidget() {
         val currentMonth = YearMonth.from(today)
         val monthStartMillis = currentMonth.atDay(1).atStartOfDay(zone).toInstant().toEpochMilli()
         val monthEndMillis = currentMonth.plusMonths(1).atDay(1).atStartOfDay(zone).toInstant().toEpochMilli()
+        val todayStartMillis = today.atStartOfDay(zone).toInstant().toEpochMilli()
+        val todayEndMillis = today.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
 
         val prefs = entryPoint.preferencesRepository().getCurrentPreferences()
-        val monthExpenseCents = entryPoint.moneyDao().getAllTransactions()
+        val monthTxs = entryPoint.moneyDao().getAllTransactions()
+            .filter { it.timestampMillis in monthStartMillis until monthEndMillis }
+        val monthIncomeCents = monthTxs
+            .filter { it.type == TransactionType.INCOME.name }
+            .sumOf { it.amountCents }
+        val monthExpenseCents = monthTxs
+            .filter { it.type == TransactionType.EXPENSE.name }
+            .sumOf { it.amountCents }
+        val todayExpenseCents = monthTxs
             .filter {
                 it.type == TransactionType.EXPENSE.name &&
-                    it.timestampMillis in monthStartMillis until monthEndMillis
+                    it.timestampMillis in todayStartMillis until todayEndMillis
             }
             .sumOf { it.amountCents }
+
+        val bills = entryPoint.moneyDao().getAllBills().map { it.toDomain() }
+        val dueBillsCount = bills.count { MoneyCalculations.isBillDueSoon(it, today, withinDays = 5) }
+        val dueSoonIousCount = entryPoint.moneyDao().getAllIous()
+            .map { it.toDomain() }
+            .count { MoneyCalculations.isIouDueSoon(it, todayEpoch, withinDays = 3) }
 
         val openTasksCount = entryPoint.brainDao().getAllTasks().count { !it.isCompleted }
         val activeHabits = entryPoint.habitsDao().getAllHabits().filter { !it.isArchived }
@@ -124,27 +141,45 @@ class KansoTodayWidget : GlanceAppWidget() {
             .map { it.habitId }
             .toSet()
         val healthLog = entryPoint.habitsDao().getHealthLog(todayEpoch)
-        val dueBillsCount = entryPoint.moneyDao().getAllBills()
-            .map { it.toDomain() }
-            .count { MoneyCalculations.isBillDueSoon(it, today, withinDays = 5) }
         val expiringCount = entryPoint.lifeAdminDao().getAllExpiries()
             .map { it.toDomain() }
             .count { LifeAdminCalculations.needsAttention(it, todayEpoch) }
+        val dueMaintenanceCount = LifeAdminCalculations.activeDueMaintenanceLogs(
+            logs = entryPoint.lifeAdminDao().getAllMaintenanceLogs().map { it.toDomain() },
+            todayEpochDay = todayEpoch,
+            withinDays = 14
+        ).size
+
+        val safeToSpend = SmartCoachCalculations.computeSafeToSpend(
+            targetMonth = currentMonth,
+            today = today,
+            monthlyBudgetCents = prefs.overallMonthlyBudgetCents,
+            monthIncomeCents = monthIncomeCents,
+            monthExpenseCents = monthExpenseCents,
+            todayExpenseCents = todayExpenseCents,
+            bills = bills
+        )
+        val hideAmounts = prefs.hideBalances || prefs.appLockEnabled
+        val moneySummary = WidgetSummaryFormatter.formatMoneySection(
+            report = safeToSpend,
+            currency = prefs.currency,
+            hideAmounts = hideAmounts
+        )
 
         return WidgetDashboardData(
             dateLabel = today.format(DateTimeFormatter.ofPattern("EEE, d MMM", Locale.getDefault())),
-            monthExpenseFormatted = CurrencyFormatter.formatOrMask(
-                monthExpenseCents,
-                prefs.currency,
-                hidden = prefs.hideBalances
-            ),
+            moneyLabel = moneySummary.label,
+            moneyValue = moneySummary.value,
+            moneySubtitle = moneySummary.subtitle,
             openTasksCount = openTasksCount,
             habitsDone = activeHabits.count { completedHabitIds.contains(it.id) },
             habitsTotal = activeHabits.size,
             waterMl = healthLog?.waterMl ?: 0,
             waterGoalMl = prefs.waterGoalMl,
             dueBillsCount = dueBillsCount,
-            expiringCount = expiringCount
+            expiringCount = expiringCount,
+            dueMaintenanceCount = dueMaintenanceCount,
+            dueSoonIousCount = dueSoonIousCount
         )
     }
 
@@ -155,36 +190,65 @@ class KansoTodayWidget : GlanceAppWidget() {
         val currentMonth = YearMonth.from(today)
         val monthStartMillis = currentMonth.atDay(1).atStartOfDay(zone).toInstant().toEpochMilli()
         val monthEndMillis = currentMonth.plusMonths(1).atDay(1).atStartOfDay(zone).toInstant().toEpochMilli()
+        val todayStartMillis = today.atStartOfDay(zone).toInstant().toEpochMilli()
+        val todayEndMillis = today.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
 
         val moneyFlow = combine(
             entryPoint.moneyDao().observeTransactionsInRange(monthStartMillis, monthEndMillis),
             entryPoint.moneyDao().observeBills(),
+            entryPoint.moneyDao().observeIous(),
             entryPoint.brainDao().observeOpenTaskCount()
-        ) { txs, bills, openTasks ->
-            val spendCents = txs
+        ) { txs, bills, ious, openTasks ->
+            val monthIncomeCents = txs
+                .filter { it.type == TransactionType.INCOME.name }
+                .sumOf { it.amountCents }
+            val monthExpenseCents = txs
                 .filter { it.type == TransactionType.EXPENSE.name }
                 .sumOf { it.amountCents }
-            val dueBills = bills
+            val todayExpenseCents = txs
+                .filter {
+                    it.type == TransactionType.EXPENSE.name &&
+                        it.timestampMillis in todayStartMillis until todayEndMillis
+                }
+                .sumOf { it.amountCents }
+            val domainBills = bills.map { it.toDomain() }
+            val dueBills = domainBills.count { MoneyCalculations.isBillDueSoon(it, today, withinDays = 5) }
+            val dueSoonIous = ious
                 .map { it.toDomain() }
-                .count { MoneyCalculations.isBillDueSoon(it, today, withinDays = 5) }
-            Triple(spendCents, dueBills, openTasks)
+                .count { MoneyCalculations.isIouDueSoon(it, todayEpoch, withinDays = 3) }
+            MoneyTasksSnapshot(
+                monthIncomeCents = monthIncomeCents,
+                monthExpenseCents = monthExpenseCents,
+                todayExpenseCents = todayExpenseCents,
+                bills = domainBills,
+                dueBillsCount = dueBills,
+                dueSoonIousCount = dueSoonIous,
+                openTasksCount = openTasks
+            )
         }
 
         val habitsLifeFlow = combine(
             entryPoint.habitsDao().observeActiveHabits(),
             entryPoint.habitsDao().observeCompletionsSince(todayEpoch),
             entryPoint.habitsDao().observeHealthLog(todayEpoch),
-            entryPoint.lifeAdminDao().observeExpiries()
-        ) { habits, completions, healthLog, expiries ->
+            entryPoint.lifeAdminDao().observeExpiries(),
+            entryPoint.lifeAdminDao().observeMaintenanceLogs()
+        ) { habits, completions, healthLog, expiries, maintenanceLogs ->
             val completedIds = completions.filter { it.epochDay == todayEpoch }.map { it.habitId }.toSet()
             val expiringCount = expiries
                 .map { it.toDomain() }
                 .count { LifeAdminCalculations.needsAttention(it, todayEpoch) }
+            val dueMaintenanceCount = LifeAdminCalculations.activeDueMaintenanceLogs(
+                logs = maintenanceLogs.map { it.toDomain() },
+                todayEpochDay = todayEpoch,
+                withinDays = 14
+            ).size
             HabitsLifeSnapshot(
                 habitsDone = habits.count { completedIds.contains(it.id) },
                 habitsTotal = habits.size,
                 waterMl = healthLog?.waterMl ?: 0,
-                expiringCount = expiringCount
+                expiringCount = expiringCount,
+                dueMaintenanceCount = dueMaintenanceCount
             )
         }
 
@@ -193,29 +257,55 @@ class KansoTodayWidget : GlanceAppWidget() {
             moneyFlow,
             habitsLifeFlow
         ) { prefs, money, hl ->
+            val safeToSpend = SmartCoachCalculations.computeSafeToSpend(
+                targetMonth = currentMonth,
+                today = today,
+                monthlyBudgetCents = prefs.overallMonthlyBudgetCents,
+                monthIncomeCents = money.monthIncomeCents,
+                monthExpenseCents = money.monthExpenseCents,
+                todayExpenseCents = money.todayExpenseCents,
+                bills = money.bills
+            )
+            val hideAmounts = prefs.hideBalances || prefs.appLockEnabled
+            val moneySummary = WidgetSummaryFormatter.formatMoneySection(
+                report = safeToSpend,
+                currency = prefs.currency,
+                hideAmounts = hideAmounts
+            )
             WidgetDashboardData(
                 dateLabel = today.format(DateTimeFormatter.ofPattern("EEE, d MMM", Locale.getDefault())),
-                monthExpenseFormatted = CurrencyFormatter.formatOrMask(
-                    money.first,
-                    prefs.currency,
-                    hidden = prefs.hideBalances
-                ),
-                openTasksCount = money.third,
+                moneyLabel = moneySummary.label,
+                moneyValue = moneySummary.value,
+                moneySubtitle = moneySummary.subtitle,
+                openTasksCount = money.openTasksCount,
                 habitsDone = hl.habitsDone,
                 habitsTotal = hl.habitsTotal,
                 waterMl = hl.waterMl,
                 waterGoalMl = prefs.waterGoalMl,
-                dueBillsCount = money.second,
-                expiringCount = hl.expiringCount
+                dueBillsCount = money.dueBillsCount,
+                expiringCount = hl.expiringCount,
+                dueMaintenanceCount = hl.dueMaintenanceCount,
+                dueSoonIousCount = money.dueSoonIousCount
             )
         }
     }
+
+    private data class MoneyTasksSnapshot(
+        val monthIncomeCents: Long,
+        val monthExpenseCents: Long,
+        val todayExpenseCents: Long,
+        val bills: List<RecurringBill>,
+        val dueBillsCount: Int,
+        val dueSoonIousCount: Int,
+        val openTasksCount: Int
+    )
 
     private data class HabitsLifeSnapshot(
         val habitsDone: Int,
         val habitsTotal: Int,
         val waterMl: Int,
-        val expiringCount: Int
+        val expiringCount: Int,
+        val dueMaintenanceCount: Int
     )
 }
 
@@ -227,7 +317,12 @@ private fun KansoWidgetContent(
     val homeIntent = Intent(context, MainActivity::class.java).apply {
         flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
     }
-    val attentionLine = WidgetSummaryFormatter.formatAttentionLine(data.dueBillsCount, data.expiringCount)
+    val attentionLine = WidgetSummaryFormatter.formatAttentionLine(
+        dueBillsCount = data.dueBillsCount,
+        expiringCount = data.expiringCount,
+        dueMaintenanceCount = data.dueMaintenanceCount,
+        dueSoonIousCount = data.dueSoonIousCount
+    )
 
     Column(
         modifier = GlanceModifier
@@ -280,7 +375,12 @@ private fun KansoWidgetContent(
 
         if (attentionLine != null) {
             Spacer(modifier = GlanceModifier.height(6.dp))
-            val attentionUri = if (data.expiringCount > 0) KansoUris.LIFEADMIN_EXPIRIES else KansoUris.MONEY
+            val attentionUri = WidgetSummaryFormatter.resolveAttentionUri(
+                dueBillsCount = data.dueBillsCount,
+                expiringCount = data.expiringCount,
+                dueMaintenanceCount = data.dueMaintenanceCount,
+                dueSoonIousCount = data.dueSoonIousCount
+            )
             Box(
                 modifier = GlanceModifier
                     .fillMaxWidth()
@@ -291,6 +391,7 @@ private fun KansoWidgetContent(
             ) {
                 Text(
                     text = attentionLine,
+                    maxLines = 1,
                     style = TextStyle(
                         color = GlanceTheme.colors.onSecondaryContainer,
                         fontSize = 11.sp,
@@ -312,11 +413,13 @@ private fun KansoWidgetContent(
                     .clickable(actionStartActivity(createLaunchIntent(context, KansoUris.MONEY)))
             ) {
                 Text(
-                    text = "Month Spend",
+                    text = data.moneyLabel,
+                    maxLines = 1,
                     style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 11.sp)
                 )
                 Text(
-                    text = data.monthExpenseFormatted,
+                    text = data.moneyValue,
+                    maxLines = 1,
                     style = TextStyle(
                         color = GlanceTheme.colors.onSurface,
                         fontSize = 16.sp,
@@ -324,33 +427,54 @@ private fun KansoWidgetContent(
                     )
                 )
                 Text(
-                    text = "${data.openTasksCount} open tasks",
+                    text = data.moneySubtitle,
+                    maxLines = 1,
                     style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 11.sp)
                 )
             }
 
             Column(
-                modifier = GlanceModifier
-                    .defaultWeight()
-                    .clickable(actionStartActivity(createLaunchIntent(context, KansoUris.HABITS))),
+                modifier = GlanceModifier.defaultWeight(),
                 horizontalAlignment = Alignment.End
             ) {
-                Text(
-                    text = WidgetSummaryFormatter.formatHabitsBadge(data.habitsDone, data.habitsTotal),
-                    style = TextStyle(
-                        color = GlanceTheme.colors.primary,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium
+                Column(
+                    modifier = GlanceModifier
+                        .clickable(actionStartActivity(createLaunchIntent(context, KansoUris.HABITS))),
+                    horizontalAlignment = Alignment.End
+                ) {
+                    Text(
+                        text = WidgetSummaryFormatter.formatHabitsBadge(data.habitsDone, data.habitsTotal),
+                        maxLines = 1,
+                        style = TextStyle(
+                            color = GlanceTheme.colors.primary,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        )
                     )
-                )
+                    Spacer(modifier = GlanceModifier.height(2.dp))
+                    Text(
+                        text = WidgetSummaryFormatter.formatWaterBadge(data.waterMl, data.waterGoalMl),
+                        maxLines = 1,
+                        style = TextStyle(
+                            color = GlanceTheme.colors.onSurfaceVariant,
+                            fontSize = 11.sp
+                        )
+                    )
+                }
                 Spacer(modifier = GlanceModifier.height(2.dp))
-                Text(
-                    text = WidgetSummaryFormatter.formatWaterBadge(data.waterMl, data.waterGoalMl),
-                    style = TextStyle(
-                        color = GlanceTheme.colors.onSurfaceVariant,
-                        fontSize = 11.sp
+                Box(
+                    modifier = GlanceModifier
+                        .clickable(actionStartActivity(createLaunchIntent(context, KansoUris.BRAIN_TASKS)))
+                ) {
+                    Text(
+                        text = WidgetSummaryFormatter.formatTasksBadge(data.openTasksCount),
+                        maxLines = 1,
+                        style = TextStyle(
+                            color = GlanceTheme.colors.onSurfaceVariant,
+                            fontSize = 11.sp
+                        )
                     )
-                )
+                }
             }
         }
 
