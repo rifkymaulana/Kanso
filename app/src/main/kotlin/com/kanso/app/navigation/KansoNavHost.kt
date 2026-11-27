@@ -178,7 +178,9 @@ fun KansoAppRoot(
         prefs.customRatesVsUsd
     ) {
         val payload = sharedCapturePayload ?: return@remember null
-        if (payload.isScanning && payload.text.isBlank() && payload.subject.isBlank()) {
+        if (payload.prefilledDraft != null) {
+            payload.prefilledDraft
+        } else if (payload.isScanning && payload.text.isBlank() && payload.subject.isBlank()) {
             null
         } else {
             SharedTextParser.parse(

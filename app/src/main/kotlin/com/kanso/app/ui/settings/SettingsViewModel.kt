@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.kanso.app.notifications.PaymentNotificationHandler
 import com.kanso.app.update.AppReleaseInfo
 import com.kanso.app.update.AppUpdateManager
 import com.kanso.app.update.AppUpdateState
@@ -15,7 +16,9 @@ import com.kanso.core.backup.drive.GoogleDriveSyncManager
 import com.kanso.core.database.preferences.PreferencesRepository
 import com.kanso.core.model.AppCurrency
 import com.kanso.core.model.AppLockTimeout
+import com.kanso.core.model.DetectedPaymentAlert
 import com.kanso.core.model.DriveSyncConfig
+import com.kanso.core.model.PaymentCaptureMode
 import com.kanso.core.model.ThemeMode
 import com.kanso.core.model.UserPreferences
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -41,7 +44,8 @@ data class SettingsUiState(
     val hasGithubToken: Boolean = false,
     val updateState: AppUpdateState = AppUpdateState.Idle,
     val driveSyncConfig: DriveSyncConfig = DriveSyncConfig(),
-    val driveSyncState: DriveSyncState = DriveSyncState.Idle
+    val driveSyncState: DriveSyncState = DriveSyncState.Idle,
+    val recentPaymentDetections: List<DetectedPaymentAlert> = emptyList()
 )
 
 @HiltViewModel
@@ -49,7 +53,8 @@ class SettingsViewModel @Inject constructor(
     private val preferencesRepository: PreferencesRepository,
     private val backupManager: BackupManager,
     private val appUpdateManager: AppUpdateManager,
-    private val googleDriveSyncManager: GoogleDriveSyncManager
+    private val googleDriveSyncManager: GoogleDriveSyncManager,
+    private val paymentNotificationHandler: PaymentNotificationHandler
 ) : ViewModel() {
 
     private val backupStatusFlow = MutableStateFlow<BackupOperationStatus>(BackupOperationStatus.Idle)
@@ -71,11 +76,13 @@ class SettingsViewModel @Inject constructor(
     val uiState: StateFlow<SettingsUiState> = combine(
         baseStateFlow,
         preferencesRepository.driveSyncConfig,
-        googleDriveSyncManager.state
-    ) { base, driveConfig, driveState ->
+        googleDriveSyncManager.state,
+        paymentNotificationHandler.recentDetections
+    ) { base, driveConfig, driveState, recentDetections ->
         base.copy(
             driveSyncConfig = driveConfig,
-            driveSyncState = driveState
+            driveSyncState = driveState,
+            recentPaymentDetections = recentDetections
         )
     }.stateIn(
         scope = viewModelScope,
@@ -125,6 +132,47 @@ class SettingsViewModel @Inject constructor(
 
     fun setEveningReminderTime(hour: Int, minute: Int) {
         viewModelScope.launch { preferencesRepository.setEveningReminderTime(hour, minute) }
+    }
+
+    fun setPaymentLoggerEnabled(enabled: Boolean) {
+        viewModelScope.launch { preferencesRepository.setPaymentLoggerEnabled(enabled) }
+    }
+
+    fun setPaymentCaptureMode(mode: PaymentCaptureMode) {
+        viewModelScope.launch { preferencesRepository.setPaymentCaptureMode(mode) }
+    }
+
+    fun setPaymentAllowAllApps(allowAll: Boolean) {
+        viewModelScope.launch { preferencesRepository.setPaymentAllowAllApps(allowAll) }
+    }
+
+    fun togglePaymentAllowedPackage(packageName: String) {
+        viewModelScope.launch {
+            val current = preferencesRepository.getCurrentPreferences().paymentAllowedPackages.toMutableSet()
+            if (current.contains(packageName)) {
+                current.remove(packageName)
+            } else {
+                current.add(packageName)
+            }
+            preferencesRepository.setPaymentAllowedPackages(current)
+        }
+    }
+
+    fun resetPaymentAllowedPackages() {
+        viewModelScope.launch { preferencesRepository.resetPaymentAllowedPackages() }
+    }
+
+    fun sendTestPaymentAlert(onResult: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            val posted = paymentNotificationHandler.processIncomingNotification(
+                packageName = "com.gojek.gopay",
+                appLabel = "GoPay",
+                title = "Pembayaran Berhasil",
+                text = "Pembayaran Rp 45.000 ke KOPI KENANGAN berhasil",
+                isTestSimulation = true
+            )
+            onResult(posted)
+        }
     }
 
     fun setAutoCheckUpdates(enabled: Boolean) {

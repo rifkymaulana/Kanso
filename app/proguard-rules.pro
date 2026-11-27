@@ -46,6 +46,7 @@
 -keep class com.kanso.app.notifications.DailyReminderWorker { *; }
 -keep class com.kanso.app.notifications.PomodoroCompletionWorker { *; }
 -keep class com.kanso.app.notifications.NotificationActionReceiver { *; }
+-keep class com.kanso.app.notifications.PaymentNotificationListenerService { *; }
 -keep class com.kanso.app.sync.DriveSyncWorker { *; }
 -keep class com.kanso.app.tile.KansoQuickCaptureTileService { *; }
 

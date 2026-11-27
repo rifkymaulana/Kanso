@@ -12,6 +12,8 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.kanso.core.model.AppCurrency
 import com.kanso.core.model.AppLockTimeout
 import com.kanso.core.model.DriveSyncConfig
+import com.kanso.core.model.KnownFinanceApps
+import com.kanso.core.model.PaymentCaptureMode
 import com.kanso.core.model.ThemeMode
 import com.kanso.core.model.UserPreferences
 import com.kanso.core.model.WalletType
@@ -66,6 +68,11 @@ class PreferencesRepository @Inject constructor(
         val DRIVE_LAST_REMOTE_MODIFIED_MILLIS = longPreferencesKey("drive_last_remote_modified_millis")
         val DRIVE_LAST_SYNCED_CONTENT_HASH = stringPreferencesKey("drive_last_synced_content_hash")
         val DRIVE_SYNC_PASSPHRASE_ENCRYPTED = stringPreferencesKey("drive_sync_passphrase_encrypted")
+
+        val PAYMENT_LOGGER_ENABLED = booleanPreferencesKey("payment_logger_enabled")
+        val PAYMENT_CAPTURE_MODE = stringPreferencesKey("payment_capture_mode")
+        val PAYMENT_ALLOWED_PACKAGES_JSON = stringPreferencesKey("payment_allowed_packages_json")
+        val PAYMENT_ALLOW_ALL_APPS = booleanPreferencesKey("payment_allow_all_apps")
     }
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -77,6 +84,9 @@ class PreferencesRepository @Inject constructor(
         val walletOpeningBalances = prefs[Keys.WALLET_OPENING_BALANCES_JSON]?.let { raw ->
             runCatching { json.decodeFromString<Map<String, Long>>(raw) }.getOrNull()
         } ?: emptyMap()
+        val allowedPaymentPackages = prefs[Keys.PAYMENT_ALLOWED_PACKAGES_JSON]?.let { raw ->
+            runCatching { json.decodeFromString<List<String>>(raw).toSet() }.getOrNull()
+        } ?: KnownFinanceApps.defaultPackages
 
         UserPreferences(
             displayName = prefs[Keys.DISPLAY_NAME].orEmpty(),
@@ -104,7 +114,13 @@ class PreferencesRepository @Inject constructor(
             morningReminderMinute = (prefs[Keys.MORNING_REMINDER_MINUTE] ?: 0).coerceIn(0, 59),
             eveningReminderEnabled = prefs[Keys.EVENING_REMINDER_ENABLED] ?: true,
             eveningReminderHour = (prefs[Keys.EVENING_REMINDER_HOUR] ?: 20).coerceIn(0, 23),
-            eveningReminderMinute = (prefs[Keys.EVENING_REMINDER_MINUTE] ?: 30).coerceIn(0, 59)
+            eveningReminderMinute = (prefs[Keys.EVENING_REMINDER_MINUTE] ?: 30).coerceIn(0, 59),
+            paymentLoggerEnabled = prefs[Keys.PAYMENT_LOGGER_ENABLED] ?: false,
+            paymentCaptureMode = runCatching {
+                PaymentCaptureMode.valueOf(prefs[Keys.PAYMENT_CAPTURE_MODE] ?: PaymentCaptureMode.PROMPT.name)
+            }.getOrDefault(PaymentCaptureMode.PROMPT),
+            paymentAllowedPackages = allowedPaymentPackages,
+            paymentAllowAllApps = prefs[Keys.PAYMENT_ALLOW_ALL_APPS] ?: false
         )
     }
 
@@ -332,6 +348,30 @@ class PreferencesRepository @Inject constructor(
         }
     }
 
+    suspend fun setPaymentLoggerEnabled(enabled: Boolean) {
+        context.kansoDataStore.edit { it[Keys.PAYMENT_LOGGER_ENABLED] = enabled }
+    }
+
+    suspend fun setPaymentCaptureMode(mode: PaymentCaptureMode) {
+        context.kansoDataStore.edit { it[Keys.PAYMENT_CAPTURE_MODE] = mode.name }
+    }
+
+    suspend fun setPaymentAllowedPackages(packages: Set<String>) {
+        context.kansoDataStore.edit { prefs ->
+            prefs[Keys.PAYMENT_ALLOWED_PACKAGES_JSON] = json.encodeToString(packages.sorted())
+        }
+    }
+
+    suspend fun resetPaymentAllowedPackages() {
+        context.kansoDataStore.edit { prefs ->
+            prefs.remove(Keys.PAYMENT_ALLOWED_PACKAGES_JSON)
+        }
+    }
+
+    suspend fun setPaymentAllowAllApps(allowAll: Boolean) {
+        context.kansoDataStore.edit { it[Keys.PAYMENT_ALLOW_ALL_APPS] = allowAll }
+    }
+
     suspend fun setOnboardingCompleted(completed: Boolean) {
         context.kansoDataStore.edit { it[Keys.ONBOARDING_COMPLETED] = completed }
     }
@@ -368,6 +408,11 @@ class PreferencesRepository @Inject constructor(
             prefs[Keys.EVENING_REMINDER_ENABLED] = userPreferences.eveningReminderEnabled
             prefs[Keys.EVENING_REMINDER_HOUR] = userPreferences.eveningReminderHour.coerceIn(0, 23)
             prefs[Keys.EVENING_REMINDER_MINUTE] = userPreferences.eveningReminderMinute.coerceIn(0, 59)
+            prefs[Keys.PAYMENT_LOGGER_ENABLED] = userPreferences.paymentLoggerEnabled
+            prefs[Keys.PAYMENT_CAPTURE_MODE] = userPreferences.paymentCaptureMode.name
+            prefs[Keys.PAYMENT_ALLOWED_PACKAGES_JSON] =
+                json.encodeToString(userPreferences.paymentAllowedPackages.sorted())
+            prefs[Keys.PAYMENT_ALLOW_ALL_APPS] = userPreferences.paymentAllowAllApps
             if (userPreferences.customRatesVsUsd.isEmpty()) {
                 prefs.remove(Keys.CUSTOM_RATES_JSON)
             } else {

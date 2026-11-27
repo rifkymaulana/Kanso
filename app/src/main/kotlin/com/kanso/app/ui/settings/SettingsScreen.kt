@@ -6,6 +6,7 @@ import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.ContextWrapper
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -47,6 +48,7 @@ import androidx.compose.material.icons.outlined.CloudSync
 import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material.icons.outlined.InstallMobile
 import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.Restore
 import androidx.compose.material.icons.outlined.Schedule
@@ -73,6 +75,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -94,9 +97,13 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.kanso.app.BuildConfig
 import com.kanso.app.notifications.KansoReminderScheduler
+import com.kanso.app.notifications.PaymentNotificationHandler
 import com.kanso.app.update.AppUpdateManager
 import com.kanso.app.update.AppUpdateState
 import com.kanso.app.update.launchApkInstall
@@ -109,7 +116,10 @@ import com.kanso.core.model.AppLockTimeout
 import com.kanso.core.model.BriefingCalculations
 import com.kanso.core.model.BriefingSlot
 import com.kanso.core.model.CurrencyFormatter
+import com.kanso.core.model.KnownFinanceApps
+import com.kanso.core.model.PaymentCaptureMode
 import com.kanso.core.model.ThemeMode
+import com.kanso.core.model.TransactionType
 import com.kanso.core.security.BiometricAuthHelper
 import com.kanso.core.security.BiometricAvailability
 import com.kanso.core.ui.components.ConfirmDeleteDialog
@@ -128,6 +138,8 @@ import com.kanso.core.ui.components.KansoTonalButton
 import com.kanso.core.ui.components.warningSemanticColor
 import com.kanso.core.ui.theme.kansoColors
 import com.kanso.feature.money.OverallBudgetDialog
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
@@ -165,6 +177,21 @@ fun SettingsRoute(
     var resumeDriveAfterPassphrase by remember { mutableStateOf(false) }
     var showDriveRestoreConfirm by remember { mutableStateOf(false) }
     var showDriveDisconnectConfirm by remember { mutableStateOf(false) }
+    var showAllowedPaymentAppsSheet by remember { mutableStateOf(false) }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var hasNotificationAccess by remember {
+        mutableStateOf(PaymentNotificationHandler.isNotificationAccessGranted(context))
+    }
+    DisposableEffect(lifecycleOwner, context) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                hasNotificationAccess = PaymentNotificationHandler.isNotificationAccessGranted(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     val driveConsentLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartIntentSenderForResult()
@@ -231,6 +258,16 @@ fun SettingsRoute(
             prefs = prefs.copy(remindersEnabled = granted),
             replaceExisting = true
         )
+    }
+
+    val paymentNotificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            onShowMessage("Notification permission granted")
+        } else {
+            onShowMessage("Allow notifications to see 1-tap payment prompts")
+        }
     }
 
     val createBackupLauncher = rememberLauncherForActivityResult(
@@ -435,6 +472,68 @@ fun SettingsRoute(
                             }
                         }
                     }
+                }
+            }
+
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    SettingsSectionOverline("PAYMENT AUTO-LOGGER")
+                    PaymentAutoLoggerCard(
+                        uiState = uiState,
+                        hasNotificationAccess = hasNotificationAccess,
+                        onOpenNotificationAccess = {
+                            runCatching {
+                                context.startActivity(PaymentNotificationHandler.createNotificationAccessIntent())
+                            }.onFailure {
+                                onShowMessage("Unable to open Notification Access settings")
+                            }
+                        },
+                        onToggleEnabled = { wantEnabled ->
+                            if (wantEnabled) {
+                                viewModel.setPaymentLoggerEnabled(true)
+                                if (!hasNotificationAccess) {
+                                    onShowMessage("Grant Notification Access to Kanso, then return here")
+                                    runCatching {
+                                        context.startActivity(PaymentNotificationHandler.createNotificationAccessIntent())
+                                    }
+                                } else if (
+                                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                                    ContextCompat.checkSelfPermission(
+                                        context,
+                                        Manifest.permission.POST_NOTIFICATIONS
+                                    ) != PackageManager.PERMISSION_GRANTED
+                                ) {
+                                    paymentNotificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                }
+                            } else {
+                                viewModel.setPaymentLoggerEnabled(false)
+                            }
+                        },
+                        onSelectMode = viewModel::setPaymentCaptureMode,
+                        onToggleAllowAllApps = viewModel::setPaymentAllowAllApps,
+                        onManageAllowedApps = { showAllowedPaymentAppsSheet = true },
+                        onSendTestAlert = {
+                            if (
+                                Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                                ContextCompat.checkSelfPermission(
+                                    context,
+                                    Manifest.permission.POST_NOTIFICATIONS
+                                ) != PackageManager.PERMISSION_GRANTED
+                            ) {
+                                paymentNotificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            } else {
+                                viewModel.sendTestPaymentAlert { posted ->
+                                    onShowMessage(
+                                        if (posted) {
+                                            "Test payment notification posted — check your shade!"
+                                        } else {
+                                            "Could not post test notification"
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    )
                 }
             }
 
@@ -936,6 +1035,432 @@ fun SettingsRoute(
             },
             onDismiss = { showDriveDisconnectConfirm = false }
         )
+    }
+
+    if (showAllowedPaymentAppsSheet) {
+        AllowedPaymentAppsSheet(
+            allowedPackages = prefs.paymentAllowedPackages,
+            allowAllApps = prefs.paymentAllowAllApps,
+            onTogglePackage = viewModel::togglePaymentAllowedPackage,
+            onResetDefaults = {
+                viewModel.resetPaymentAllowedPackages()
+                onShowMessage("Reset to ${KnownFinanceApps.defaultPackages.size} finance apps")
+            },
+            onDismiss = { showAllowedPaymentAppsSheet = false }
+        )
+    }
+}
+
+@Composable
+private fun PaymentAutoLoggerCard(
+    uiState: SettingsUiState,
+    hasNotificationAccess: Boolean,
+    onOpenNotificationAccess: () -> Unit,
+    onToggleEnabled: (Boolean) -> Unit,
+    onSelectMode: (PaymentCaptureMode) -> Unit,
+    onToggleAllowAllApps: (Boolean) -> Unit,
+    onManageAllowedApps: () -> Unit,
+    onSendTestAlert: () -> Unit
+) {
+    val prefs = uiState.preferences
+    val kansoColors = MaterialTheme.kansoColors
+    KansoBentoCard(contentPadding = PaddingValues(16.dp)) {
+        Column(
+            modifier = Modifier.animateContentSize(animationSpec = KansoMotion.SizeSpring),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("Bank & E-Wallet Auto-Logger", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        text = "100% offline listener for QRIS, bank & e-wallet alerts",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                KansoPillBadge(
+                    text = if (hasNotificationAccess) "Access Granted" else "Setup Needed",
+                    color = if (hasNotificationAccess) kansoColors.income else warningSemanticColor()
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Enable Auto-Logger", style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        text = "Filters out promos, OTPs & unpaid reminders automatically",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = prefs.paymentLoggerEnabled,
+                    onCheckedChange = onToggleEnabled
+                )
+            }
+
+            if (!hasNotificationAccess) {
+                KansoPrimaryButton(
+                    text = "Grant Notification Access",
+                    leadingIcon = Icons.Outlined.NotificationsActive,
+                    size = KansoButtonSize.LARGE,
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = onOpenNotificationAccess
+                )
+            } else {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable(onClick = onOpenNotificationAccess),
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Android Notification Access",
+                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium)
+                            )
+                            Text(
+                                text = "Granted — tap to manage in Android Settings",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Text(
+                            text = "Manage",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Capture Mode", style = MaterialTheme.typography.labelLarge)
+                KansoSegmentedRow(
+                    options = PaymentCaptureMode.entries.map { it.label },
+                    selectedIndex = PaymentCaptureMode.entries.indexOf(prefs.paymentCaptureMode),
+                    onSelect = { idx -> onSelectMode(PaymentCaptureMode.entries[idx]) }
+                )
+                Text(
+                    text = if (prefs.paymentCaptureMode == PaymentCaptureMode.PROMPT) {
+                        "Posts a notification with [Save], [Edit], and [Ignore] actions."
+                    } else {
+                        "Logs immediately and shows a confirmation alert with [Undo]."
+                    },
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Scan All Installed Apps", style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        text = "Inspect notifications from any app (not just the whitelist)",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = prefs.paymentAllowAllApps,
+                    onCheckedChange = onToggleAllowAllApps
+                )
+            }
+
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable(onClick = onManageAllowedApps),
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Whitelisted Finance Apps",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium)
+                        )
+                        Text(
+                            text = if (prefs.paymentAllowAllApps) {
+                                "${prefs.paymentAllowedPackages.size} selected (bypassed while Scan All is on)"
+                            } else {
+                                "${prefs.paymentAllowedPackages.size} apps selected"
+                            },
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Text(
+                        text = "Choose",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+
+            if (uiState.recentPaymentDetections.isNotEmpty()) {
+                val latest = uiState.recentPaymentDetections.first()
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 9.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Last detected · ${latest.sourceAppLabel}",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            Text(
+                                text = "${latest.note} • ${CurrencyFormatter.format(latest.amountCents, prefs.currency)}",
+                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        KansoPillBadge(
+                            text = if (latest.type == TransactionType.INCOME) "Income" else latest.wallet.label,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            }
+
+            KansoTonalButton(
+                text = "Send Test Payment Alert",
+                leadingIcon = Icons.Outlined.NotificationsActive,
+                size = KansoButtonSize.LARGE,
+                modifier = Modifier.fillMaxWidth(),
+                onClick = onSendTestAlert
+            )
+        }
+    }
+}
+
+private data class PaymentAppOptionRow(
+    val packageName: String,
+    val displayName: String,
+    val groupLabel: String,
+    val isInstalled: Boolean,
+    val isPreset: Boolean
+)
+
+@Composable
+private fun AllowedPaymentAppsSheet(
+    allowedPackages: Set<String>,
+    allowAllApps: Boolean,
+    onTogglePackage: (String) -> Unit,
+    onResetDefaults: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    var searchQuery by remember { mutableStateOf("") }
+    var installedLaunchableApps by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
+    var installedPackageSet by remember { mutableStateOf<Set<String>>(emptySet()) }
+
+    LaunchedEffect(context) {
+        val loaded = withContext(Dispatchers.IO) {
+            val pm = context.packageManager
+            val launcherIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+            val resolved = pm.queryIntentActivities(launcherIntent, 0)
+            val appPairs = resolved.mapNotNull { info ->
+                val pkg = info.activityInfo?.packageName ?: return@mapNotNull null
+                if (pkg.equals(context.packageName, ignoreCase = true)) return@mapNotNull null
+                val label = runCatching { info.loadLabel(pm).toString() }.getOrDefault(pkg)
+                pkg to label
+            }
+                .distinctBy { it.first }
+                .sortedBy { it.second.lowercase() }
+            val installedSet = appPairs.mapTo(HashSet()) { it.first }
+            appPairs to installedSet
+        }
+        installedLaunchableApps = loaded.first
+        installedPackageSet = loaded.second
+    }
+
+    val allRows = remember(installedLaunchableApps, installedPackageSet) {
+        val presetRows = KnownFinanceApps.presets.map { preset ->
+            PaymentAppOptionRow(
+                packageName = preset.packageName,
+                displayName = preset.displayName,
+                groupLabel = preset.groupLabel,
+                isInstalled = installedPackageSet.contains(preset.packageName),
+                isPreset = true
+            )
+        }.sortedWith(
+            compareByDescending<PaymentAppOptionRow> { it.isInstalled }
+                .thenBy { it.groupLabel }
+                .thenBy { it.displayName.lowercase() }
+        )
+
+        val presetPkgSet = KnownFinanceApps.defaultPackages
+        val extraInstalledRows = installedLaunchableApps
+            .filter { (pkg, _) -> !presetPkgSet.contains(pkg) }
+            .map { (pkg, label) ->
+                PaymentAppOptionRow(
+                    packageName = pkg,
+                    displayName = label,
+                    groupLabel = "Other Installed Apps",
+                    isInstalled = true,
+                    isPreset = false
+                )
+            }
+
+        presetRows + extraInstalledRows
+    }
+
+    val filteredRows = remember(allRows, searchQuery) {
+        val q = searchQuery.trim().lowercase()
+        if (q.isEmpty()) {
+            allRows
+        } else {
+            allRows.filter {
+                it.displayName.lowercase().contains(q) ||
+                    it.packageName.lowercase().contains(q) ||
+                    it.groupLabel.lowercase().contains(q)
+            }
+        }
+    }
+
+    KansoFormBottomSheet(
+        title = "Whitelisted Finance Apps",
+        onDismiss = onDismiss,
+        primaryLabel = "Done",
+        onPrimaryClick = onDismiss,
+        badgeText = "${allowedPackages.size} active",
+        badgeColor = MaterialTheme.colorScheme.primary,
+        badgeIcon = Icons.Outlined.NotificationsActive
+    ) {
+        if (allowAllApps) {
+            Text(
+                text = "Note: \"Scan All Installed Apps\" is currently ON, so Kanso inspects all non-system apps regardless of this list.",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                modifier = Modifier.weight(1f),
+                label = { Text("Search apps or package ID") },
+                singleLine = true,
+                shape = RoundedCornerShape(14.dp)
+            )
+            TextButton(onClick = onResetDefaults) {
+                Text("Reset Defaults")
+            }
+        }
+
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            filteredRows.forEach { row ->
+                val checked = allowedPackages.contains(row.packageName)
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .clickable { onTogglePackage(row.packageName) },
+                    shape = RoundedCornerShape(14.dp),
+                    color = if (checked) {
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
+                    } else {
+                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                    },
+                    border = BorderStroke(
+                        1.dp,
+                        if (checked) {
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
+                        } else {
+                            MaterialTheme.colorScheme.outlineVariant
+                        }
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = row.displayName,
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                if (row.isInstalled) {
+                                    KansoPillBadge(
+                                        text = "Installed",
+                                        color = MaterialTheme.kansoColors.income
+                                    )
+                                }
+                            }
+                            Text(
+                                text = "${row.groupLabel} · ${row.packageName}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Switch(
+                            checked = checked,
+                            onCheckedChange = { onTogglePackage(row.packageName) }
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 

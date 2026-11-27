@@ -39,7 +39,11 @@ data class UserPreferences(
     val morningReminderMinute: Int = 0,
     val eveningReminderEnabled: Boolean = true,
     val eveningReminderHour: Int = 20,
-    val eveningReminderMinute: Int = 30
+    val eveningReminderMinute: Int = 30,
+    val paymentLoggerEnabled: Boolean = false,
+    val paymentCaptureMode: PaymentCaptureMode = PaymentCaptureMode.PROMPT,
+    val paymentAllowedPackages: Set<String> = KnownFinanceApps.defaultPackages,
+    val paymentAllowAllApps: Boolean = false
 )
 
 data class AppLockSession(

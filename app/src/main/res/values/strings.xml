@@ -13,4 +13,5 @@
     <string name="shortcut_snippets_long">Open 1-Tap Copy Snippets</string>
     <string name="shortcut_scan_receipt_short">Scan Receipt</string>
     <string name="shortcut_scan_receipt_long">Scan Paper or Image Receipt</string>
+    <string name="payment_listener_service_label">Kanso Payment Auto-Logger</string>
 </resources>

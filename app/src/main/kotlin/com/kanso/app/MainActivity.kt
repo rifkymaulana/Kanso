@@ -7,6 +7,7 @@ import android.os.SystemClock
 import android.view.WindowManager
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.IntentCompat
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -44,6 +45,7 @@ import com.kanso.app.navigation.LaunchCommand
 import com.kanso.app.navigation.LaunchCommandParser
 import com.kanso.app.navigation.SharedCapturePayload
 import com.kanso.app.notifications.KansoReminderScheduler
+import com.kanso.app.notifications.PaymentNotificationHandler
 import com.kanso.app.notifications.PomodoroCompletionWorker
 import com.kanso.app.share.ReceiptShareProcessor
 import com.kanso.app.sync.DriveSyncScheduler
@@ -51,6 +53,10 @@ import com.kanso.app.widget.KansoWidgetUpdater
 import com.kanso.core.database.preferences.PomodoroTimerManager
 import com.kanso.core.database.preferences.PreferencesRepository
 import com.kanso.core.model.AppLockPolicy
+import com.kanso.core.model.ExpenseCategory
+import com.kanso.core.model.ParsedShareDraft
+import com.kanso.core.model.SharedCaptureTarget
+import com.kanso.core.model.WalletType
 import com.kanso.core.security.BiometricAuthHelper
 import com.kanso.core.security.BiometricAvailability
 import com.kanso.core.ui.components.KansoAccentIconBadge
@@ -252,6 +258,39 @@ class MainActivity : FragmentActivity() {
     private fun handleIntent(intent: Intent?) {
         if (intent == null) return
         if (intent.getBooleanExtra(EXTRA_KANSO_CONSUMED, false)) return
+
+        if (intent.action == PaymentNotificationHandler.ACTION_EDIT_DETECTED_PAYMENT) {
+            intent.putExtra(EXTRA_KANSO_CONSUMED, true)
+            val notifId = intent.getIntExtra(PaymentNotificationHandler.EXTRA_NOTIFICATION_ID, 0)
+            if (notifId > 0) {
+                NotificationManagerCompat.from(this).cancel(notifId)
+            }
+            val amountCents = intent.getLongExtra(PaymentNotificationHandler.EXTRA_AMOUNT_CENTS, 0L)
+            val isIncome = intent.getBooleanExtra(PaymentNotificationHandler.EXTRA_IS_INCOME, false)
+            val category = runCatching {
+                ExpenseCategory.valueOf(
+                    intent.getStringExtra(PaymentNotificationHandler.EXTRA_CATEGORY).orEmpty()
+                )
+            }.getOrDefault(ExpenseCategory.OTHER)
+            val wallet = runCatching {
+                WalletType.valueOf(
+                    intent.getStringExtra(PaymentNotificationHandler.EXTRA_WALLET).orEmpty()
+                )
+            }.getOrDefault(WalletType.EWALLET)
+            val note = intent.getStringExtra(PaymentNotificationHandler.EXTRA_NOTE).orEmpty()
+
+            sharedCapturePayloadFlow.value = SharedCapturePayload(
+                prefilledDraft = ParsedShareDraft(
+                    target = if (isIncome) SharedCaptureTarget.INCOME else SharedCaptureTarget.EXPENSE,
+                    amountCents = amountCents.takeIf { it > 0L },
+                    suggestedCategory = category,
+                    suggestedWallet = wallet,
+                    transactionNote = note
+                )
+            )
+            pendingCommandFlow.value = LaunchCommand.OpenSharedCapture
+            return
+        }
 
         if (intent.action == Intent.ACTION_SEND || intent.action == Intent.ACTION_SEND_MULTIPLE) {
             intent.putExtra(EXTRA_KANSO_CONSUMED, true)

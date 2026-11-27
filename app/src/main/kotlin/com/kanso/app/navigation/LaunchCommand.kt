@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.ui.graphics.ImageBitmap
 import com.kanso.app.MainActivity
+import com.kanso.core.model.ParsedShareDraft
 import com.kanso.core.ui.components.QuickCaptureMode
 import java.net.URI
 
@@ -13,7 +14,8 @@ data class SharedCapturePayload(
     val subject: String = "",
     val isReceiptMedia: Boolean = false,
     val isScanning: Boolean = false,
-    val previewBitmap: ImageBitmap? = null
+    val previewBitmap: ImageBitmap? = null,
+    val prefilledDraft: ParsedShareDraft? = null
 )
 
 sealed interface LaunchCommand {
