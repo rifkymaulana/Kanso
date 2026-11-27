@@ -9,6 +9,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -43,6 +44,7 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -63,9 +65,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
@@ -128,6 +132,8 @@ fun QuickCaptureSheet(
     currency: AppCurrency,
     initialMode: QuickCaptureMode = QuickCaptureMode.EXPENSE,
     sharedDraft: ParsedShareDraft? = null,
+    sharedReceiptPreview: ImageBitmap? = null,
+    isScanningSharedReceipt: Boolean = false,
     onDismiss: () -> Unit,
     onSaveTransaction: (
         type: TransactionType,
@@ -335,12 +341,114 @@ fun QuickCaptureSheet(
                 }
             }
 
-            if (sharedDraft != null) {
+            if (isScanningSharedReceipt) {
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "Scanning receipt on-device...",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        LinearProgressIndicator(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(50))
+                        )
+                    }
+                }
+            }
+
+            if (sharedReceiptPreview != null) {
+                var expandPreview by remember(sharedReceiptPreview) { mutableStateOf(false) }
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .clickable { expandPreview = !expandPreview },
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                ) {
+                    if (expandPreview) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Image(
+                                bitmap = sharedReceiptPreview,
+                                contentDescription = "Shared receipt preview",
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(260.dp)
+                                    .clip(RoundedCornerShape(10.dp)),
+                                contentScale = ContentScale.Fit
+                            )
+                            Text(
+                                text = "Tap to collapse receipt",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    } else {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Image(
+                                bitmap = sharedReceiptPreview,
+                                contentDescription = "Shared receipt thumbnail",
+                                modifier = Modifier
+                                    .size(56.dp)
+                                    .clip(RoundedCornerShape(10.dp)),
+                                contentScale = ContentScale.Crop
+                            )
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                Text(
+                                    text = "Receipt attached",
+                                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = if (isScanningSharedReceipt) {
+                                        "Extracting amount & merchant..."
+                                    } else {
+                                        "Tap to view full receipt"
+                                    },
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (sharedDraft != null && !isScanningSharedReceipt) {
                 val detected = sharedDraft.detectedCurrency
-                val hintText = if (sharedDraft.wasConvertedCurrency && detected != null) {
-                    "Auto-converted from ${detected.code} offline · Editable"
-                } else {
-                    "Pre-filled from shared text · Tap any tab to switch"
+                val hintText = when {
+                    sharedDraft.wasConvertedCurrency && detected != null ->
+                        "Auto-converted from ${detected.code} offline · Editable"
+                    sharedReceiptPreview != null && sharedDraft.amountCents == null ->
+                        "Receipt attached · Enter total amount manually"
+                    else ->
+                        "Pre-filled from shared receipt · Tap any tab to switch"
                 }
                 Surface(
                     shape = RoundedCornerShape(12.dp),

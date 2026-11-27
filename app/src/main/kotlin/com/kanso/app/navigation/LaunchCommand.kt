@@ -3,13 +3,22 @@ package com.kanso.app.navigation
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.ui.graphics.ImageBitmap
 import com.kanso.app.MainActivity
 import com.kanso.core.ui.components.QuickCaptureMode
 import java.net.URI
 
+data class SharedCapturePayload(
+    val text: String = "",
+    val subject: String = "",
+    val isReceiptMedia: Boolean = false,
+    val isScanning: Boolean = false,
+    val previewBitmap: ImageBitmap? = null
+)
+
 sealed interface LaunchCommand {
     data class OpenQuickCapture(val mode: QuickCaptureMode) : LaunchCommand
-    data class OpenSharedCapture(val text: String, val subject: String = "") : LaunchCommand
+    data object OpenSharedCapture : LaunchCommand
     data class OpenBrainTab(val tab: Int) : LaunchCommand
     data class OpenUtilitiesTab(val tab: Int) : LaunchCommand
     data object OpenHabits : LaunchCommand

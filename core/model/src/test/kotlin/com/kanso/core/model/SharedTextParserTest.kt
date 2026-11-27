@@ -166,4 +166,60 @@ class SharedTextParserTest {
         assertEquals(18_000, repeat.nextDueOdometerKm)
         assertEquals(150_000_00L, repeat.costCents)
     }
+
+    @Test
+    fun `merges two-column OCR bounding boxes and ignores subtotal or thermal change`() {
+        val twoColumnOcr = OcrReceiptLineMerger.mergeVisualRows(
+            listOf(
+                OcrTextLine("Transaksi Berhasil", left = 40, top = 20, right = 340, bottom = 50),
+                OcrTextLine("Penerima", left = 40, top = 80, right = 180, bottom = 108),
+                OcrTextLine("WAROENG STEAK & SHAKE", left = 320, top = 82, right = 680, bottom = 110),
+                OcrTextLine("Sub Total", left = 40, top = 140, right = 180, bottom = 168),
+                OcrTextLine("Rp 75.000", left = 520, top = 142, right = 680, bottom = 170),
+                OcrTextLine("Biaya Admin", left = 40, top = 190, right = 210, bottom = 218),
+                OcrTextLine("Rp 2.000", left = 530, top = 191, right = 680, bottom = 219),
+                OcrTextLine("Total Pembayaran", left = 40, top = 240, right = 260, bottom = 270),
+                OcrTextLine("Rp 82.000", left = 515, top = 242, right = 680, bottom = 272),
+                OcrTextLine("Livin' by Mandiri", left = 40, top = 310, right = 290, bottom = 338)
+            )
+        )
+        assertTrue(twoColumnOcr.contains("Penerima : WAROENG STEAK & SHAKE"))
+        assertTrue(twoColumnOcr.contains("Total Pembayaran : Rp 82.000"))
+
+        val mergedDraft = SharedTextParser.parse(
+            rawText = twoColumnOcr,
+            userCurrency = AppCurrency.IDR,
+            isReceiptMedia = true
+        )
+        assertEquals(SharedCaptureTarget.EXPENSE, mergedDraft.target)
+        assertEquals(82_000_00L, mergedDraft.amountCents)
+        assertEquals(WalletType.BANK, mergedDraft.suggestedWallet)
+        assertEquals("WAROENG STEAK & SHAKE", mergedDraft.transactionNote)
+
+        val thermalStruk = """
+            INDOMARET SUDIRMAN
+            ROTI COKLAT       14,000
+            KOPI SUSU         14,000
+            SUB TOTAL : 28,000
+            TOTAL : 28,000
+            TUNAI : 50,000
+            KEMBALI : 22,000
+        """.trimIndent()
+        val thermalDraft = SharedTextParser.parse(
+            rawText = thermalStruk,
+            userCurrency = AppCurrency.IDR,
+            isReceiptMedia = true
+        )
+        assertEquals(SharedCaptureTarget.EXPENSE, thermalDraft.target)
+        assertEquals(28_000_00L, thermalDraft.amountCents)
+        assertEquals(ExpenseCategory.GROCERIES, thermalDraft.suggestedCategory)
+
+        val unreadableImageDraft = SharedTextParser.parse(
+            rawText = "",
+            userCurrency = AppCurrency.IDR,
+            isReceiptMedia = true
+        )
+        assertEquals(SharedCaptureTarget.EXPENSE, unreadableImageDraft.target)
+        assertNull(unreadableImageDraft.amountCents)
+    }
 }

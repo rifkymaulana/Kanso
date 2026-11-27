@@ -1,5 +1,7 @@
 package com.kanso.core.model
 
+import kotlin.math.abs
+import kotlin.math.max
 import kotlin.math.roundToLong
 
 enum class SharedCaptureTarget {
@@ -8,6 +10,68 @@ enum class SharedCaptureTarget {
     NOTE,
     TASK,
     SNIPPET
+}
+
+data class OcrTextLine(
+    val text: String,
+    val left: Int,
+    val top: Int,
+    val right: Int,
+    val bottom: Int
+)
+
+object OcrReceiptLineMerger {
+    fun mergeVisualRows(lines: List<OcrTextLine>): String {
+        val cleaned = lines.filter { it.text.isNotBlank() }
+        if (cleaned.isEmpty()) return ""
+
+        val sorted = cleaned.sortedWith(
+            compareBy<OcrTextLine> { (it.top + it.bottom) / 2.0 }.thenBy { it.left }
+        )
+
+        val rows = mutableListOf<MutableList<OcrTextLine>>()
+        for (line in sorted) {
+            val lineCenterY = (line.top + line.bottom) / 2.0
+            val lineHeight = max(1, line.bottom - line.top).toDouble()
+            val lastRow = rows.lastOrNull()
+            if (lastRow == null) {
+                rows.add(mutableListOf(line))
+            } else {
+                val rowCenterY = lastRow.map { (it.top + it.bottom) / 2.0 }.average()
+                val rowAvgHeight = lastRow.map { max(1, it.bottom - it.top).toDouble() }.average()
+                val threshold = max(rowAvgHeight, lineHeight) * 0.60
+                if (abs(lineCenterY - rowCenterY) <= threshold) {
+                    lastRow.add(line)
+                } else {
+                    rows.add(mutableListOf(line))
+                }
+            }
+        }
+
+        return rows.joinToString("\n") { row ->
+            val leftToRight = row.sortedBy { it.left }
+            if (leftToRight.size == 1) {
+                leftToRight[0].text.trim()
+            } else {
+                buildString {
+                    leftToRight.forEachIndexed { idx, segment ->
+                        val segText = segment.text.trim()
+                        if (idx == 0) {
+                            append(segText)
+                        } else {
+                            val prev = leftToRight[idx - 1].text.trim()
+                            if (prev.endsWith(":") || prev.endsWith("-")) {
+                                append(' ')
+                            } else {
+                                append(" : ")
+                            }
+                            append(segText)
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 data class ParsedShareDraft(
@@ -76,11 +140,19 @@ object SharedTextParser {
     )
 
     private val positiveAmountKeywords = Regex(
-        """\b(total|grand total|total bayar|jumlah|nominal|amount|paid|charged|debited)\b""",
+        """(?<!sub[\s\-]?)\b(total|grand total|total bayar|total transaksi|total pembayaran|total belanja|total tagihan|jumlah|nominal|amount|paid|charged|debited)\b""",
         RegexOption.IGNORE_CASE
     )
     private val negativeAmountKeywords = Regex(
-        """\b(saldo|balance|limit|sisa|cashback|diskon|discount|hemat|biaya admin|admin fee|fee)\b""",
+        """\b(saldo|balance|limit|sisa|cashback|diskon|discount|hemat|biaya admin|biaya transaksi|biaya layanan|admin fee|fee|subtotal|sub[\s\-]?total|kembali|kembalian|change)\b""",
+        RegexOption.IGNORE_CASE
+    )
+    private val thermalTotalFallbackRegex = Regex(
+        """^(?:grand\s+total|total\s+bayar|total\s+belanja|total\s+pembayaran|total\s+tagihan|total\s+transaksi|jumlah\s+bayar|total)\s*[:\-]?\s*([0-9]{1,3}(?:[.,][0-9]{3})+(?:[.,][0-9]{1,2})?|[0-9]+\.[0-9]{2})\b""",
+        RegexOption.IGNORE_CASE
+    )
+    private val receiptContextKeywords = Regex(
+        """\b(struk|tunai|kembali|kembalian|kasir|qris|subtotal|sub[\s\-]?total|cash|change)\b""",
         RegexOption.IGNORE_CASE
     )
     private val taskPrefixRegex = Regex(
@@ -92,7 +164,7 @@ object SharedTextParser {
         RegexOption.IGNORE_CASE
     )
     private val merchantLabelRegex = Regex(
-        """^(?:merchant|kepada|penerima|toko|outlet|to)\s*[:\-]\s*(.+)$""",
+        """^(?:merchant|kepada|penerima|nama penerima|tujuan|penyedia jasa|toko|outlet|to)\s*[:\-]\s*(.+)$""",
         RegexOption.IGNORE_CASE
     )
     private val genericStatusLineRegex = Regex(
@@ -105,7 +177,8 @@ object SharedTextParser {
         rawText: String,
         rawSubject: String = "",
         userCurrency: AppCurrency = AppCurrency.IDR,
-        customRatesVsUsd: Map<String, Double> = emptyMap()
+        customRatesVsUsd: Map<String, Double> = emptyMap(),
+        isReceiptMedia: Boolean = false
     ): ParsedShareDraft {
         val cleanText = rawText.trim()
         val cleanSubject = rawSubject.trim()
@@ -141,7 +214,11 @@ object SharedTextParser {
             if (cleanText.isNotBlank()) append(cleanText)
         }
 
-        val bestCandidate = findBestCurrencyCandidate(combinedForSearch)
+        val bestCandidate = findBestCurrencyCandidate(
+            text = combinedForSearch,
+            userCurrency = userCurrency,
+            allowCurrencyLessFallback = isReceiptMedia || receiptContextKeywords.containsMatchIn(combinedForSearch)
+        )
         if (bestCandidate != null) {
             val detectedCurrency = bestCandidate.currency
             val majorUnits = bestCandidate.majorUnits
@@ -201,16 +278,31 @@ object SharedTextParser {
             )
         }
 
-        val fallbackTarget = classifyNonReceiptTarget(
-            cleanText = cleanText,
-            cleanSubject = cleanSubject,
-            lines = lines,
-            firstLine = firstNonBlankLine
-        )
+        val isIncome = isReceiptMedia && isIncomeText(combinedForSearch)
+        val fallbackTarget = if (isReceiptMedia) {
+            if (isIncome) SharedCaptureTarget.INCOME else SharedCaptureTarget.EXPENSE
+        } else {
+            classifyNonReceiptTarget(
+                cleanText = cleanText,
+                cleanSubject = cleanSubject,
+                lines = lines,
+                firstLine = firstNonBlankLine
+            )
+        }
+        val fallbackNote = if (isReceiptMedia) {
+            extractTransactionNote(lines, cleanSubject).take(80)
+        } else {
+            ""
+        }
         return ParsedShareDraft(
             target = fallbackTarget,
-            suggestedCategory = ExpenseCategory.OTHER,
-            suggestedWallet = WalletType.EWALLET,
+            suggestedCategory = if (isReceiptMedia) {
+                if (isIncome) inferIncomeCategory(combinedForSearch) else inferExpenseCategory(combinedForSearch)
+            } else {
+                ExpenseCategory.OTHER
+            },
+            suggestedWallet = if (isReceiptMedia) inferWallet(combinedForSearch) else WalletType.EWALLET,
+            transactionNote = fallbackNote,
             noteTitle = noteTitle,
             noteContent = noteContent,
             taskTitle = cleanedTaskTitle,
@@ -219,7 +311,11 @@ object SharedTextParser {
         )
     }
 
-    private fun findBestCurrencyCandidate(text: String): AmountCandidate? {
+    private fun findBestCurrencyCandidate(
+        text: String,
+        userCurrency: AppCurrency = AppCurrency.IDR,
+        allowCurrencyLessFallback: Boolean = false
+    ): AmountCandidate? {
         val candidates = mutableListOf<AmountCandidate>()
         text.lineSequence().forEachIndexed { lineIdx, line ->
             val trimmed = line.trim()
@@ -249,6 +345,26 @@ object SharedTextParser {
                             )
                         )
                     }
+                }
+            }
+        }
+        if (candidates.isEmpty() && allowCurrencyLessFallback) {
+            text.lineSequence().forEachIndexed { lineIdx, line ->
+                val trimmed = line.trim()
+                if (trimmed.isEmpty() || negativeAmountKeywords.containsMatchIn(trimmed)) return@forEachIndexed
+                val match = thermalTotalFallbackRegex.find(trimmed) ?: return@forEachIndexed
+                val rawNumber = match.groupValues.getOrNull(1).orEmpty()
+                val majorUnits = parseMajorUnits(rawNumber, userCurrency)
+                if (majorUnits != null && majorUnits > 0.0 && majorUnits.isFinite()) {
+                    candidates.add(
+                        AmountCandidate(
+                            currency = userCurrency,
+                            majorUnits = majorUnits,
+                            score = 10,
+                            hasPositiveKeyword = true,
+                            lineIndex = lineIdx
+                        )
+                    )
                 }
             }
         }
@@ -356,17 +472,10 @@ object SharedTextParser {
         return when {
             containsAny(
                 lower,
-                "gofood", "grabfood", "shopeefood", "kopi", "coffee", "starbucks",
-                "fore", "kenangan", "janji jiwa", "resto", "restaurant", "cafe",
-                "warung", "makan", "bakery", "mcd", "kfc", "hokben", "mixue"
+                "gofood", "grabfood", "shopeefood", "starbucks", "fore", "kenangan",
+                "janji jiwa", "waroeng", "resto", "restaurant", "cafe", "steak",
+                "mcd", "kfc", "hokben", "mixue"
             ) -> ExpenseCategory.FOOD
-
-            containsAny(
-                lower,
-                "goride", "gocar", "grabcar", "grabbike", "grab ", "bluebird", "taxi",
-                "mrt", "krl", "lrt", "transjakarta", "whoosh", "kai", "pertamina",
-                "shell", "bensin", "fuel", "parkir", "parking", "e-toll", "flazz"
-            ) -> ExpenseCategory.TRANSPORT
 
             containsAny(
                 lower,
@@ -374,6 +483,13 @@ object SharedTextParser {
                 "ranch market", "farmers market", "lottemart", "astro", "sayurbox",
                 "segari", "supermarket", "groceries"
             ) -> ExpenseCategory.GROCERIES
+
+            containsAny(
+                lower,
+                "goride", "gocar", "grabcar", "grabbike", "grab ", "bluebird", "taxi",
+                "mrt", "krl", "lrt", "transjakarta", "whoosh", "kai", "pertamina",
+                "shell", "bensin", "fuel", "parkir", "parking", "e-toll", "flazz"
+            ) -> ExpenseCategory.TRANSPORT
 
             containsAny(
                 lower,
@@ -410,6 +526,11 @@ object SharedTextParser {
                 "udemy", "coursera", "gramedia", "tuition", "spp", "kursus", "course"
             ) -> ExpenseCategory.EDUCATION
 
+            containsAny(
+                lower,
+                "kopi", "coffee", "warung", "makan", "bakery"
+            ) -> ExpenseCategory.FOOD
+
             else -> ExpenseCategory.OTHER
         }
     }
@@ -432,7 +553,8 @@ object SharedTextParser {
                 lower,
                 "bca", "mandiri", "livin", "bri", "brimo", "bni", "wondr", "cimb",
                 "jenius", "jago", "seabank", "blu", "permata", "bsi", "bi-fast",
-                "virtual account", "transfer bank", "m-banking"
+                "virtual account", "transfer bank", "m-banking",
+                "m-transfer", "mybca", "klikbca", "octo", "ocbc", "danamon", "btn"
             ) -> WalletType.BANK
 
             containsAny(lower, "tunai", "cash") -> WalletType.CASH

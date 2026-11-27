@@ -137,7 +137,9 @@ private val TopLevelTabs = listOf(
 fun KansoAppRoot(
     mainViewModel: MainViewModel,
     pendingLaunchCommand: LaunchCommand? = null,
-    onConsumeLaunchCommand: () -> Unit = {}
+    sharedCapturePayload: SharedCapturePayload? = null,
+    onConsumeLaunchCommand: () -> Unit = {},
+    onClearSharedCapture: () -> Unit = {}
 ) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
@@ -159,8 +161,26 @@ fun KansoAppRoot(
     var showQuickCapture by remember { mutableStateOf(false) }
     var showManualOnboarding by rememberSaveable { mutableStateOf(false) }
     var quickCaptureInitialMode by remember { mutableStateOf(QuickCaptureMode.EXPENSE) }
-    var activeSharedDraft by remember { mutableStateOf<ParsedShareDraft?>(null) }
     var autoLaunchInstallOnReady by remember { mutableStateOf(false) }
+
+    val activeSharedDraft = remember(
+        sharedCapturePayload,
+        prefs.currency,
+        prefs.customRatesVsUsd
+    ) {
+        val payload = sharedCapturePayload ?: return@remember null
+        if (payload.isScanning && payload.text.isBlank() && payload.subject.isBlank()) {
+            null
+        } else {
+            SharedTextParser.parse(
+                rawText = payload.text,
+                rawSubject = payload.subject,
+                userCurrency = prefs.currency,
+                customRatesVsUsd = prefs.customRatesVsUsd,
+                isReceiptMedia = payload.isReceiptMedia
+            )
+        }
+    }
 
     val showMessage: (String) -> Unit = remember(scope, snackbarHostState) {
         { message ->
@@ -247,7 +267,7 @@ fun KansoAppRoot(
     }
 
     val openDefaultQuickCapture: () -> Unit = {
-        activeSharedDraft = null
+        onClearSharedCapture()
         quickCaptureInitialMode = when (currentRoute) {
             Routes.BRAIN_PATTERN -> QuickCaptureMode.NOTE
             else -> QuickCaptureMode.EXPENSE
@@ -259,17 +279,11 @@ fun KansoAppRoot(
         val cmd = pendingLaunchCommand ?: return@LaunchedEffect
         when (cmd) {
             is LaunchCommand.OpenQuickCapture -> {
-                activeSharedDraft = null
+                onClearSharedCapture()
                 quickCaptureInitialMode = cmd.mode
                 showQuickCapture = true
             }
-            is LaunchCommand.OpenSharedCapture -> {
-                activeSharedDraft = SharedTextParser.parse(
-                    rawText = cmd.text,
-                    rawSubject = cmd.subject,
-                    userCurrency = prefs.currency,
-                    customRatesVsUsd = prefs.customRatesVsUsd
-                )
+            LaunchCommand.OpenSharedCapture -> {
                 showQuickCapture = true
             }
             is LaunchCommand.OpenBrainTab -> openBrainTab(cmd.tab)
@@ -551,9 +565,11 @@ fun KansoAppRoot(
             currency = prefs.currency,
             initialMode = quickCaptureInitialMode,
             sharedDraft = activeSharedDraft,
+            sharedReceiptPreview = sharedCapturePayload?.previewBitmap,
+            isScanningSharedReceipt = sharedCapturePayload?.isScanning == true,
             onDismiss = {
                 showQuickCapture = false
-                activeSharedDraft = null
+                onClearSharedCapture()
             },
             onSaveTransaction = { type, amountCents, category, wallet, note, timestampMillis ->
                 mainViewModel.saveQuickTransaction(type, amountCents, category, wallet, note, timestampMillis)

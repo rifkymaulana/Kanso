@@ -1,11 +1,13 @@
 package com.kanso.app
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.os.SystemClock
 import android.view.WindowManager
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.core.content.IntentCompat
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -40,7 +42,9 @@ import androidx.lifecycle.lifecycleScope
 import com.kanso.app.navigation.KansoAppRoot
 import com.kanso.app.navigation.LaunchCommand
 import com.kanso.app.navigation.LaunchCommandParser
+import com.kanso.app.navigation.SharedCapturePayload
 import com.kanso.app.notifications.KansoReminderScheduler
+import com.kanso.app.share.ReceiptShareProcessor
 import com.kanso.app.sync.DriveSyncScheduler
 import com.kanso.app.widget.KansoWidgetUpdater
 import com.kanso.core.database.preferences.PreferencesRepository
@@ -64,6 +68,7 @@ class MainActivity : FragmentActivity() {
     lateinit var preferencesRepository: PreferencesRepository
 
     private val pendingCommandFlow = MutableStateFlow<LaunchCommand?>(null)
+    private val sharedCapturePayloadFlow = MutableStateFlow<SharedCapturePayload?>(null)
     private var activeMainViewModel: MainViewModel? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -82,6 +87,7 @@ class MainActivity : FragmentActivity() {
             val lockSession by mainViewModel.lockSession.collectAsStateWithLifecycle()
             val driveConfig by mainViewModel.driveSyncConfig.collectAsStateWithLifecycle()
             val pendingCommand by pendingCommandFlow.collectAsStateWithLifecycle()
+            val sharedCapturePayload by sharedCapturePayloadFlow.collectAsStateWithLifecycle()
 
             var lockAuthError by remember { mutableStateOf<String?>(null) }
             var autoPromptedThisLock by remember { mutableStateOf(false) }
@@ -185,7 +191,9 @@ class MainActivity : FragmentActivity() {
                         KansoAppRoot(
                             mainViewModel = mainViewModel,
                             pendingLaunchCommand = pendingCommand,
-                            onConsumeLaunchCommand = { pendingCommandFlow.value = null }
+                            sharedCapturePayload = sharedCapturePayload,
+                            onConsumeLaunchCommand = { pendingCommandFlow.value = null },
+                            onClearSharedCapture = { sharedCapturePayloadFlow.value = null }
                         )
                     }
                 }
@@ -221,25 +229,77 @@ class MainActivity : FragmentActivity() {
 
     private fun handleIntent(intent: Intent?) {
         if (intent == null) return
-        if (intent.action == Intent.ACTION_SEND && intent.type?.startsWith("text/") == true) {
+        if (intent.getBooleanExtra(EXTRA_KANSO_CONSUMED, false)) return
+
+        if (intent.action == Intent.ACTION_SEND || intent.action == Intent.ACTION_SEND_MULTIPLE) {
+            intent.putExtra(EXTRA_KANSO_CONSUMED, true)
             val sharedText = intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString().orEmpty()
             val sharedSubject = intent.getStringExtra(Intent.EXTRA_SUBJECT).orEmpty()
-            intent.action = Intent.ACTION_MAIN
-            intent.removeExtra(Intent.EXTRA_TEXT)
-            intent.removeExtra(Intent.EXTRA_SUBJECT)
-            if (sharedText.isNotBlank() || sharedSubject.isNotBlank()) {
-                pendingCommandFlow.value = LaunchCommand.OpenSharedCapture(
+            val streamUri = extractSharedStreamUri(intent)
+
+            if (streamUri != null) {
+                val declaredMime = intent.type
+                sharedCapturePayloadFlow.value = SharedCapturePayload(
                     text = sharedText,
-                    subject = sharedSubject
+                    subject = sharedSubject,
+                    isReceiptMedia = true,
+                    isScanning = true
                 )
+                pendingCommandFlow.value = LaunchCommand.OpenSharedCapture
+                lifecycleScope.launch {
+                    val processed = ReceiptShareProcessor.processUri(
+                        context = applicationContext,
+                        uri = streamUri,
+                        declaredMimeType = declaredMime
+                    )
+                    val combinedText = listOf(sharedText.trim(), processed.extractedText.trim())
+                        .filter { it.isNotEmpty() }
+                        .joinToString("\n")
+                    sharedCapturePayloadFlow.value = SharedCapturePayload(
+                        text = combinedText,
+                        subject = sharedSubject,
+                        isReceiptMedia = true,
+                        isScanning = false,
+                        previewBitmap = processed.previewBitmap
+                    )
+                }
+            } else if (sharedText.isNotBlank() || sharedSubject.isNotBlank()) {
+                sharedCapturePayloadFlow.value = SharedCapturePayload(
+                    text = sharedText,
+                    subject = sharedSubject,
+                    isReceiptMedia = false,
+                    isScanning = false
+                )
+                pendingCommandFlow.value = LaunchCommand.OpenSharedCapture
             }
             return
         }
+
         val parsed = LaunchCommandParser.parseUri(intent.dataString)
         if (parsed != null) {
+            intent.putExtra(EXTRA_KANSO_CONSUMED, true)
             pendingCommandFlow.value = parsed
             intent.data = null
         }
+    }
+
+    private fun extractSharedStreamUri(intent: Intent): Uri? {
+        if (intent.action == Intent.ACTION_SEND_MULTIPLE) {
+            val multiple = IntentCompat.getParcelableArrayListExtra(
+                intent,
+                Intent.EXTRA_STREAM,
+                Uri::class.java
+            )
+            val first = multiple?.firstOrNull()
+            if (first != null) return first
+        }
+        val single = IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
+        if (single != null) return single
+        return intent.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.uri
+    }
+
+    companion object {
+        private const val EXTRA_KANSO_CONSUMED = "com.kanso.app.EXTRA_INTENT_CONSUMED"
     }
 }
 

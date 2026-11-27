@@ -48,6 +48,8 @@
 -keep class com.kanso.app.sync.DriveSyncWorker { *; }
 -keep class com.kanso.app.tile.KansoQuickCaptureTileService { *; }
 
-# Optional compile-time annotations referenced by transitive libraries (ZXing/Guava/CameraX)
+# Optional compile-time annotations referenced by transitive libraries (ZXing/Guava/CameraX/MLKit)
 -dontwarn com.google.errorprone.annotations.**
 -dontwarn javax.annotation.**
+-dontwarn com.google.mlkit.**
+-dontwarn com.google.android.gms.internal.mlkit_vision_text_common.**
