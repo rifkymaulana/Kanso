@@ -19,6 +19,7 @@ import com.kanso.core.model.AppLockTimeout
 import com.kanso.core.model.DetectedPaymentAlert
 import com.kanso.core.model.DriveSyncConfig
 import com.kanso.core.model.PaymentCaptureMode
+import com.kanso.core.model.PaymentNotificationLogEntry
 import com.kanso.core.model.ThemeMode
 import com.kanso.core.model.UserPreferences
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -45,7 +46,8 @@ data class SettingsUiState(
     val updateState: AppUpdateState = AppUpdateState.Idle,
     val driveSyncConfig: DriveSyncConfig = DriveSyncConfig(),
     val driveSyncState: DriveSyncState = DriveSyncState.Idle,
-    val recentPaymentDetections: List<DetectedPaymentAlert> = emptyList()
+    val recentPaymentDetections: List<DetectedPaymentAlert> = emptyList(),
+    val recentPaymentLogs: List<PaymentNotificationLogEntry> = emptyList()
 )
 
 @HiltViewModel
@@ -77,12 +79,14 @@ class SettingsViewModel @Inject constructor(
         baseStateFlow,
         preferencesRepository.driveSyncConfig,
         googleDriveSyncManager.state,
-        paymentNotificationHandler.recentDetections
-    ) { base, driveConfig, driveState, recentDetections ->
+        paymentNotificationHandler.recentDetections,
+        paymentNotificationHandler.recentLogs
+    ) { base, driveConfig, driveState, recentDetections, recentLogs ->
         base.copy(
             driveSyncConfig = driveConfig,
             driveSyncState = driveState,
-            recentPaymentDetections = recentDetections
+            recentPaymentDetections = recentDetections,
+            recentPaymentLogs = recentLogs
         )
     }.stateIn(
         scope = viewModelScope,
@@ -173,6 +177,10 @@ class SettingsViewModel @Inject constructor(
             )
             onResult(posted)
         }
+    }
+
+    fun clearRecentPaymentLogs() {
+        paymentNotificationHandler.clearRecentLogs()
     }
 
     fun setAutoCheckUpdates(enabled: Boolean) {

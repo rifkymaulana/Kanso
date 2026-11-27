@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.PowerManager
 import android.provider.Settings
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -22,17 +23,24 @@ import com.kanso.core.database.preferences.PreferencesRepository
 import com.kanso.core.database.repository.MoneyRepository
 import com.kanso.core.model.CurrencyFormatter
 import com.kanso.core.model.DetectedPaymentAlert
+import com.kanso.core.model.KnownFinanceApps
 import com.kanso.core.model.MoneyTransaction
 import com.kanso.core.model.PaymentAlertDeduplicator
 import com.kanso.core.model.PaymentCaptureMode
+import com.kanso.core.model.PaymentNotificationLogEntry
 import com.kanso.core.model.PaymentNotificationParser
+import com.kanso.core.model.PaymentParseResult
+import com.kanso.core.model.PaymentParseSkipReason
 import com.kanso.core.model.TransactionType
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -44,8 +52,25 @@ class PaymentNotificationHandler @Inject constructor(
 ) {
     private val deduplicator = PaymentAlertDeduplicator()
     private val notificationIdCounter = AtomicInteger(NOTIFICATION_ID_START)
+    private val logIdGenerator = AtomicLong(System.currentTimeMillis())
+    private val logJson = Json { ignoreUnknownKeys = true }
+    private val logPrefs by lazy {
+        context.getSharedPreferences(LOG_PREFS_NAME, Context.MODE_PRIVATE)
+    }
+    private val logLock = Any()
+
     private val _recentDetections = MutableStateFlow<List<DetectedPaymentAlert>>(emptyList())
     val recentDetections: StateFlow<List<DetectedPaymentAlert>> = _recentDetections.asStateFlow()
+
+    private val _recentLogs = MutableStateFlow(loadPrunedLogs(System.currentTimeMillis()))
+    val recentLogs: StateFlow<List<PaymentNotificationLogEntry>> = _recentLogs.asStateFlow()
+
+    fun clearRecentLogs() {
+        synchronized(logLock) {
+            logPrefs.edit().remove(KEY_LOGS_JSON).apply()
+            _recentLogs.value = emptyList()
+        }
+    }
 
     suspend fun processIncomingNotification(
         packageName: String,
@@ -67,19 +92,59 @@ class PaymentNotificationHandler @Inject constructor(
             if (!shouldInspect) return false
         }
 
-        val alert = PaymentNotificationParser.parse(
-            packageName = packageName,
-            appLabel = appLabel,
-            title = title,
-            text = text,
-            userCurrency = prefs.currency,
-            customRatesVsUsd = prefs.customRatesVsUsd,
-            timestampMillis = timestampMillis
-        ) ?: return false
+        val resolvedLabel = appLabel.trim().ifEmpty {
+            KnownFinanceApps.findByPackage(packageName)?.displayName ?: packageName
+        }
+
+        val alert = when (
+            val parseResult = PaymentNotificationParser.parseWithReason(
+                packageName = packageName,
+                appLabel = resolvedLabel,
+                title = title,
+                text = text,
+                userCurrency = prefs.currency,
+                customRatesVsUsd = prefs.customRatesVsUsd,
+                timestampMillis = timestampMillis
+            )
+        ) {
+            is PaymentParseResult.Skipped -> {
+                appendLogEntry(
+                    packageName = packageName,
+                    sourceAppLabel = resolvedLabel,
+                    title = title,
+                    text = text,
+                    timestampMillis = timestampMillis,
+                    matchedAlert = null,
+                    skipReason = parseResult.reason
+                )
+                return false
+            }
+
+            is PaymentParseResult.Matched -> parseResult.alert
+        }
 
         if (!isTestSimulation && !deduplicator.shouldProcess(alert.fingerprint, timestampMillis)) {
+            appendLogEntry(
+                packageName = packageName,
+                sourceAppLabel = resolvedLabel,
+                title = title,
+                text = text,
+                timestampMillis = timestampMillis,
+                matchedAlert = null,
+                skipReason = PaymentParseSkipReason.DUPLICATE
+            )
             return false
         }
+
+        appendLogEntry(
+            packageName = packageName,
+            sourceAppLabel = resolvedLabel,
+            title = title,
+            text = text,
+            timestampMillis = timestampMillis,
+            matchedAlert = alert,
+            skipReason = null
+        )
 
         _recentDetections.update { existing ->
             (listOf(alert) + existing).take(MAX_RECENT_DETECTIONS)
@@ -278,11 +343,59 @@ class PaymentNotificationHandler @Inject constructor(
         return NOTIFICATION_ID_START + ((current - NOTIFICATION_ID_START) % (NOTIFICATION_ID_END - NOTIFICATION_ID_START + 1))
     }
 
+    private fun appendLogEntry(
+        packageName: String,
+        sourceAppLabel: String,
+        title: String,
+        text: String,
+        timestampMillis: Long,
+        matchedAlert: DetectedPaymentAlert?,
+        skipReason: PaymentParseSkipReason?
+    ) {
+        val (safeTitle, safeText) = if (skipReason == PaymentParseSkipReason.OTP) {
+            "OTP notification" to "Redacted for privacy"
+        } else {
+            title.trim().take(120) to text.trim().take(300)
+        }
+        val entry = PaymentNotificationLogEntry(
+            id = logIdGenerator.incrementAndGet(),
+            packageName = packageName,
+            sourceAppLabel = sourceAppLabel,
+            title = safeTitle,
+            text = safeText,
+            timestampMillis = timestampMillis,
+            matchedAlert = matchedAlert,
+            skipReason = skipReason
+        )
+        synchronized(logLock) {
+            val existing = loadPrunedLogs(timestampMillis)
+            val updated = (listOf(entry) + existing).take(MAX_LOG_ENTRIES)
+            logPrefs.edit().putString(KEY_LOGS_JSON, logJson.encodeToString(updated)).apply()
+            _recentLogs.value = updated
+        }
+    }
+
+    private fun loadPrunedLogs(nowMillis: Long): List<PaymentNotificationLogEntry> {
+        val raw = runCatching { logPrefs.getString(KEY_LOGS_JSON, null) }.getOrNull() ?: return emptyList()
+        val parsed = runCatching {
+            logJson.decodeFromString<List<PaymentNotificationLogEntry>>(raw)
+        }.getOrNull().orEmpty()
+        val cutoff = nowMillis - LOG_RETENTION_MS
+        return parsed
+            .filter { it.timestampMillis >= cutoff }
+            .sortedByDescending { it.timestampMillis }
+            .take(MAX_LOG_ENTRIES)
+    }
+
     companion object {
         const val CHANNEL_ID = "kanso_payment_capture"
         private const val NOTIFICATION_ID_START = 4000
         private const val NOTIFICATION_ID_END = 4499
         private const val MAX_RECENT_DETECTIONS = 5
+        private const val MAX_LOG_ENTRIES = 15
+        private const val LOG_RETENTION_MS = 24L * 60L * 60L * 1000L
+        private const val LOG_PREFS_NAME = "kanso_payment_logs"
+        private const val KEY_LOGS_JSON = "recent_logs_json"
 
         const val ACTION_SAVE_DETECTED_PAYMENT = "com.kanso.app.notifications.ACTION_SAVE_DETECTED_PAYMENT"
         const val ACTION_DISMISS_DETECTED_PAYMENT = "com.kanso.app.notifications.ACTION_DISMISS_DETECTED_PAYMENT"
@@ -305,6 +418,18 @@ class PaymentNotificationHandler @Inject constructor(
 
         fun createNotificationAccessIntent(): Intent {
             return Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+        }
+
+        fun isIgnoringBatteryOptimizations(context: Context): Boolean {
+            val powerManager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
+                ?: return true
+            return powerManager.isIgnoringBatteryOptimizations(context.packageName)
+        }
+
+        fun createBatteryOptimizationSettingsIntent(): Intent {
+            return Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
         }

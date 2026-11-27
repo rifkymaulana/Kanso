@@ -667,7 +667,11 @@ fun KansoAppRoot(
                         onShowMessage = showMessage,
                         onAppLockActivated = mainViewModel::markSessionUnlocked,
                         onBiometricPromptActive = mainViewModel::setBiometricPromptActive,
-                        onReopenOnboarding = { showManualOnboarding = true }
+                        onReopenOnboarding = { showManualOnboarding = true },
+                        onOpenQuickCaptureDraft = { payload ->
+                            onUpdateSharedCapture(payload)
+                            showQuickCapture = true
+                        }
                     )
                 }
             }

@@ -53,6 +53,19 @@ object KnownFinanceApps {
         presets.firstOrNull { it.packageName.equals(packageName, ignoreCase = true) }
 }
 
+@Serializable
+enum class PaymentParseSkipReason(val label: String) {
+    EMPTY("Empty notification"),
+    OTP("OTP / verification code"),
+    PENDING_OR_FAILED("Unpaid, pending, or failed"),
+    PROMO_OR_LOAN("Promo, voucher, or loan"),
+    NO_TRANSACTION_SIGNAL("Not a completed payment"),
+    NO_CURRENCY_AMOUNT("No currency amount"),
+    DUPLICATE("Duplicate within 90s"),
+    LOGGER_DISABLED("Auto-logger paused")
+}
+
+@Serializable
 data class DetectedPaymentAlert(
     val packageName: String,
     val sourceAppLabel: String,
@@ -66,6 +79,25 @@ data class DetectedPaymentAlert(
     val timestampMillis: Long,
     val fingerprint: String
 )
+
+sealed interface PaymentParseResult {
+    data class Matched(val alert: DetectedPaymentAlert) : PaymentParseResult
+    data class Skipped(val reason: PaymentParseSkipReason) : PaymentParseResult
+}
+
+@Serializable
+data class PaymentNotificationLogEntry(
+    val id: Long,
+    val packageName: String,
+    val sourceAppLabel: String,
+    val title: String,
+    val text: String,
+    val timestampMillis: Long,
+    val matchedAlert: DetectedPaymentAlert? = null,
+    val skipReason: PaymentParseSkipReason? = null
+) {
+    val isMatched: Boolean get() = matchedAlert != null
+}
 
 object PaymentNotificationParser {
 
@@ -179,21 +211,53 @@ object PaymentNotificationParser {
         customRatesVsUsd: Map<String, Double> = emptyMap(),
         timestampMillis: Long = System.currentTimeMillis()
     ): DetectedPaymentAlert? {
+        return (parseWithReason(
+            packageName = packageName,
+            appLabel = appLabel,
+            title = title,
+            text = text,
+            userCurrency = userCurrency,
+            customRatesVsUsd = customRatesVsUsd,
+            timestampMillis = timestampMillis
+        ) as? PaymentParseResult.Matched)?.alert
+    }
+
+    fun parseWithReason(
+        packageName: String,
+        appLabel: String = "",
+        title: String,
+        text: String,
+        userCurrency: AppCurrency = AppCurrency.IDR,
+        customRatesVsUsd: Map<String, Double> = emptyMap(),
+        timestampMillis: Long = System.currentTimeMillis()
+    ): PaymentParseResult {
         val cleanPkg = packageName.trim()
-        if (cleanPkg.isEmpty() || cleanPkg.equals("com.kanso.app", ignoreCase = true)) return null
+        if (cleanPkg.isEmpty() || cleanPkg.equals("com.kanso.app", ignoreCase = true)) {
+            return PaymentParseResult.Skipped(PaymentParseSkipReason.EMPTY)
+        }
 
         val cleanTitle = title.trim()
         val cleanText = text.trim()
-        if (cleanTitle.isEmpty() && cleanText.isEmpty()) return null
+        if (cleanTitle.isEmpty() && cleanText.isEmpty()) {
+            return PaymentParseResult.Skipped(PaymentParseSkipReason.EMPTY)
+        }
 
         val combined = listOf(cleanTitle, cleanText)
             .filter { it.isNotEmpty() }
             .joinToString("\n")
 
-        if (otpKeywordsRegex.containsMatchIn(combined)) return null
-        if (pendingOrFailedKeywordsRegex.containsMatchIn(combined)) return null
-        if (promoKeywordsRegex.containsMatchIn(combined)) return null
-        if (!completedTransactionSignalRegex.containsMatchIn(combined)) return null
+        if (otpKeywordsRegex.containsMatchIn(combined)) {
+            return PaymentParseResult.Skipped(PaymentParseSkipReason.OTP)
+        }
+        if (pendingOrFailedKeywordsRegex.containsMatchIn(combined)) {
+            return PaymentParseResult.Skipped(PaymentParseSkipReason.PENDING_OR_FAILED)
+        }
+        if (promoKeywordsRegex.containsMatchIn(combined)) {
+            return PaymentParseResult.Skipped(PaymentParseSkipReason.PROMO_OR_LOAN)
+        }
+        if (!completedTransactionSignalRegex.containsMatchIn(combined)) {
+            return PaymentParseResult.Skipped(PaymentParseSkipReason.NO_TRANSACTION_SIGNAL)
+        }
 
         val baseDraft = SharedTextParser.parse(
             rawText = cleanText,
@@ -202,8 +266,10 @@ object PaymentNotificationParser {
             customRatesVsUsd = customRatesVsUsd,
             isReceiptMedia = false
         )
-        val amountCents = baseDraft.amountCents?.takeIf { it > 0L } ?: return null
-        val detectedCurrency = baseDraft.detectedCurrency ?: return null
+        val amountCents = baseDraft.amountCents?.takeIf { it > 0L }
+            ?: return PaymentParseResult.Skipped(PaymentParseSkipReason.NO_CURRENCY_AMOUNT)
+        val detectedCurrency = baseDraft.detectedCurrency
+            ?: return PaymentParseResult.Skipped(PaymentParseSkipReason.NO_CURRENCY_AMOUNT)
 
         val preset = KnownFinanceApps.findByPackage(cleanPkg)
         val resolvedSourceLabel = appLabel.trim().ifEmpty { preset?.displayName ?: cleanPkg }
@@ -255,18 +321,20 @@ object PaymentNotificationParser {
 
         val fingerprint = "${cleanPkg.lowercase()}|${txType.name}|$amountCents|${note.trim().lowercase()}"
 
-        return DetectedPaymentAlert(
-            packageName = cleanPkg,
-            sourceAppLabel = resolvedSourceLabel,
-            type = txType,
-            amountCents = amountCents,
-            detectedCurrency = detectedCurrency,
-            wasConvertedCurrency = baseDraft.wasConvertedCurrency,
-            category = category,
-            wallet = wallet,
-            note = note,
-            timestampMillis = timestampMillis,
-            fingerprint = fingerprint
+        return PaymentParseResult.Matched(
+            DetectedPaymentAlert(
+                packageName = cleanPkg,
+                sourceAppLabel = resolvedSourceLabel,
+                type = txType,
+                amountCents = amountCents,
+                detectedCurrency = detectedCurrency,
+                wasConvertedCurrency = baseDraft.wasConvertedCurrency,
+                category = category,
+                wallet = wallet,
+                note = note,
+                timestampMillis = timestampMillis,
+                fingerprint = fingerprint
+            )
         )
     }
 

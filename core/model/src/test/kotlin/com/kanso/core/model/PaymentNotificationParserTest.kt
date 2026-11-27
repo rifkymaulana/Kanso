@@ -206,4 +206,50 @@ class PaymentNotificationParserTest {
         assertFalse(deduplicator.shouldProcess(fp, 90_999L))
         assertTrue(deduplicator.shouldProcess(fp, 91_000L))
     }
+
+    @Test
+    fun `parseWithReason returns specific skip reasons and matched alerts`() {
+        val otpResult = PaymentNotificationParser.parseWithReason(
+            packageName = "com.bca",
+            title = "Kode Verifikasi",
+            text = "OTP 123456 untuk transaksi Rp 200.000 berhasil dikirim"
+        )
+        assertEquals(PaymentParseResult.Skipped(PaymentParseSkipReason.OTP), otpResult)
+
+        val pendingResult = PaymentNotificationParser.parseWithReason(
+            packageName = "com.shopee.id",
+            title = "Menunggu Pembayaran",
+            text = "Selesaikan pembayaran Rp 145.000 sebelum jam 22:00"
+        )
+        assertEquals(PaymentParseResult.Skipped(PaymentParseSkipReason.PENDING_OR_FAILED), pendingResult)
+
+        val promoResult = PaymentNotificationParser.parseWithReason(
+            packageName = "com.gojek.gopay",
+            title = "Promo Spesial!",
+            text = "Klaim voucher cashback s/d Rp 50.000 hari ini berhasil!"
+        )
+        assertEquals(PaymentParseResult.Skipped(PaymentParseSkipReason.PROMO_OR_LOAN), promoResult)
+
+        val noSignalResult = PaymentNotificationParser.parseWithReason(
+            packageName = "com.bca",
+            title = "Info Saldo",
+            text = "Saldo rekening Anda Rp 2.500.000"
+        )
+        assertEquals(PaymentParseResult.Skipped(PaymentParseSkipReason.NO_TRANSACTION_SIGNAL), noSignalResult)
+
+        val noAmountResult = PaymentNotificationParser.parseWithReason(
+            packageName = "com.bca",
+            title = "Pembayaran Berhasil",
+            text = "Transaksi QRIS Anda berhasil diproses"
+        )
+        assertEquals(PaymentParseResult.Skipped(PaymentParseSkipReason.NO_CURRENCY_AMOUNT), noAmountResult)
+
+        val matched = PaymentNotificationParser.parseWithReason(
+            packageName = "com.bca",
+            appLabel = "BCA mobile",
+            title = "Pembayaran QRIS berhasil",
+            text = "Pembayaran QRIS Rp45.000 ke KOPI KENANGAN berhasil"
+        )
+        assertTrue(matched is PaymentParseResult.Matched)
+    }
 }
