@@ -1,6 +1,7 @@
 package com.kanso.app.ui.hub
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -79,17 +80,21 @@ fun HubRoute(
         onOpenSettings
     ) {
         val moneyExtras = stats.activeBillCount + stats.openIouCount + stats.activeGoalCount
+        val moneyTotal = stats.transactionCount + moneyExtras
+        val moneyBadge = when {
+            stats.transactionCount > 0 && moneyExtras == 0 ->
+                if (stats.transactionCount == 1) "1 entry" else "${stats.transactionCount} entries"
+            moneyTotal == 1 -> "1 item"
+            else -> "$moneyTotal items"
+        }
+        val brainTotal = stats.noteCount + stats.openTaskCount + stats.snippetCount
         listOf(
             HubMiniAppItem(
                 title = "Money & Budgets",
                 subtitle = "Wallets, goals, caps, bills, IOUs",
                 icon = Icons.Outlined.AccountBalanceWallet,
                 accent = kansoColors.moneyAccent,
-                badgeText = if (stats.transactionCount > 0 && moneyExtras == 0) {
-                    "${stats.transactionCount} entries"
-                } else {
-                    "${stats.transactionCount + moneyExtras} items"
-                },
+                badgeText = moneyBadge,
                 onClick = onOpenMoney
             ),
             HubMiniAppItem(
@@ -97,7 +102,7 @@ fun HubRoute(
                 subtitle = "Notes, tasks & 1-tap snippets",
                 icon = Icons.Outlined.Psychology,
                 accent = kansoColors.brainAccent,
-                badgeText = "${stats.noteCount + stats.openTaskCount + stats.snippetCount} items",
+                badgeText = if (brainTotal == 1) "1 item" else "$brainTotal items",
                 onClick = onOpenBrain
             ),
             HubMiniAppItem(
@@ -105,7 +110,7 @@ fun HubRoute(
                 subtitle = "Streaks, sleep, water, mood",
                 icon = Icons.Outlined.FavoriteBorder,
                 accent = kansoColors.habitsAccent,
-                badgeText = "${stats.habitCount} habits",
+                badgeText = if (stats.habitCount == 1) "1 habit" else "${stats.habitCount} habits",
                 onClick = onOpenHabits
             ),
             HubMiniAppItem(
@@ -118,10 +123,14 @@ fun HubRoute(
             ),
             HubMiniAppItem(
                 title = "Pocket Utilities",
-                subtitle = "QR tools, converters, Pomodoro",
+                subtitle = "QR, converter, focus & dates",
                 icon = Icons.Outlined.Build,
                 accent = kansoColors.utilitiesAccent,
-                badgeText = if (stats.countdownCount > 0) "${stats.countdownCount} countdowns" else "4 tools",
+                badgeText = when (stats.countdownCount) {
+                    0 -> "4 tools"
+                    1 -> "1 date"
+                    else -> "${stats.countdownCount} dates"
+                },
                 onClick = onOpenUtilities
             ),
             HubMiniAppItem(
@@ -179,7 +188,7 @@ fun HubRoute(
                             tint = MaterialTheme.colorScheme.primary
                         )
                         Text(
-                            text = "Search notes, expenses, tasks, expiries...",
+                            text = "Search expenses, bills, IOUs, notes...",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.weight(1f),
@@ -308,7 +317,7 @@ private fun MiniAppCard(
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.Top
             ) {
                 KansoAccentIconBadge(
@@ -318,10 +327,15 @@ private fun MiniAppCard(
                     iconSize = 21.dp,
                     cornerRadius = 14.dp
                 )
-                KansoPillBadge(
-                    text = item.badgeText,
-                    color = item.accent
-                )
+                Box(
+                    modifier = Modifier.weight(1f),
+                    contentAlignment = Alignment.TopEnd
+                ) {
+                    KansoPillBadge(
+                        text = item.badgeText,
+                        color = item.accent
+                    )
+                }
             }
 
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
