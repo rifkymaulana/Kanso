@@ -5,10 +5,13 @@ import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -38,9 +41,13 @@ import androidx.compose.material.icons.outlined.ChevronLeft
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.ExpandLess
+import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.FileDownload
+import androidx.compose.material.icons.outlined.FilterList
 import androidx.compose.material.icons.outlined.Handshake
 import androidx.compose.material.icons.outlined.PieChart
+import androidx.compose.material.icons.outlined.Remove
 import androidx.compose.material.icons.outlined.Savings
 import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material3.FilterChip
@@ -66,8 +73,11 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
@@ -727,11 +737,37 @@ fun MoneyScreenContent(
                     onToggle = onToggleHideBalances,
                     size = 38.dp
                 )
-                MonthPillSelector(
-                    label = uiState.selectedMonthLabel,
-                    onPrevious = onPreviousMonth,
-                    onNext = onNextMonth
-                )
+                AnimatedContent(
+                    targetState = selectedTab,
+                    transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
+                    label = "moneyHeaderAction"
+                ) { tab ->
+                    when (tab) {
+                        0, 2 -> MonthPillSelector(
+                            label = uiState.selectedMonthLabel,
+                            onPrevious = onPreviousMonth,
+                            onNext = onNextMonth
+                        )
+                        1 -> KansoTonalButton(
+                            text = "Goal",
+                            leadingIcon = Icons.Outlined.Add,
+                            size = KansoButtonSize.COMPACT,
+                            onClick = onAddGoal
+                        )
+                        3 -> KansoTonalButton(
+                            text = "Bill",
+                            leadingIcon = Icons.Outlined.Add,
+                            size = KansoButtonSize.COMPACT,
+                            onClick = onAddBill
+                        )
+                        else -> KansoTonalButton(
+                            text = "IOU",
+                            leadingIcon = Icons.Outlined.Add,
+                            size = KansoButtonSize.COMPACT,
+                            onClick = onAddIou
+                        )
+                    }
+                }
             }
         }
 
@@ -900,6 +936,19 @@ private fun LogTabContent(
         }
     }
 
+    var showInsights by rememberSaveable { mutableStateOf(false) }
+    var showFilters by rememberSaveable { mutableStateOf(false) }
+    val activeFilterCount = listOfNotNull(
+        uiState.transactionFilter.type,
+        uiState.transactionFilter.wallet,
+        uiState.transactionFilter.category
+    ).size
+    val hasTrendData = uiState.monthlyTrend.any { it.incomeCents > 0L || it.expenseCents > 0L } ||
+        uiState.summary.expenseCents > 0L
+    val hasInsights = uiState.safeToSpend != null ||
+        hasTrendData ||
+        (topCategories.isNotEmpty() && uiState.summary.expenseCents > 0L)
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 28.dp),
@@ -1008,125 +1057,192 @@ private fun LogTabContent(
             }
         }
 
-        uiState.safeToSpend?.let { report ->
-            item {
-                MoneySmartCoachCard(
-                    report = report,
-                    currency = uiState.currency,
-                    hideBalances = uiState.hideBalances,
-                    insights = uiState.coachInsights,
-                    onEditOverallBudget = onEditOverallBudget
-                )
-            }
-        }
+        if (hasInsights) {
+            item(key = "insights_panel") {
+                val report = uiState.safeToSpend
+                val insightsSummary = when {
+                    report != null && report.isCurrentMonth && report.hasAnchor -> {
+                        if (report.todayRemainingAllowanceCents < 0L) {
+                            "${report.paceStatus.badgeLabel} · Over today's allowance"
+                        } else {
+                            "${report.paceStatus.badgeLabel} · Safe today ${
+                                CurrencyFormatter.formatOrMask(
+                                    report.todayRemainingAllowanceCents,
+                                    uiState.currency,
+                                    hidden = uiState.hideBalances
+                                )
+                            }"
+                        }
+                    }
+                    topCategories.isNotEmpty() && uiState.summary.expenseCents > 0L ->
+                        "${uiState.summary.byCategory.size} categories · Trends & coach"
+                    else -> "Trends & Safe-to-Spend coach"
+                }
 
-        if (uiState.monthlyTrend.any { it.incomeCents > 0L || it.expenseCents > 0L } ||
-            uiState.summary.expenseCents > 0L
-        ) {
-            item {
-                CashflowTrendsBentoCard(
-                    selectedMonth = uiState.selectedMonth,
-                    monthlyTrend = uiState.monthlyTrend,
-                    dailySpendSeries = uiState.dailySpendSeries,
-                    dailySafeAllowanceCents = uiState.safeToSpend?.takeIf { it.isCurrentMonth && it.hasAnchor }?.dailySafeAllowanceCents,
-                    currency = uiState.currency,
-                    hideBalances = uiState.hideBalances
-                )
-            }
-        }
-
-        if (topCategories.isNotEmpty() && uiState.summary.expenseCents > 0L) {
-            item {
-                KansoBentoCard(contentPadding = PaddingValues(16.dp)) {
-                    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                        Text(
-                            text = "Spending Breakdown",
-                            style = MaterialTheme.typography.titleMedium
-                        )
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    KansoBentoCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = { showInsights = !showInsights },
+                        contentPadding = PaddingValues(14.dp)
+                    ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            KansoCategoryDonutChart(
-                                slices = slices,
-                                size = 122.dp,
-                                strokeWidth = 15.dp
-                            ) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    KansoAnimatedIntText(
-                                        value = uiState.summary.byCategory.size,
-                                        format = { "$it" },
-                                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Text(
-                                        text = "categories",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-
+                            KansoAccentIconBadge(
+                                icon = Icons.Outlined.AutoAwesome,
+                                accent = MaterialTheme.colorScheme.primary,
+                                size = 36.dp,
+                                iconSize = 18.dp,
+                                cornerRadius = 11.dp
+                            )
                             Column(
                                 modifier = Modifier.weight(1f),
-                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                                verticalArrangement = Arrangement.spacedBy(2.dp)
                             ) {
-                                topCategories.forEach { (category, amount) ->
-                                    val pct = ((amount.toFloat() / uiState.summary.expenseCents.toFloat()) * 100f).toInt()
-                                    val isCatSelected = uiState.transactionFilter.category == category
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clip(RoundedCornerShape(10.dp))
-                                            .background(
-                                                if (isCatSelected) {
-                                                    category.accentColor().copy(alpha = 0.14f)
-                                                } else {
-                                                    Color.Transparent
-                                                }
-                                            )
-                                            .clickable { onToggleCategoryFilter(category) }
-                                            .padding(horizontal = 6.dp, vertical = 4.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(7.dp),
-                                            modifier = Modifier.weight(1f)
-                                        ) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(8.dp)
-                                                    .clip(CircleShape)
-                                                    .background(category.accentColor())
-                                            )
-                                            Text(
-                                                text = category.label,
-                                                style = MaterialTheme.typography.bodyMedium.copy(
-                                                    fontWeight = if (isCatSelected) FontWeight.SemiBold else FontWeight.Normal
-                                                ),
-                                                color = if (isCatSelected) {
-                                                    category.accentColor()
-                                                } else {
-                                                    MaterialTheme.colorScheme.onSurface
-                                                },
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-                                        }
+                                Text(
+                                    text = "Insights & Charts",
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                                Text(
+                                    text = insightsSummary,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            Icon(
+                                imageVector = if (showInsights) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                                contentDescription = if (showInsights) "Collapse insights" else "Expand insights",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    AnimatedVisibility(
+                        visible = showInsights,
+                        enter = expandVertically(KansoMotion.SizeSpring) + fadeIn(tween(180)),
+                        exit = shrinkVertically() + fadeOut(tween(140))
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            report?.let { coachReport ->
+                                MoneySmartCoachCard(
+                                    report = coachReport,
+                                    currency = uiState.currency,
+                                    hideBalances = uiState.hideBalances,
+                                    insights = uiState.coachInsights,
+                                    onEditOverallBudget = onEditOverallBudget
+                                )
+                            }
+
+                            if (hasTrendData) {
+                                CashflowTrendsBentoCard(
+                                    selectedMonth = uiState.selectedMonth,
+                                    monthlyTrend = uiState.monthlyTrend,
+                                    dailySpendSeries = uiState.dailySpendSeries,
+                                    dailySafeAllowanceCents = report?.takeIf { it.isCurrentMonth && it.hasAnchor }?.dailySafeAllowanceCents,
+                                    currency = uiState.currency,
+                                    hideBalances = uiState.hideBalances
+                                )
+                            }
+
+                            if (topCategories.isNotEmpty() && uiState.summary.expenseCents > 0L) {
+                                KansoBentoCard(contentPadding = PaddingValues(16.dp)) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                                         Text(
-                                            text = "$pct% · ${
-                                                CurrencyFormatter.formatOrMask(amount, uiState.currency, hidden = uiState.hideBalances)
-                                            }",
-                                            style = MaterialTheme.typography.labelMedium,
-                                            color = if (isCatSelected) {
-                                                category.accentColor()
-                                            } else {
-                                                MaterialTheme.colorScheme.onSurfaceVariant
-                                            }
+                                            text = "Spending Breakdown",
+                                            style = MaterialTheme.typography.titleMedium
                                         )
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            KansoCategoryDonutChart(
+                                                slices = slices,
+                                                size = 122.dp,
+                                                strokeWidth = 15.dp
+                                            ) {
+                                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                    KansoAnimatedIntText(
+                                                        value = uiState.summary.byCategory.size,
+                                                        format = { "$it" },
+                                                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                                                        color = MaterialTheme.colorScheme.onSurface
+                                                    )
+                                                    Text(
+                                                        text = "categories",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                }
+                                            }
+
+                                            Column(
+                                                modifier = Modifier.weight(1f),
+                                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                topCategories.forEach { (category, amount) ->
+                                                    val pct = ((amount.toFloat() / uiState.summary.expenseCents.toFloat()) * 100f).toInt()
+                                                    val isCatSelected = uiState.transactionFilter.category == category
+                                                    Row(
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .clip(RoundedCornerShape(10.dp))
+                                                            .background(
+                                                                if (isCatSelected) {
+                                                                    category.accentColor().copy(alpha = 0.14f)
+                                                                } else {
+                                                                    Color.Transparent
+                                                                }
+                                                            )
+                                                            .clickable { onToggleCategoryFilter(category) }
+                                                            .padding(horizontal = 6.dp, vertical = 4.dp),
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.SpaceBetween
+                                                    ) {
+                                                        Row(
+                                                            verticalAlignment = Alignment.CenterVertically,
+                                                            horizontalArrangement = Arrangement.spacedBy(7.dp),
+                                                            modifier = Modifier.weight(1f)
+                                                        ) {
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .size(8.dp)
+                                                                    .clip(CircleShape)
+                                                                    .background(category.accentColor())
+                                                            )
+                                                            Text(
+                                                                text = category.label,
+                                                                style = MaterialTheme.typography.bodyMedium.copy(
+                                                                    fontWeight = if (isCatSelected) FontWeight.SemiBold else FontWeight.Normal
+                                                                ),
+                                                                color = if (isCatSelected) {
+                                                                    category.accentColor()
+                                                                } else {
+                                                                    MaterialTheme.colorScheme.onSurface
+                                                                },
+                                                                maxLines = 1,
+                                                                overflow = TextOverflow.Ellipsis
+                                                            )
+                                                        }
+                                                        Text(
+                                                            text = "$pct% · ${
+                                                                CurrencyFormatter.formatOrMask(amount, uiState.currency, hidden = uiState.hideBalances)
+                                                            }",
+                                                            style = MaterialTheme.typography.labelMedium,
+                                                            color = if (isCatSelected) {
+                                                                category.accentColor()
+                                                            } else {
+                                                                MaterialTheme.colorScheme.onSurfaceVariant
+                                                            }
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -1155,6 +1271,53 @@ private fun LogTabContent(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    if (uiState.transactions.isNotEmpty() || uiState.transactionFilter.isActive) {
+                        val filtersHighlighted = showFilters || activeFilterCount > 0
+                        Surface(
+                            modifier = Modifier
+                                .height(34.dp)
+                                .clip(RoundedCornerShape(50))
+                                .clickable { showFilters = !showFilters },
+                            shape = RoundedCornerShape(50),
+                            color = if (filtersHighlighted) {
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+                            } else {
+                                MaterialTheme.colorScheme.surface
+                            },
+                            border = BorderStroke(
+                                1.dp,
+                                if (filtersHighlighted) {
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
+                                } else {
+                                    MaterialTheme.colorScheme.outlineVariant
+                                }
+                            )
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = if (activeFilterCount > 0) 10.dp else 9.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.FilterList,
+                                    contentDescription = "Filter transactions",
+                                    modifier = Modifier.size(16.dp),
+                                    tint = if (filtersHighlighted) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    }
+                                )
+                                if (activeFilterCount > 0) {
+                                    Text(
+                                        text = "$activeFilterCount",
+                                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        }
+                    }
                     KansoOutlinedButton(
                         text = "Split",
                         leadingIcon = Icons.Outlined.Handshake,
@@ -1163,13 +1326,24 @@ private fun LogTabContent(
                         onClick = onOpenSplitBill
                     )
                     if (uiState.allTransactionsCount > 0) {
-                        KansoOutlinedButton(
-                            text = "CSV",
-                            leadingIcon = Icons.Outlined.FileDownload,
-                            size = KansoButtonSize.COMPACT,
-                            contentPadding = PaddingValues(horizontal = 10.dp),
-                            onClick = onOpenCsvExport
-                        )
+                        Surface(
+                            modifier = Modifier
+                                .size(34.dp)
+                                .clip(CircleShape)
+                                .clickable(onClick = onOpenCsvExport),
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surface,
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Outlined.FileDownload,
+                                    contentDescription = "Export CSV",
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
                     }
                     KansoTonalButton(
                         text = "Add",
@@ -1184,15 +1358,21 @@ private fun LogTabContent(
 
         if (uiState.transactions.isNotEmpty() || uiState.transactionFilter.isActive) {
             item {
-                TransactionFilterStrip(
-                    transactions = uiState.transactions,
-                    filter = uiState.transactionFilter,
-                    filteredCount = uiState.filteredTransactions.size,
-                    onToggleTypeFilter = onToggleTypeFilter,
-                    onToggleWalletFilter = onToggleWalletFilter,
-                    onToggleCategoryFilter = onToggleCategoryFilter,
-                    onClearFilters = onClearFilters
-                )
+                AnimatedVisibility(
+                    visible = showFilters || uiState.transactionFilter.isActive,
+                    enter = expandVertically(KansoMotion.SizeSpring) + fadeIn(tween(180)),
+                    exit = shrinkVertically() + fadeOut(tween(140))
+                ) {
+                    TransactionFilterStrip(
+                        transactions = uiState.transactions,
+                        filter = uiState.transactionFilter,
+                        filteredCount = uiState.filteredTransactions.size,
+                        onToggleTypeFilter = onToggleTypeFilter,
+                        onToggleWalletFilter = onToggleWalletFilter,
+                        onToggleCategoryFilter = onToggleCategoryFilter,
+                        onClearFilters = onClearFilters
+                    )
+                }
             }
         }
 
@@ -1364,36 +1544,24 @@ private fun WalletsBentoCard(
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurface
                     )
+                    val totalSubtitle = if (hasReserved) {
+                        "Total ${CurrencyFormatter.formatOrMask(totalBalanceCents, currency, hidden = hideBalances)} · Reserved ${
+                            CurrencyFormatter.formatOrMask(goalsOverview.totalSavedCents, currency, hidden = hideBalances)
+                        }"
+                    } else {
+                        "Total ${CurrencyFormatter.formatOrMask(totalBalanceCents, currency, hidden = hideBalances)}"
+                    }
                     Text(
-                        text = "Total ${CurrencyFormatter.formatOrMask(totalBalanceCents, currency, hidden = hideBalances)}",
+                        text = totalSubtitle,
                         style = MaterialTheme.typography.labelMedium,
                         color = if (totalBalanceCents < 0L) {
                             expenseSemanticColor()
                         } else {
                             MaterialTheme.colorScheme.onSurfaceVariant
-                        }
+                        },
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
-                    if (hasReserved) {
-                        Text(
-                            text = "Free ${
-                                CurrencyFormatter.formatOrMask(
-                                    goalsOverview.unallocatedBalanceCents,
-                                    currency,
-                                    hidden = hideBalances
-                                )
-                            } · Reserved ${
-                                CurrencyFormatter.formatOrMask(
-                                    goalsOverview.totalSavedCents,
-                                    currency,
-                                    hidden = hideBalances
-                                )
-                            }",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
                 }
                 KansoTonalButton(
                     text = "Transfer",
@@ -2078,62 +2246,85 @@ private fun GoalsTabContent(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
+            val pctFunded = (overview.overallProgressRatio * 100f).toInt()
             KansoBentoCard(contentPadding = PaddingValues(16.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    KansoProgressRing(
-                        progress = overview.overallProgressRatio,
-                        color = moneyAccent,
-                        size = 70.dp,
-                        strokeWidth = 7.dp
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        KansoAnimatedIntText(
-                            value = (overview.overallProgressRatio * 100f).toInt(),
-                            format = { "$it%" },
-                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                        Text(
+                            text = "SINKING FUNDS",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        KansoPillBadge(
+                            text = "$pctFunded% funded",
                             color = moneyAccent
                         )
                     }
 
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(3.dp)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.Bottom,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Text("Sinking Funds", style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            text = "${
-                                CurrencyFormatter.formatOrMask(overview.totalSavedCents, uiState.currency, hidden = uiState.hideBalances)
-                            } saved",
-                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold)
+                        KansoAnimatedCurrencyText(
+                            amountCents = overview.totalSavedCents,
+                            currency = uiState.currency,
+                            style = MaterialTheme.typography.headlineSmall.copy(
+                                fontWeight = FontWeight.Bold,
+                                fontFeatureSettings = "tnum"
+                            ),
+                            color = MaterialTheme.colorScheme.onSurface
                         )
-                        Text(
-                            text = if (overview.totalTargetCents > 0L) {
-                                "of ${
-                                    CurrencyFormatter.formatOrMask(overview.totalTargetCents, uiState.currency, hidden = uiState.hideBalances)
-                                } · Free ${
-                                    CurrencyFormatter.formatOrMask(overview.unallocatedBalanceCents, uiState.currency, hidden = uiState.hideBalances)
-                                }"
-                            } else {
-                                "Free ${
-                                    CurrencyFormatter.formatOrMask(overview.unallocatedBalanceCents, uiState.currency, hidden = uiState.hideBalances)
-                                } across wallets"
-                            },
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                        if (overview.totalTargetCents > 0L) {
+                            Text(
+                                text = "of ${
+                                    CurrencyFormatter.formatOrMask(
+                                        overview.totalTargetCents,
+                                        uiState.currency,
+                                        hidden = uiState.hideBalances
+                                    )
+                                }",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(bottom = 2.dp),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
 
-                    KansoTonalButton(
-                        text = "Add Goal",
-                        leadingIcon = Icons.Outlined.Add,
-                        size = KansoButtonSize.COMPACT,
-                        onClick = onAddGoal
+                    KansoAnimatedProgressBar(
+                        progress = overview.overallProgressRatio,
+                        height = 6.dp,
+                        color = moneyAccent
                     )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Free ${
+                                CurrencyFormatter.formatOrMask(
+                                    overview.unallocatedBalanceCents,
+                                    uiState.currency,
+                                    hidden = uiState.hideBalances
+                                )
+                            }",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "${uiState.goalStatuses.size} active",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }
@@ -2174,13 +2365,14 @@ private fun GoalsTabContent(
                     MoneyCalculations.GoalPaceState.DEADLINE_PASSED -> warningSemanticColor()
                     else -> catAccent
                 }
-                val paceLine = when (status.paceState) {
-                    MoneyCalculations.GoalPaceState.COMPLETED -> "Target reached!"
+                val paceCaption: Pair<String, Color>? = when (status.paceState) {
+                    MoneyCalculations.GoalPaceState.COMPLETED ->
+                        "Target reached!" to incomeSemanticColor()
                     MoneyCalculations.GoalPaceState.DEADLINE_PASSED -> {
                         val dateText = goal.targetEpochDay?.let { KansoDateFormatters.formatFullDate(it) } ?: "Target date"
                         "Past $dateText · ${
                             CurrencyFormatter.formatOrMask(status.remainingCents, uiState.currency, hidden = uiState.hideBalances)
-                        } left"
+                        } left" to warningSemanticColor()
                     }
                     MoneyCalculations.GoalPaceState.ON_TRACK -> {
                         val monthly = CurrencyFormatter.formatOrMask(
@@ -2189,22 +2381,31 @@ private fun GoalsTabContent(
                             hidden = uiState.hideBalances
                         )
                         val daysLeft = status.daysRemaining ?: 0L
-                        if (daysLeft > 30L) {
+                        val text = if (daysLeft > 30L) {
                             "Save $monthly/mo · ${daysLeft}d left"
                         } else {
                             "Save ${
                                 CurrencyFormatter.formatOrMask(status.remainingCents, uiState.currency, hidden = uiState.hideBalances)
                             } · ${daysLeft}d left"
                         }
+                        text to MaterialTheme.colorScheme.onSurfaceVariant
                     }
                     MoneyCalculations.GoalPaceState.NO_DEADLINE -> {
-                        if (status.remainingCents > 0L) {
+                        if (goal.savedAmountCents > 0L && status.remainingCents > 0L) {
                             "${
                                 CurrencyFormatter.formatOrMask(status.remainingCents, uiState.currency, hidden = uiState.hideBalances)
-                            } to go · Flexible target"
+                            } remaining" to MaterialTheme.colorScheme.onSurfaceVariant
                         } else {
-                            "Flexible target"
+                            null
                         }
+                    }
+                }
+                val subtitle = buildString {
+                    if (!goal.name.trim().equals(goal.category.label, ignoreCase = true)) {
+                        append(goal.category.label)
+                        goal.linkedWallet?.let { append(" · ${it.label}") }
+                    } else {
+                        goal.linkedWallet?.let { append(it.label) }
                     }
                 }
 
@@ -2216,7 +2417,7 @@ private fun GoalsTabContent(
                     cornerRadius = 20.dp,
                     contentPadding = PaddingValues(15.dp)
                 ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
@@ -2225,9 +2426,9 @@ private fun GoalsTabContent(
                             KansoAccentIconBadge(
                                 icon = goal.category.icon(),
                                 accent = catAccent,
-                                size = 40.dp,
-                                iconSize = 20.dp,
-                                cornerRadius = 13.dp
+                                size = 38.dp,
+                                iconSize = 19.dp,
+                                cornerRadius = 12.dp
                             )
                             Column(
                                 modifier = Modifier.weight(1f),
@@ -2239,53 +2440,126 @@ private fun GoalsTabContent(
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
-                                val subtitle = buildString {
-                                    append(goal.category.label)
-                                    goal.linkedWallet?.let { append(" · ${it.label}") }
+                                if (subtitle.isNotBlank()) {
+                                    Text(
+                                        text = subtitle,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
                                 }
-                                Text(
-                                    text = subtitle,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
                             }
-                            KansoProgressRing(
-                                progress = status.progressRatio,
-                                color = ringColor,
-                                size = 50.dp,
-                                strokeWidth = 5.dp
-                            ) {
-                                Text(
-                                    text = "${(status.progressRatio * 100f).toInt()}%",
-                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                    color = ringColor
-                                )
-                            }
+                            Text(
+                                text = "${(status.progressRatio * 100f).toInt()}%",
+                                style = MaterialTheme.typography.titleSmall.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontFeatureSettings = "tnum"
+                                ),
+                                color = ringColor
+                            )
                         }
+
+                        KansoAnimatedProgressBar(
+                            progress = status.progressRatio,
+                            height = 6.dp,
+                            color = ringColor
+                        )
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = "${
-                                    CurrencyFormatter.formatOrMask(goal.savedAmountCents, uiState.currency, hidden = uiState.hideBalances)
-                                } / ${
-                                    CurrencyFormatter.formatOrMask(goal.targetAmountCents, uiState.currency, hidden = uiState.hideBalances)
-                                }",
-                                style = MaterialTheme.typography.titleSmall.copy(
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontFeatureSettings = "tnum"
-                                ),
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            KansoPillBadge(
-                                text = paceLine,
-                                color = ringColor
-                            )
+                            Column(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(end = 8.dp),
+                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                val savedFormatted = CurrencyFormatter.formatOrMask(
+                                    goal.savedAmountCents,
+                                    uiState.currency,
+                                    hidden = uiState.hideBalances
+                                )
+                                val targetFormatted = CurrencyFormatter.formatOrMask(
+                                    goal.targetAmountCents,
+                                    uiState.currency,
+                                    hidden = uiState.hideBalances
+                                )
+                                val mutedColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                val savedColor = MaterialTheme.colorScheme.onSurface
+                                Text(
+                                    text = buildAnnotatedString {
+                                        withStyle(
+                                            SpanStyle(
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = savedColor
+                                            )
+                                        ) {
+                                            append(savedFormatted)
+                                        }
+                                        withStyle(
+                                            SpanStyle(
+                                                fontWeight = FontWeight.Normal,
+                                                color = mutedColor
+                                            )
+                                        ) {
+                                            append(" of $targetFormatted")
+                                        }
+                                    },
+                                    style = MaterialTheme.typography.bodyMedium.copy(
+                                        fontFeatureSettings = "tnum"
+                                    ),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                if (paceCaption != null) {
+                                    Text(
+                                        text = paceCaption.first,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = paceCaption.second,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+
+                            if (!goal.isArchived) {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    if (goal.savedAmountCents > 0L) {
+                                        Surface(
+                                            modifier = Modifier
+                                                .size(34.dp)
+                                                .clip(CircleShape)
+                                                .clickable { onOpenGoalAllocation(status, true) },
+                                            shape = CircleShape,
+                                            color = MaterialTheme.colorScheme.surface,
+                                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Icon(
+                                                    imageVector = Icons.Outlined.Remove,
+                                                    contentDescription = "Withdraw from ${goal.name}",
+                                                    modifier = Modifier.size(16.dp),
+                                                    tint = MaterialTheme.colorScheme.primary
+                                                )
+                                            }
+                                        }
+                                    }
+                                    KansoTonalButton(
+                                        text = "+ Add",
+                                        size = KansoButtonSize.COMPACT,
+                                        containerColor = catAccent.copy(alpha = 0.14f),
+                                        contentColor = catAccent,
+                                        contentPadding = PaddingValues(horizontal = 14.dp),
+                                        onClick = { onOpenGoalAllocation(status, false) }
+                                    )
+                                }
+                            }
                         }
 
                         if (goal.note.isNotBlank()) {
@@ -2293,32 +2567,9 @@ private fun GoalsTabContent(
                                 text = goal.note,
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 2,
+                                maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
-                        }
-
-                        if (!goal.isArchived) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                KansoOutlinedButton(
-                                    text = "Withdraw",
-                                    size = KansoButtonSize.COMPACT,
-                                    enabled = goal.savedAmountCents > 0L,
-                                    modifier = Modifier.weight(1f),
-                                    onClick = { onOpenGoalAllocation(status, true) }
-                                )
-                                KansoTonalButton(
-                                    text = "+ Allocate",
-                                    size = KansoButtonSize.COMPACT,
-                                    containerColor = catAccent.copy(alpha = 0.14f),
-                                    contentColor = catAccent,
-                                    modifier = Modifier.weight(1f),
-                                    onClick = { onOpenGoalAllocation(status, false) }
-                                )
-                            }
                         }
                     }
                 }
@@ -2519,22 +2770,6 @@ private fun BillsTabContent(
         contentPadding = PaddingValues(bottom = 28.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Recurring Bills", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
-                KansoTonalButton(
-                    text = "Add Bill",
-                    leadingIcon = Icons.Outlined.Add,
-                    size = KansoButtonSize.COMPACT,
-                    onClick = onAddBill
-                )
-            }
-        }
-
         if (uiState.bills.isEmpty()) {
             item {
                 KansoEmptyState(
@@ -2690,24 +2925,13 @@ private fun IousTabContent(
                         label = { Text("Settled (${uiState.settledIous.size})") }
                     )
                 }
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    KansoOutlinedButton(
-                        text = "Split",
-                        leadingIcon = Icons.Outlined.Handshake,
-                        size = KansoButtonSize.COMPACT,
-                        contentPadding = PaddingValues(horizontal = 10.dp),
-                        onClick = onOpenSplitBill
-                    )
-                    KansoTonalButton(
-                        text = "Add",
-                        leadingIcon = Icons.Outlined.Add,
-                        size = KansoButtonSize.COMPACT,
-                        onClick = onAddIou
-                    )
-                }
+                KansoOutlinedButton(
+                    text = "Split",
+                    leadingIcon = Icons.Outlined.Handshake,
+                    size = KansoButtonSize.COMPACT,
+                    contentPadding = PaddingValues(horizontal = 10.dp),
+                    onClick = onOpenSplitBill
+                )
             }
         }
 

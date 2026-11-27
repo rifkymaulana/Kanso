@@ -1,6 +1,12 @@
 package com.kanso.feature.today
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -28,6 +34,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.ExpandLess
+import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.LocalFireDepartment
 import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.Pause
@@ -47,6 +55,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -389,6 +398,10 @@ fun TodayScreenContent(
                 BentoPulseRow(
                     uiState = uiState,
                     onOpenHabits = onOpenHabits,
+                    onToggleHabit = { habit ->
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onToggleHabit(habit)
+                    },
                     onAddWater250 = {
                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         onAddWater250()
@@ -397,17 +410,17 @@ fun TodayScreenContent(
             }
         }
 
-        if (uiState.pendingTodayHabits.isNotEmpty()) {
+        if (uiState.pendingTodayHabits.size > 1) {
             item {
                 KansoStaggeredEntrance(index = 4) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         SectionHeader(
-                            title = "Quick Habits",
+                            title = "More Habits",
                             actionLabel = "All",
                             onAction = onOpenHabits
                         )
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            items(uiState.pendingTodayHabits, key = { it.id }) { habit ->
+                            items(uiState.pendingTodayHabits.drop(1), key = { it.id }) { habit ->
                                 Surface(
                                     modifier = Modifier
                                         .animateItem()
@@ -826,6 +839,7 @@ private fun HeroStatMiniPill(
 private fun BentoPulseRow(
     uiState: TodayUiState,
     onOpenHabits: () -> Unit,
+    onToggleHabit: (HabitItem) -> Unit = {},
     onAddWater250: () -> Unit
 ) {
     val kansoColors = MaterialTheme.kansoColors
@@ -983,14 +997,35 @@ private fun BentoPulseRow(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                KansoTonalButton(
-                    text = if (habitTotal == 0) "Create habit →" else "Open tracker →",
-                    size = KansoButtonSize.COMPACT,
-                    modifier = Modifier.fillMaxWidth(),
-                    containerColor = kansoColors.habitsAccent.copy(alpha = 0.14f),
-                    contentColor = kansoColors.habitsAccent,
-                    onClick = onOpenHabits
-                )
+                val nextPendingHabit = uiState.pendingTodayHabits.firstOrNull()
+                when {
+                    nextPendingHabit != null -> {
+                        KansoTonalButton(
+                            text = "✓ ${nextPendingHabit.name}",
+                            size = KansoButtonSize.COMPACT,
+                            modifier = Modifier.fillMaxWidth(),
+                            containerColor = kansoColors.habitsAccent.copy(alpha = 0.14f),
+                            contentColor = kansoColors.habitsAccent,
+                            onClick = { onToggleHabit(nextPendingHabit) }
+                        )
+                    }
+                    habitTotal > 0 -> {
+                        KansoPillBadge(
+                            text = "All done ✓",
+                            color = kansoColors.income
+                        )
+                    }
+                    else -> {
+                        KansoTonalButton(
+                            text = "Create habit →",
+                            size = KansoButtonSize.COMPACT,
+                            modifier = Modifier.fillMaxWidth(),
+                            containerColor = kansoColors.habitsAccent.copy(alpha = 0.14f),
+                            contentColor = kansoColors.habitsAccent,
+                            onClick = onOpenHabits
+                        )
+                    }
+                }
             }
         }
     }
@@ -1016,6 +1051,276 @@ private fun AttentionBentoCard(
         uiState.totalDueMaintenanceCount +
         uiState.totalUpcomingCountdownsCount +
         uiState.dueSoonIousCount
+    var showAllAttention by rememberSaveable { mutableStateOf(false) }
+
+    val attentionRows = mutableListOf<@Composable () -> Unit>()
+
+    uiState.dueBills.forEach { bill ->
+        attentionRows.add {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "${bill.name} · Day ${bill.dueDayOfMonth}",
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium)
+                    )
+                    Text(
+                        text = CurrencyFormatter.formatOrMask(bill.amountCents, uiState.currency, hidden = uiState.hideBalances),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                KansoTonalButton(
+                    text = "Pay",
+                    size = KansoButtonSize.COMPACT,
+                    onClick = { onPayBill(bill) }
+                )
+            }
+        }
+    }
+
+    if (uiState.dueOrOverdueTasksCount > 0) {
+        attentionRows.add {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable(onClick = onOpenTasks)
+                    .padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "${uiState.dueOrOverdueTasksCount} task(s) due today or overdue",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(
+                    text = "View →",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+    }
+
+    if (uiState.expiringItems.isNotEmpty()) {
+        val todayEpoch = uiState.todayEpochDay
+        uiState.expiringItems.forEach { expiry ->
+            val delta = LifeAdminCalculations.daysUntilExpiry(expiry.expiryEpochDay, todayEpoch)
+            val label = when {
+                delta < 0L -> "${expiry.title} expired ${-delta}d ago"
+                delta == 0L -> "${expiry.title} expires today"
+                else -> "${expiry.title} expires in ${delta}d"
+            }
+            attentionRows.add {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable { onOpenExpiryItem(expiry.id) }
+                        .padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text(
+                        text = "Review →",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = warning
+                    )
+                }
+            }
+        }
+        if (uiState.totalExpiringCount > uiState.expiringItems.size) {
+            val remainingExpiring = uiState.totalExpiringCount - uiState.expiringItems.size
+            attentionRows.add {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable(onClick = onOpenExpiries)
+                        .padding(vertical = 2.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "+$remainingExpiring more expiring soon",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "See all →",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = warning
+                    )
+                }
+            }
+        }
+    }
+
+    if (uiState.dueMaintenanceLogs.isNotEmpty()) {
+        val todayEpoch = uiState.todayEpochDay
+        uiState.dueMaintenanceLogs.forEach { log ->
+            val dueDay = log.nextDueEpochDay ?: todayEpoch
+            val delta = LifeAdminCalculations.daysUntilExpiry(dueDay, todayEpoch)
+            val label = when {
+                delta < 0L -> "${log.assetName} · ${log.serviceDescription} overdue ${-delta}d"
+                delta == 0L -> "${log.assetName} · ${log.serviceDescription} due today"
+                else -> "${log.assetName} · ${log.serviceDescription} due in ${delta}d"
+            }
+            attentionRows.add {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable { onOpenMaintenanceItem(log.id) }
+                        .padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = "Service →",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = warning
+                    )
+                }
+            }
+        }
+        if (uiState.totalDueMaintenanceCount > uiState.dueMaintenanceLogs.size) {
+            val remainingServices = uiState.totalDueMaintenanceCount - uiState.dueMaintenanceLogs.size
+            attentionRows.add {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable(onClick = onOpenMaintenance)
+                        .padding(vertical = 2.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "+$remainingServices more service due",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "See all →",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = warning
+                    )
+                }
+            }
+        }
+    }
+
+    if (uiState.upcomingCountdowns.isNotEmpty()) {
+        val todayEpoch = uiState.todayEpochDay
+        uiState.upcomingCountdowns.forEach { countdown ->
+            val delta = CountdownCalculations.daysRemaining(countdown.targetEpochDay, todayEpoch)
+            val deltaLabel = CountdownCalculations.formatDelta(delta)
+            attentionRows.add {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable { onOpenCountdownItem(countdown.id) }
+                        .padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "${countdown.title} · $deltaLabel",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = "Dates →",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.kansoColors.utilitiesAccent
+                    )
+                }
+            }
+        }
+        if (uiState.totalUpcomingCountdownsCount > uiState.upcomingCountdowns.size) {
+            val remainingDates = uiState.totalUpcomingCountdownsCount - uiState.upcomingCountdowns.size
+            attentionRows.add {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable(onClick = onOpenCountdowns)
+                        .padding(vertical = 2.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "+$remainingDates more upcoming dates",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "See all →",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.kansoColors.utilitiesAccent
+                    )
+                }
+            }
+        }
+    }
+
+    if (uiState.dueSoonIousCount > 0) {
+        attentionRows.add {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable(onClick = onOpenIousTab)
+                    .padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val iouSummary = buildString {
+                    append("${uiState.dueSoonIousCount} IOU(s) due soon")
+                    append(" · Net ")
+                    append(
+                        CurrencyFormatter.formatOrMask(
+                            uiState.openIouNetCents,
+                            uiState.currency,
+                            hidden = uiState.hideBalances,
+                            showSign = true
+                        )
+                    )
+                }
+                Text(
+                    text = iouSummary,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(
+                    text = "IOUs →",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+    }
 
     KansoBentoCard(
         containerColor = warning.copy(alpha = 0.08f),
@@ -1051,251 +1356,25 @@ private fun AttentionBentoCard(
                 KansoPillBadge(text = "$count", color = warning)
             }
 
-            uiState.dueBills.forEach { bill ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "${bill.name} · Day ${bill.dueDayOfMonth}",
-                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium)
-                        )
-                        Text(
-                            text = CurrencyFormatter.formatOrMask(bill.amountCents, uiState.currency, hidden = uiState.hideBalances),
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    KansoTonalButton(
-                        text = "Pay",
-                        size = KansoButtonSize.COMPACT,
-                        onClick = { onPayBill(bill) }
-                    )
-                }
+            val visibleRows = if (showAllAttention) attentionRows else attentionRows.take(3)
+            visibleRows.forEach { rowContent ->
+                rowContent()
             }
 
-            if (uiState.dueOrOverdueTasksCount > 0) {
+            if (attentionRows.size > 3) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(10.dp))
-                        .clickable(onClick = onOpenTasks)
+                        .clickable { showAllAttention = !showAllAttention }
                         .padding(vertical = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "${uiState.dueOrOverdueTasksCount} task(s) due today or overdue",
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Text(
-                        text = "View →",
+                        text = if (showAllAttention) "Show less ▴" else "Show more ($count total) ▾",
                         style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-            }
-
-            if (uiState.expiringItems.isNotEmpty()) {
-                val todayEpoch = uiState.todayEpochDay
-                uiState.expiringItems.forEach { expiry ->
-                    val delta = LifeAdminCalculations.daysUntilExpiry(expiry.expiryEpochDay, todayEpoch)
-                    val label = when {
-                        delta < 0L -> "${expiry.title} expired ${-delta}d ago"
-                        delta == 0L -> "${expiry.title} expires today"
-                        else -> "${expiry.title} expires in ${delta}d"
-                    }
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .clickable { onOpenExpiryItem(expiry.id) }
-                            .padding(vertical = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = label,
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Text(
-                            text = "Review →",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = warning
-                        )
-                    }
-                }
-                if (uiState.totalExpiringCount > uiState.expiringItems.size) {
-                    val remainingExpiring = uiState.totalExpiringCount - uiState.expiringItems.size
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .clickable(onClick = onOpenExpiries)
-                            .padding(vertical = 2.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "+$remainingExpiring more expiring soon",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = "See all →",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = warning
-                        )
-                    }
-                }
-            }
-
-            if (uiState.dueMaintenanceLogs.isNotEmpty()) {
-                val todayEpoch = uiState.todayEpochDay
-                uiState.dueMaintenanceLogs.forEach { log ->
-                    val dueDay = log.nextDueEpochDay ?: todayEpoch
-                    val delta = LifeAdminCalculations.daysUntilExpiry(dueDay, todayEpoch)
-                    val label = when {
-                        delta < 0L -> "${log.assetName} · ${log.serviceDescription} overdue ${-delta}d"
-                        delta == 0L -> "${log.assetName} · ${log.serviceDescription} due today"
-                        else -> "${log.assetName} · ${log.serviceDescription} due in ${delta}d"
-                    }
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .clickable { onOpenMaintenanceItem(log.id) }
-                            .padding(vertical = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = label,
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.weight(1f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Text(
-                            text = "Service →",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = warning
-                        )
-                    }
-                }
-                if (uiState.totalDueMaintenanceCount > uiState.dueMaintenanceLogs.size) {
-                    val remainingServices = uiState.totalDueMaintenanceCount - uiState.dueMaintenanceLogs.size
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .clickable(onClick = onOpenMaintenance)
-                            .padding(vertical = 2.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "+$remainingServices more service due",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = "See all →",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = warning
-                        )
-                    }
-                }
-            }
-
-            if (uiState.upcomingCountdowns.isNotEmpty()) {
-                val todayEpoch = uiState.todayEpochDay
-                uiState.upcomingCountdowns.forEach { countdown ->
-                    val delta = CountdownCalculations.daysRemaining(countdown.targetEpochDay, todayEpoch)
-                    val deltaLabel = CountdownCalculations.formatDelta(delta)
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .clickable { onOpenCountdownItem(countdown.id) }
-                            .padding(vertical = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "${countdown.title} · $deltaLabel",
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.weight(1f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Text(
-                            text = "Dates →",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.kansoColors.utilitiesAccent
-                        )
-                    }
-                }
-                if (uiState.totalUpcomingCountdownsCount > uiState.upcomingCountdowns.size) {
-                    val remainingDates = uiState.totalUpcomingCountdownsCount - uiState.upcomingCountdowns.size
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .clickable(onClick = onOpenCountdowns)
-                            .padding(vertical = 2.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "+$remainingDates more upcoming dates",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = "See all →",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.kansoColors.utilitiesAccent
-                        )
-                    }
-                }
-            }
-
-            if (uiState.dueSoonIousCount > 0) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
-                        .clickable(onClick = onOpenIousTab)
-                        .padding(vertical = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    val iouSummary = buildString {
-                        append("${uiState.dueSoonIousCount} IOU(s) due soon")
-                        append(" · Net ")
-                        append(
-                            CurrencyFormatter.formatOrMask(
-                                uiState.openIouNetCents,
-                                uiState.currency,
-                                hidden = uiState.hideBalances,
-                                showSign = true
-                            )
-                        )
-                    }
-                    Text(
-                        text = iouSummary,
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Text(
-                        text = "IOUs →",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary
+                        color = warning
                     )
                 }
             }
@@ -1528,31 +1607,63 @@ private fun SmartCoachBentoCard(
         else -> MaterialTheme.colorScheme.primary
     }
 
+    var coachExpanded by rememberSaveable { mutableStateOf(false) }
+    val summaryLine = when {
+        report != null && report.hasAnchor -> {
+            if (report.todayRemainingAllowanceCents < 0L) {
+                "Over today by ${
+                    CurrencyFormatter.formatOrMask(
+                        -report.todayRemainingAllowanceCents,
+                        uiState.currency,
+                        hidden = uiState.hideBalances
+                    )
+                }"
+            } else {
+                "Safe today ${
+                    CurrencyFormatter.formatOrMask(
+                        report.todayRemainingAllowanceCents.coerceAtLeast(0L),
+                        uiState.currency,
+                        hidden = uiState.hideBalances
+                    )
+                } · ${report.daysRemainingIncludingToday}d left"
+            }
+        }
+        uiState.coachInsights.isNotEmpty() -> uiState.coachInsights.first().title
+        else -> "Tap to review pace"
+    }
+
     KansoBentoCard(
-        onClick = onOpenMoney,
-        contentPadding = PaddingValues(16.dp)
+        onClick = { coachExpanded = !coachExpanded },
+        contentPadding = PaddingValues(14.dp)
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                KansoAccentIconBadge(
+                    icon = Icons.Outlined.AutoAwesome,
+                    accent = statusColor,
+                    size = 34.dp,
+                    iconSize = 18.dp,
+                    cornerRadius = 10.dp
+                )
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
-                    KansoAccentIconBadge(
-                        icon = Icons.Outlined.AutoAwesome,
-                        accent = statusColor,
-                        size = 34.dp,
-                        iconSize = 18.dp,
-                        cornerRadius = 10.dp
-                    )
                     Text(
                         text = "Smart Coach",
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = summaryLine,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
                 if (report != null) {
@@ -1561,136 +1672,153 @@ private fun SmartCoachBentoCard(
                         color = statusColor
                     )
                 }
+                Icon(
+                    imageVector = if (coachExpanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                    contentDescription = if (coachExpanded) "Collapse Smart Coach" else "Expand Smart Coach",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
 
-            if (report != null && report.hasAnchor) {
-                val isExceeded = report.todayRemainingAllowanceCents < 0L
-                val usageRatio = if (report.dailySafeAllowanceCents > 0L) {
-                    (report.todayExpenseCents.toFloat() / report.dailySafeAllowanceCents.toFloat()).coerceIn(0f, 1f)
-                } else {
-                    1f
-                }
-                val ringColor = if (isExceeded) expenseSemanticColor() else statusColor
-                val anchorTag = if (report.anchorSource == BudgetAnchorSource.MONTHLY_INCOME) {
-                    " · Income-based"
-                } else {
-                    ""
-                }
-
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 14.dp, vertical = 12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(
-                            modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(2.dp)
-                        ) {
-                            Text(
-                                text = if (isExceeded) "TODAY'S ALLOWANCE EXCEEDED" else "SAFE TO SPEND TODAY",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = if (isExceeded) expenseSemanticColor() else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            if (isExceeded) {
-                                Text(
-                                    text = "Over by ${CurrencyFormatter.formatOrMask(-report.todayRemainingAllowanceCents, uiState.currency, hidden = uiState.hideBalances)}",
-                                    style = MaterialTheme.typography.titleLarge.copy(
-                                        fontWeight = FontWeight.Bold,
-                                        fontFeatureSettings = "tnum"
-                                    ),
-                                    color = expenseSemanticColor(),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            } else {
-                                KansoAnimatedCurrencyText(
-                                    amountCents = report.todayRemainingAllowanceCents.coerceAtLeast(0L),
-                                    currency = uiState.currency,
-                                    style = MaterialTheme.typography.titleLarge.copy(
-                                        fontWeight = FontWeight.Bold,
-                                        fontFeatureSettings = "tnum"
-                                    ),
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                            Text(
-                                text = "${CurrencyFormatter.formatOrMask(report.dailySafeAllowanceCents, uiState.currency, hidden = uiState.hideBalances)}/day · ${report.daysRemainingIncludingToday}d left$anchorTag",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
+            AnimatedVisibility(
+                visible = coachExpanded,
+                enter = expandVertically(KansoMotion.SizeSpring) + fadeIn(tween(180)),
+                exit = shrinkVertically() + fadeOut(tween(140))
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    if (report != null && report.hasAnchor) {
+                        val isExceeded = report.todayRemainingAllowanceCents < 0L
+                        val usageRatio = if (report.dailySafeAllowanceCents > 0L) {
+                            (report.todayExpenseCents.toFloat() / report.dailySafeAllowanceCents.toFloat()).coerceIn(0f, 1f)
+                        } else {
+                            1f
                         }
-                        Spacer(modifier = Modifier.width(12.dp))
-                        KansoProgressRing(
-                            progress = usageRatio,
-                            color = ringColor,
-                            size = 44.dp,
-                            strokeWidth = 5.dp
+                        val ringColor = if (isExceeded) expenseSemanticColor() else statusColor
+                        val anchorTag = if (report.anchorSource == BudgetAnchorSource.MONTHLY_INCOME) {
+                            " · Income-based"
+                        } else {
+                            ""
+                        }
+
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(16.dp))
+                                .clickable(onClick = onOpenMoney),
+                            shape = RoundedCornerShape(16.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
                         ) {
-                            Text(
-                                text = "${(usageRatio * 100).toInt()}%",
-                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                color = ringColor
-                            )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(
+                                    modifier = Modifier.weight(1f),
+                                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                                ) {
+                                    Text(
+                                        text = if (isExceeded) "TODAY'S ALLOWANCE EXCEEDED" else "SAFE TO SPEND TODAY",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (isExceeded) expenseSemanticColor() else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    if (isExceeded) {
+                                        Text(
+                                            text = "Over by ${CurrencyFormatter.formatOrMask(-report.todayRemainingAllowanceCents, uiState.currency, hidden = uiState.hideBalances)}",
+                                            style = MaterialTheme.typography.titleLarge.copy(
+                                                fontWeight = FontWeight.Bold,
+                                                fontFeatureSettings = "tnum"
+                                            ),
+                                            color = expenseSemanticColor(),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    } else {
+                                        KansoAnimatedCurrencyText(
+                                            amountCents = report.todayRemainingAllowanceCents.coerceAtLeast(0L),
+                                            currency = uiState.currency,
+                                            style = MaterialTheme.typography.titleLarge.copy(
+                                                fontWeight = FontWeight.Bold,
+                                                fontFeatureSettings = "tnum"
+                                            ),
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                    }
+                                    Text(
+                                        text = "${CurrencyFormatter.formatOrMask(report.dailySafeAllowanceCents, uiState.currency, hidden = uiState.hideBalances)}/day · ${report.daysRemainingIncludingToday}d left$anchorTag",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                KansoProgressRing(
+                                    progress = usageRatio,
+                                    color = ringColor,
+                                    size = 44.dp,
+                                    strokeWidth = 5.dp
+                                ) {
+                                    Text(
+                                        text = "${(usageRatio * 100).toInt()}%",
+                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                        color = ringColor
+                                    )
+                                }
+                            }
                         }
                     }
-                }
-            }
 
-            if (uiState.coachInsights.isNotEmpty()) {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    uiState.coachInsights.forEach { insight ->
-                        val toneColor = coachToneColor(insight.tone)
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(7.dp)
-                                    .clip(CircleShape)
-                                    .background(toneColor)
-                            )
-                            Column(
-                                modifier = Modifier.weight(1f),
-                                verticalArrangement = Arrangement.spacedBy(2.dp)
-                            ) {
-                                Text(
-                                    text = insight.title,
-                                    style = MaterialTheme.typography.titleSmall,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    text = insight.body,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                            if (insight.actionLabel != null && insight.actionTarget != null) {
-                                KansoTonalButton(
-                                    text = insight.actionLabel!!,
-                                    size = KansoButtonSize.COMPACT,
-                                    onClick = {
-                                        when (insight.actionTarget) {
-                                            CoachActionTarget.ADD_WATER_250 -> onAddWater250()
-                                            CoachActionTarget.OPEN_HABITS -> onOpenHabits()
-                                            CoachActionTarget.OPEN_MONEY_BUDGETS -> onOpenMoney()
-                                            null -> Unit
-                                        }
+                    if (uiState.coachInsights.isNotEmpty()) {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            uiState.coachInsights.forEach { insight ->
+                                val toneColor = coachToneColor(insight.tone)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(7.dp)
+                                            .clip(CircleShape)
+                                            .background(toneColor)
+                                    )
+                                    Column(
+                                        modifier = Modifier.weight(1f),
+                                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                                    ) {
+                                        Text(
+                                            text = insight.title,
+                                            style = MaterialTheme.typography.titleSmall,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = insight.body,
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
                                     }
-                                )
+                                    if (insight.actionLabel != null && insight.actionTarget != null) {
+                                        KansoTonalButton(
+                                            text = insight.actionLabel!!,
+                                            size = KansoButtonSize.COMPACT,
+                                            onClick = {
+                                                when (insight.actionTarget) {
+                                                    CoachActionTarget.ADD_WATER_250 -> onAddWater250()
+                                                    CoachActionTarget.OPEN_HABITS -> onOpenHabits()
+                                                    CoachActionTarget.OPEN_MONEY_BUDGETS -> onOpenMoney()
+                                                    null -> Unit
+                                                }
+                                            }
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
