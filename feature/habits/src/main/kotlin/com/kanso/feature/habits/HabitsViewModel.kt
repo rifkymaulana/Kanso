@@ -12,15 +12,24 @@ import com.kanso.core.model.HabitItem
 import com.kanso.core.model.HealthTrendWindow
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import java.time.ZoneId
+import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import javax.inject.Inject
@@ -61,18 +70,43 @@ class HabitsViewModel @Inject constructor(
     preferencesRepository: PreferencesRepository
 ) : ViewModel() {
 
-    private val selectedDateFlow = MutableStateFlow(LocalDate.now())
+    private var lastObservedToday = LocalDate.now()
+    private val selectedDateFlow = MutableStateFlow(lastObservedToday)
     private val trendWindowFlow = MutableStateFlow(HealthTrendWindow.DAYS_14)
+    private val todayFlow: Flow<LocalDate> = flow {
+        while (currentCoroutineContext().isActive) {
+            val zone = ZoneId.systemDefault()
+            val now = ZonedDateTime.now(zone)
+            val today = now.toLocalDate()
+            emit(today)
+            val nextMidnightMillis = today.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+            val waitMillis = (nextMidnightMillis - now.toInstant().toEpochMilli() + 250L)
+                .coerceIn(5_000L, 60_000L)
+            delay(waitMillis)
+        }
+    }
+        .distinctUntilChanged()
+        .onEach { newToday ->
+            val previousToday = lastObservedToday
+            if (newToday != previousToday) {
+                lastObservedToday = newToday
+                selectedDateFlow.update { currentSelected ->
+                    if (currentSelected == previousToday) newToday else currentSelected
+                }
+            }
+        }
     private val selectedHealthLogFlow = selectedDateFlow.flatMapLatest { date ->
         habitsRepository.observeHealthLog(date.toEpochDay())
     }
     private val dateFormatter = DateTimeFormatter.ofPattern("EEE, d MMM", Locale.getDefault())
 
-    private val habitsCoreFlow = combine(
-        habitsRepository.observeActiveHabits(),
-        habitsRepository.observeCompletionsSince(LocalDate.now().minusDays(365).toEpochDay())
-    ) { habits, completions ->
-        Pair(habits, completions)
+    private val habitsCoreFlow = todayFlow.flatMapLatest { today ->
+        combine(
+            habitsRepository.observeActiveHabits(),
+            habitsRepository.observeCompletionsSince(today.minusDays(365).toEpochDay())
+        ) { habits, completions ->
+            Triple(today, habits, completions)
+        }
     }
 
     private val healthCoreFlow = combine(
@@ -88,13 +122,12 @@ class HabitsViewModel @Inject constructor(
         habitsCoreFlow,
         healthCoreFlow,
         preferencesRepository.preferences
-    ) { habitsPair, healthBundle, prefs ->
-        val (habits, completions) = habitsPair
+    ) { habitsTriple, healthBundle, prefs ->
+        val (today, habits, completions) = habitsTriple
         val selectedDate = healthBundle.date
         val selectedLog = healthBundle.selectedLog
         val recentLogs = healthBundle.recentLogs
         val trendWindow = healthBundle.trendWindow
-        val today = LocalDate.now()
         val todayEpoch = today.toEpochDay()
 
         val daysByHabit = completions.groupBy({ it.habitId }, { it.epochDay })

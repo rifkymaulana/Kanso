@@ -201,6 +201,12 @@ fun SettingsRoute(
         KansoWidgetUpdater.updateAll(context)
     }
 
+    LaunchedEffect(uiState.backupStatus) {
+        if (uiState.backupStatus is BackupOperationStatus.Success) {
+            KansoWidgetUpdater.updateAll(context)
+        }
+    }
+
     LaunchedEffect(uiState.updateState) {
         val ready = uiState.updateState as? AppUpdateState.ReadyToInstall
         if (ready != null && autoInstallPending) {

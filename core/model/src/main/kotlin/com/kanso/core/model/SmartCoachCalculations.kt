@@ -2,6 +2,7 @@ package com.kanso.core.model
 
 import java.time.LocalDate
 import java.time.YearMonth
+import java.time.temporal.ChronoUnit
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
@@ -100,19 +101,62 @@ object SmartCoachCalculations {
             else -> BudgetAnchorSource.NONE to 0L
         }
 
-        val activeMonthlyBills = bills.filter {
-            it.isActive && it.frequency == BillFrequency.MONTHLY
+        val activeBills = bills.filter { it.isActive }
+        var unpaidBillsCount = 0
+        var unpaidBillsCents = 0L
+        var rawPaidFixedCents = 0L
+
+        if (!isPastMonth) {
+            for (bill in activeBills) {
+                when (bill.frequency) {
+                    BillFrequency.MONTHLY -> {
+                        if (MoneyCalculations.isBillPaidForMonth(bill, targetMonth)) {
+                            rawPaidFixedCents += bill.amountCents
+                        } else {
+                            unpaidBillsCount++
+                            unpaidBillsCents += bill.amountCents
+                        }
+                    }
+                    BillFrequency.YEARLY -> {
+                        val paidYm = MoneyCalculations.parseLastPaidYearMonth(bill.lastPaidYearMonth)
+                        if (MoneyCalculations.isBillPaidForMonth(bill, targetMonth)) {
+                            if (paidYm == targetMonth) {
+                                rawPaidFixedCents += bill.amountCents
+                            }
+                        } else {
+                            val isAnnualDueInTargetMonth = paidYm == null ||
+                                paidYm.month == targetMonth.month ||
+                                ChronoUnit.MONTHS.between(paidYm, targetMonth) >= 12L
+                            if (isAnnualDueInTargetMonth) {
+                                unpaidBillsCount++
+                                unpaidBillsCents += bill.amountCents
+                            }
+                        }
+                    }
+                    BillFrequency.WEEKLY -> {
+                        val totalRemainingSlots = if (isCurrentMonth) {
+                            ((daysRemainingIncludingToday + 6) / 7).coerceAtLeast(1)
+                        } else {
+                            (daysInMonth + 6) / 7
+                        }
+                        val paidCurrentCycle = isCurrentMonth && MoneyCalculations.isBillPaidForCycle(bill, today)
+                        val unpaidSlots = if (paidCurrentCycle) {
+                            (totalRemainingSlots - 1).coerceAtLeast(0)
+                        } else {
+                            totalRemainingSlots
+                        }
+                        if (unpaidSlots > 0) {
+                            unpaidBillsCount++
+                            unpaidBillsCents += unpaidSlots * bill.amountCents
+                        }
+                        if (paidCurrentCycle) {
+                            rawPaidFixedCents += bill.amountCents
+                        }
+                    }
+                }
+            }
         }
-        val unpaidBills = if (isPastMonth) {
-            emptyList()
-        } else {
-            activeMonthlyBills.filter { !MoneyCalculations.isBillPaidForMonth(it, targetMonth) }
-        }
-        val unpaidBillsCount = unpaidBills.size
-        val unpaidBillsCents = unpaidBills.sumOf { it.amountCents }
-        val paidMonthlyBillsCents = activeMonthlyBills
-            .filter { MoneyCalculations.isBillPaidForMonth(it, targetMonth) }
-            .sumOf { it.amountCents }
+        val paidMonthlyBillsCents = rawPaidFixedCents
             .coerceAtMost(monthExpenseCents.coerceAtLeast(0L))
 
         val effectiveTodayExpense = if (isCurrentMonth) todayExpenseCents.coerceAtLeast(0L) else 0L

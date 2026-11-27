@@ -4,6 +4,7 @@ import com.kanso.core.database.dao.BrainDao
 import com.kanso.core.database.dao.HabitsDao
 import com.kanso.core.database.dao.LifeAdminDao
 import com.kanso.core.database.dao.MoneyDao
+import com.kanso.core.database.dao.UtilitiesDao
 import com.kanso.core.model.StorageStats
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
@@ -15,35 +16,53 @@ class StorageStatsRepository @Inject constructor(
     private val moneyDao: MoneyDao,
     private val brainDao: BrainDao,
     private val habitsDao: HabitsDao,
-    private val lifeAdminDao: LifeAdminDao
+    private val lifeAdminDao: LifeAdminDao,
+    private val utilitiesDao: UtilitiesDao
 ) {
     fun observeStats(): Flow<StorageStats> {
         val m1Flow = combine(
             moneyDao.observeTransactionCount(),
-            brainDao.observeNoteCount(),
-            brainDao.observeOpenTaskCount(),
-            brainDao.observeSnippetCount()
-        ) { txCount, noteCount, openTaskCount, snippetCount ->
-            listOf(txCount, noteCount, openTaskCount, snippetCount)
+            moneyDao.observeActiveBillCount(),
+            moneyDao.observeOpenIouCount(),
+            moneyDao.observeActiveGoalCount()
+        ) { txCount, billCount, iouCount, goalCount ->
+            listOf(txCount, billCount, iouCount, goalCount)
         }
 
         val m2Flow = combine(
-            habitsDao.observeActiveHabitCount(),
-            lifeAdminDao.observeExpiryCount(),
-            lifeAdminDao.observeVaultCount()
-        ) { habitCount, expiryCount, vaultCount ->
-            Triple(habitCount, expiryCount, vaultCount)
+            brainDao.observeNoteCount(),
+            brainDao.observeOpenTaskCount(),
+            brainDao.observeTotalTaskCount(),
+            brainDao.observeSnippetCount()
+        ) { noteCount, openTaskCount, totalTaskCount, snippetCount ->
+            listOf(noteCount, openTaskCount, totalTaskCount, snippetCount)
         }
 
-        return combine(m1Flow, m2Flow) { m1, m2 ->
+        val m3Flow = combine(
+            habitsDao.observeActiveHabitCount(),
+            lifeAdminDao.observeExpiryCount(),
+            lifeAdminDao.observeMaintenanceCount(),
+            lifeAdminDao.observeVaultCount(),
+            utilitiesDao.observeCountdownCount()
+        ) { habitCount, expiryCount, maintenanceCount, vaultCount, countdownCount ->
+            listOf(habitCount, expiryCount, maintenanceCount, vaultCount, countdownCount)
+        }
+
+        return combine(m1Flow, m2Flow, m3Flow) { money, brain, lifeUtil ->
             StorageStats(
-                transactionCount = m1[0],
-                noteCount = m1[1],
-                openTaskCount = m1[2],
-                snippetCount = m1[3],
-                habitCount = m2.first,
-                expiryCount = m2.second,
-                vaultCount = m2.third
+                transactionCount = money[0],
+                noteCount = brain[0],
+                openTaskCount = brain[1],
+                snippetCount = brain[3],
+                habitCount = lifeUtil[0],
+                expiryCount = lifeUtil[1],
+                vaultCount = lifeUtil[3],
+                maintenanceCount = lifeUtil[2],
+                activeBillCount = money[1],
+                openIouCount = money[2],
+                activeGoalCount = money[3],
+                totalTaskCount = brain[2],
+                countdownCount = lifeUtil[4]
             )
         }
     }

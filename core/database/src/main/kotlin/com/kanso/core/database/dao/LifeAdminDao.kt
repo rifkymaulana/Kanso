@@ -75,6 +75,9 @@ interface LifeAdminDao {
     @Query("DELETE FROM maintenance_logs")
     suspend fun deleteAllMaintenanceLogs()
 
+    @Query("SELECT COUNT(*) FROM maintenance_logs")
+    fun observeMaintenanceCount(): Flow<Int>
+
     @Query("SELECT * FROM vault_items ORDER BY updatedAtMillis DESC")
     fun observeVaultItems(): Flow<List<VaultEntity>>
 

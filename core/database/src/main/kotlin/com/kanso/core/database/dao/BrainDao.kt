@@ -79,6 +79,9 @@ interface BrainDao {
     @Query("SELECT COUNT(*) FROM tasks WHERE isCompleted = 0")
     fun observeOpenTaskCount(): Flow<Int>
 
+    @Query("SELECT COUNT(*) FROM tasks")
+    fun observeTotalTaskCount(): Flow<Int>
+
     @Query("SELECT * FROM snippets ORDER BY isPinned DESC, updatedAtMillis DESC")
     fun observeSnippets(): Flow<List<SnippetEntity>>
 

@@ -158,8 +158,11 @@ fun TodayRoute(
             onShowMessage("+250 ml water logged")
         },
         onPayBill = { bill ->
-            viewModel.payBillNow(bill)
-            onShowMessage("Logged payment for ${bill.name}")
+            viewModel.payBillNow(bill) { record ->
+                onShowUndoMessage("Logged payment for ${bill.name}") {
+                    viewModel.undoPayBill(record)
+                }
+            }
         },
         onCopySnippet = { snippet ->
             KansoClipboard.copyText(
@@ -901,10 +904,10 @@ private fun AttentionBentoCard(
 ) {
     val warning = warningSemanticColor()
     val count = uiState.dueBills.size +
-        (if (uiState.dueOrOverdueTasksCount > 0) 1 else 0) +
-        uiState.expiringItems.size +
-        uiState.dueMaintenanceLogs.size +
-        (if (uiState.openIouCount > 0) 1 else 0)
+        uiState.dueOrOverdueTasksCount +
+        uiState.totalExpiringCount +
+        uiState.totalDueMaintenanceCount +
+        uiState.dueSoonIousCount
 
     KansoBentoCard(
         containerColor = warning.copy(alpha = 0.08f),
@@ -1018,6 +1021,29 @@ private fun AttentionBentoCard(
                         )
                     }
                 }
+                if (uiState.totalExpiringCount > uiState.expiringItems.size) {
+                    val remainingExpiring = uiState.totalExpiringCount - uiState.expiringItems.size
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable(onClick = onOpenExpiries)
+                            .padding(vertical = 2.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "+$remainingExpiring more expiring soon",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "See all →",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = warning
+                        )
+                    }
+                }
             }
 
             if (uiState.dueMaintenanceLogs.isNotEmpty()) {
@@ -1053,9 +1079,32 @@ private fun AttentionBentoCard(
                         )
                     }
                 }
+                if (uiState.totalDueMaintenanceCount > uiState.dueMaintenanceLogs.size) {
+                    val remainingServices = uiState.totalDueMaintenanceCount - uiState.dueMaintenanceLogs.size
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable(onClick = onOpenMaintenance)
+                            .padding(vertical = 2.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "+$remainingServices more service due",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "See all →",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = warning
+                        )
+                    }
+                }
             }
 
-            if (uiState.openIouCount > 0) {
+            if (uiState.dueSoonIousCount > 0) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1066,10 +1115,7 @@ private fun AttentionBentoCard(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     val iouSummary = buildString {
-                        append("${uiState.openIouCount} open IOU(s)")
-                        if (uiState.dueSoonIousCount > 0) {
-                            append(" (${uiState.dueSoonIousCount} due)")
-                        }
+                        append("${uiState.dueSoonIousCount} IOU(s) due soon")
                         append(" · Net ")
                         append(
                             CurrencyFormatter.formatOrMask(

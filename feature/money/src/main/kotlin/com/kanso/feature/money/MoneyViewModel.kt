@@ -461,9 +461,22 @@ class MoneyViewModel @Inject constructor(
         }
     }
 
-    fun payRecurringBill(bill: RecurringBill) {
+    fun payRecurringBill(
+        bill: RecurringBill,
+        onPaid: (MoneyRepository.BillPaymentRecord) -> Unit = {}
+    ) {
         viewModelScope.launch {
-            moneyRepository.payRecurringBill(bill = bill, yearMonth = YearMonth.now())
+            val record = moneyRepository.payRecurringBill(
+                bill = bill,
+                paidDate = LocalDate.now()
+            )
+            onPaid(record)
+        }
+    }
+
+    fun undoPayRecurringBill(record: MoneyRepository.BillPaymentRecord) {
+        viewModelScope.launch {
+            moneyRepository.undoPayRecurringBill(record)
         }
     }
 

@@ -27,16 +27,26 @@ import com.kanso.core.model.SnippetItem
 import com.kanso.core.model.TaskItem
 import com.kanso.core.model.TransactionType
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.YearMonth
 import java.time.ZoneId
+import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import javax.inject.Inject
@@ -51,7 +61,9 @@ data class TodayUiState(
     val monthlyBudgetCents: Long = 0L,
     val dueBills: List<RecurringBill> = emptyList(),
     val expiringItems: List<ExpiryItem> = emptyList(),
+    val totalExpiringCount: Int = 0,
     val dueMaintenanceLogs: List<MaintenanceLog> = emptyList(),
+    val totalDueMaintenanceCount: Int = 0,
     val dueOrOverdueTasksCount: Int = 0,
     val openIouCount: Int = 0,
     val dueSoonIousCount: Int = 0,
@@ -70,12 +82,13 @@ data class TodayUiState(
 ) {
     val hasAttentionItems: Boolean
         get() = dueBills.isNotEmpty() ||
-            expiringItems.isNotEmpty() ||
-            dueMaintenanceLogs.isNotEmpty() ||
+            totalExpiringCount > 0 ||
+            totalDueMaintenanceCount > 0 ||
             dueOrOverdueTasksCount > 0 ||
-            openIouCount > 0
+            dueSoonIousCount > 0
 }
 
+@OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class TodayViewModel @Inject constructor(
     private val preferencesRepository: PreferencesRepository,
@@ -85,24 +98,39 @@ class TodayViewModel @Inject constructor(
     lifeAdminRepository: LifeAdminRepository
 ) : ViewModel() {
 
-    private val currentMonth = YearMonth.now()
-    private val todayEpoch = LocalDate.now().toEpochDay()
+    private val todayFlow: Flow<LocalDate> = flow {
+        while (currentCoroutineContext().isActive) {
+            val zone = ZoneId.systemDefault()
+            val now = ZonedDateTime.now(zone)
+            val today = now.toLocalDate()
+            emit(today)
+            val nextMidnightMillis = today.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+            val waitMillis = (nextMidnightMillis - now.toInstant().toEpochMilli() + 250L)
+                .coerceIn(5_000L, 60_000L)
+            delay(waitMillis)
+        }
+    }.distinctUntilChanged()
 
-    private val moneyFlow = combine(
-        moneyRepository.observeTransactionsForMonth(currentMonth),
-        moneyRepository.observeTransactionsForMonth(currentMonth.minusMonths(1)),
-        moneyRepository.observeBudgets(),
-        moneyRepository.observeBills(),
-        moneyRepository.observeIous()
-    ) { transactions, previousTransactions, budgets, bills, ious ->
-        MoneyBundle(
-            transactions = transactions,
-            previousTransactions = previousTransactions,
-            budgets = budgets,
-            bills = bills,
-            ious = ious
-        )
-    }
+    private val moneyFlow = todayFlow
+        .map { YearMonth.from(it) }
+        .distinctUntilChanged()
+        .flatMapLatest { currentMonth ->
+            combine(
+                moneyRepository.observeTransactionsForMonth(currentMonth),
+                moneyRepository.observeTransactionsForMonth(currentMonth.minusMonths(1)),
+                moneyRepository.observeBudgets(),
+                moneyRepository.observeBills(),
+                moneyRepository.observeIous()
+            ) { transactions, previousTransactions, budgets, bills, ious ->
+                MoneyBundle(
+                    transactions = transactions,
+                    previousTransactions = previousTransactions,
+                    budgets = budgets,
+                    bills = bills,
+                    ious = ious
+                )
+            }
+        }
 
     private val brainFlow = combine(
         brainRepository.observeTasks(),
@@ -112,20 +140,27 @@ class TodayViewModel @Inject constructor(
         Triple(tasks, notes, snippets)
     }
 
-    private val lifeHabitsFlow = combine(
-        habitsRepository.observeActiveHabits(),
-        habitsRepository.observeCompletionsSince(todayEpoch),
-        habitsRepository.observeHealthLog(todayEpoch),
-        lifeAdminRepository.observeExpiries(),
-        lifeAdminRepository.observeMaintenanceLogs()
-    ) { habits, todayCompletions, healthLog, expiries, maintenanceLogs ->
-        LifeHabitsBundle(
-            habits = habits,
-            completedTodayIds = todayCompletions.map { it.habitId }.toSet(),
-            todayWaterMl = healthLog?.waterMl ?: 0,
-            expiries = expiries,
-            maintenanceLogs = maintenanceLogs
-        )
+    private val lifeHabitsFlow = todayFlow.flatMapLatest { today ->
+        val todayEpoch = today.toEpochDay()
+        combine(
+            habitsRepository.observeActiveHabits(),
+            habitsRepository.observeCompletionsSince(todayEpoch),
+            habitsRepository.observeHealthLog(todayEpoch),
+            lifeAdminRepository.observeExpiries(),
+            lifeAdminRepository.observeMaintenanceLogs()
+        ) { habits, todayCompletions, healthLog, expiries, maintenanceLogs ->
+            LifeHabitsBundle(
+                today = today,
+                habits = habits,
+                completedTodayIds = todayCompletions
+                    .filter { it.epochDay == todayEpoch }
+                    .map { it.habitId }
+                    .toSet(),
+                todayWaterMl = healthLog?.waterMl ?: 0,
+                expiries = expiries,
+                maintenanceLogs = maintenanceLogs
+            )
+        }
     }
 
     val uiState: StateFlow<TodayUiState> = combine(
@@ -140,7 +175,7 @@ class TodayViewModel @Inject constructor(
         val (tasks, notes, snippets) = brainTriple
 
         val zone = ZoneId.systemDefault()
-        val today = LocalDate.now(zone)
+        val today = lifeHabits.today
         val todayEpochDay = today.toEpochDay()
         val startOfTodayMillis = today.atStartOfDay(zone).toInstant().toEpochMilli()
         val endOfTodayMillis = today.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
@@ -156,14 +191,13 @@ class TodayViewModel @Inject constructor(
             .sumOf { it.amountCents }
 
         val dueBills = bills.filter { MoneyCalculations.isBillDueSoon(it, today, withinDays = 5) }
-        val expiring = lifeHabits.expiries
+        val allExpiring = lifeHabits.expiries
             .filter { LifeAdminCalculations.needsAttention(it, todayEpochDay) }
-            .take(3)
-        val dueMaintenance = LifeAdminCalculations.activeDueMaintenanceLogs(
+        val allDueMaintenance = LifeAdminCalculations.activeDueMaintenanceLogs(
             logs = lifeHabits.maintenanceLogs,
             todayEpochDay = todayEpochDay,
             withinDays = 14
-        ).take(3)
+        )
 
         val openTasks = tasks.filter { !it.isCompleted }
         val dueOrOverdueCount = openTasks.count { task ->
@@ -181,8 +215,8 @@ class TodayViewModel @Inject constructor(
             .take(5)
 
         val openIous = ious.filter { !it.isSettled }
-        val dueSoonIousCount = openIous.count { MoneyCalculations.isIouDueSoon(it, todayEpochDay, withinDays = 3) }
-        val iouNet = openIous.sumOf { entry ->
+        val dueSoonIous = openIous.filter { MoneyCalculations.isIouDueSoon(it, todayEpochDay, withinDays = 3) }
+        val iouNet = dueSoonIous.sumOf { entry ->
             if (entry.direction == IouDirection.OWES_ME) entry.amountCents else -entry.amountCents
         }
 
@@ -240,11 +274,13 @@ class TodayViewModel @Inject constructor(
             todayExpenseCents = todayExpense,
             monthlyBudgetCents = prefs.overallMonthlyBudgetCents,
             dueBills = dueBills,
-            expiringItems = expiring,
-            dueMaintenanceLogs = dueMaintenance,
+            expiringItems = allExpiring.take(3),
+            totalExpiringCount = allExpiring.size,
+            dueMaintenanceLogs = allDueMaintenance.take(3),
+            totalDueMaintenanceCount = allDueMaintenance.size,
             dueOrOverdueTasksCount = dueOrOverdueCount,
             openIouCount = openIous.size,
-            dueSoonIousCount = dueSoonIousCount,
+            dueSoonIousCount = dueSoonIous.size,
             openIouNetCents = iouNet,
             todayHabitsDone = doneHabitCount,
             todayHabitsTotal = lifeHabits.habits.size,
@@ -290,13 +326,23 @@ class TodayViewModel @Inject constructor(
         }
     }
 
-    fun payBillNow(bill: RecurringBill) {
+    fun payBillNow(
+        bill: RecurringBill,
+        onPaid: (MoneyRepository.BillPaymentRecord) -> Unit = {}
+    ) {
         viewModelScope.launch {
-            moneyRepository.payRecurringBill(
+            val record = moneyRepository.payRecurringBill(
                 bill = bill,
-                yearMonth = YearMonth.now(),
+                paidDate = LocalDate.now(),
                 nowMillis = Instant.now().toEpochMilli()
             )
+            onPaid(record)
+        }
+    }
+
+    fun undoPayBill(record: MoneyRepository.BillPaymentRecord) {
+        viewModelScope.launch {
+            moneyRepository.undoPayRecurringBill(record)
         }
     }
 
@@ -327,6 +373,7 @@ class TodayViewModel @Inject constructor(
     )
 
     private data class LifeHabitsBundle(
+        val today: LocalDate,
         val habits: List<HabitItem>,
         val completedTodayIds: Set<Long>,
         val todayWaterMl: Int,

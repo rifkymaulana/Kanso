@@ -61,12 +61,20 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneId
+import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -183,110 +191,125 @@ class KansoTodayWidget : GlanceAppWidget() {
         )
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     private fun observeWidgetData(entryPoint: KansoWidgetEntryPoint): Flow<WidgetDashboardData> {
-        val zone = ZoneId.systemDefault()
-        val today = LocalDate.now(zone)
-        val todayEpoch = today.toEpochDay()
-        val currentMonth = YearMonth.from(today)
-        val monthStartMillis = currentMonth.atDay(1).atStartOfDay(zone).toInstant().toEpochMilli()
-        val monthEndMillis = currentMonth.plusMonths(1).atDay(1).atStartOfDay(zone).toInstant().toEpochMilli()
-        val todayStartMillis = today.atStartOfDay(zone).toInstant().toEpochMilli()
-        val todayEndMillis = today.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+        val todayFlow = flow {
+            while (currentCoroutineContext().isActive) {
+                val zone = ZoneId.systemDefault()
+                val now = ZonedDateTime.now(zone)
+                val today = now.toLocalDate()
+                emit(today)
+                val nextMidnightMillis = today.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+                val waitMillis = (nextMidnightMillis - now.toInstant().toEpochMilli() + 250L)
+                    .coerceIn(5_000L, 60_000L)
+                delay(waitMillis)
+            }
+        }.distinctUntilChanged()
 
-        val moneyFlow = combine(
-            entryPoint.moneyDao().observeTransactionsInRange(monthStartMillis, monthEndMillis),
-            entryPoint.moneyDao().observeBills(),
-            entryPoint.moneyDao().observeIous(),
-            entryPoint.brainDao().observeOpenTaskCount()
-        ) { txs, bills, ious, openTasks ->
-            val monthIncomeCents = txs
-                .filter { it.type == TransactionType.INCOME.name }
-                .sumOf { it.amountCents }
-            val monthExpenseCents = txs
-                .filter { it.type == TransactionType.EXPENSE.name }
-                .sumOf { it.amountCents }
-            val todayExpenseCents = txs
-                .filter {
-                    it.type == TransactionType.EXPENSE.name &&
-                        it.timestampMillis in todayStartMillis until todayEndMillis
-                }
-                .sumOf { it.amountCents }
-            val domainBills = bills.map { it.toDomain() }
-            val dueBills = domainBills.count { MoneyCalculations.isBillDueSoon(it, today, withinDays = 5) }
-            val dueSoonIous = ious
-                .map { it.toDomain() }
-                .count { MoneyCalculations.isIouDueSoon(it, todayEpoch, withinDays = 3) }
-            MoneyTasksSnapshot(
-                monthIncomeCents = monthIncomeCents,
-                monthExpenseCents = monthExpenseCents,
-                todayExpenseCents = todayExpenseCents,
-                bills = domainBills,
-                dueBillsCount = dueBills,
-                dueSoonIousCount = dueSoonIous,
-                openTasksCount = openTasks
-            )
-        }
+        return todayFlow.flatMapLatest { today ->
+            val zone = ZoneId.systemDefault()
+            val todayEpoch = today.toEpochDay()
+            val currentMonth = YearMonth.from(today)
+            val monthStartMillis = currentMonth.atDay(1).atStartOfDay(zone).toInstant().toEpochMilli()
+            val monthEndMillis = currentMonth.plusMonths(1).atDay(1).atStartOfDay(zone).toInstant().toEpochMilli()
+            val todayStartMillis = today.atStartOfDay(zone).toInstant().toEpochMilli()
+            val todayEndMillis = today.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
 
-        val habitsLifeFlow = combine(
-            entryPoint.habitsDao().observeActiveHabits(),
-            entryPoint.habitsDao().observeCompletionsSince(todayEpoch),
-            entryPoint.habitsDao().observeHealthLog(todayEpoch),
-            entryPoint.lifeAdminDao().observeExpiries(),
-            entryPoint.lifeAdminDao().observeMaintenanceLogs()
-        ) { habits, completions, healthLog, expiries, maintenanceLogs ->
-            val completedIds = completions.filter { it.epochDay == todayEpoch }.map { it.habitId }.toSet()
-            val expiringCount = expiries
-                .map { it.toDomain() }
-                .count { LifeAdminCalculations.needsAttention(it, todayEpoch) }
-            val dueMaintenanceCount = LifeAdminCalculations.activeDueMaintenanceLogs(
-                logs = maintenanceLogs.map { it.toDomain() },
-                todayEpochDay = todayEpoch,
-                withinDays = 14
-            ).size
-            HabitsLifeSnapshot(
-                habitsDone = habits.count { completedIds.contains(it.id) },
-                habitsTotal = habits.size,
-                waterMl = healthLog?.waterMl ?: 0,
-                expiringCount = expiringCount,
-                dueMaintenanceCount = dueMaintenanceCount
-            )
-        }
+            val moneyFlow = combine(
+                entryPoint.moneyDao().observeTransactionsInRange(monthStartMillis, monthEndMillis),
+                entryPoint.moneyDao().observeBills(),
+                entryPoint.moneyDao().observeIous(),
+                entryPoint.brainDao().observeOpenTaskCount()
+            ) { txs, bills, ious, openTasks ->
+                val monthIncomeCents = txs
+                    .filter { it.type == TransactionType.INCOME.name }
+                    .sumOf { it.amountCents }
+                val monthExpenseCents = txs
+                    .filter { it.type == TransactionType.EXPENSE.name }
+                    .sumOf { it.amountCents }
+                val todayExpenseCents = txs
+                    .filter {
+                        it.type == TransactionType.EXPENSE.name &&
+                            it.timestampMillis in todayStartMillis until todayEndMillis
+                    }
+                    .sumOf { it.amountCents }
+                val domainBills = bills.map { it.toDomain() }
+                val dueBills = domainBills.count { MoneyCalculations.isBillDueSoon(it, today, withinDays = 5) }
+                val dueSoonIous = ious
+                    .map { it.toDomain() }
+                    .count { MoneyCalculations.isIouDueSoon(it, todayEpoch, withinDays = 3) }
+                MoneyTasksSnapshot(
+                    monthIncomeCents = monthIncomeCents,
+                    monthExpenseCents = monthExpenseCents,
+                    todayExpenseCents = todayExpenseCents,
+                    bills = domainBills,
+                    dueBillsCount = dueBills,
+                    dueSoonIousCount = dueSoonIous,
+                    openTasksCount = openTasks
+                )
+            }
 
-        return combine(
-            entryPoint.preferencesRepository().preferences,
-            moneyFlow,
-            habitsLifeFlow
-        ) { prefs, money, hl ->
-            val safeToSpend = SmartCoachCalculations.computeSafeToSpend(
-                targetMonth = currentMonth,
-                today = today,
-                monthlyBudgetCents = prefs.overallMonthlyBudgetCents,
-                monthIncomeCents = money.monthIncomeCents,
-                monthExpenseCents = money.monthExpenseCents,
-                todayExpenseCents = money.todayExpenseCents,
-                bills = money.bills
-            )
-            val hideAmounts = prefs.hideBalances || prefs.appLockEnabled
-            val moneySummary = WidgetSummaryFormatter.formatMoneySection(
-                report = safeToSpend,
-                currency = prefs.currency,
-                hideAmounts = hideAmounts
-            )
-            WidgetDashboardData(
-                dateLabel = today.format(DateTimeFormatter.ofPattern("EEE, d MMM", Locale.getDefault())),
-                moneyLabel = moneySummary.label,
-                moneyValue = moneySummary.value,
-                moneySubtitle = moneySummary.subtitle,
-                openTasksCount = money.openTasksCount,
-                habitsDone = hl.habitsDone,
-                habitsTotal = hl.habitsTotal,
-                waterMl = hl.waterMl,
-                waterGoalMl = prefs.waterGoalMl,
-                dueBillsCount = money.dueBillsCount,
-                expiringCount = hl.expiringCount,
-                dueMaintenanceCount = hl.dueMaintenanceCount,
-                dueSoonIousCount = money.dueSoonIousCount
-            )
+            val habitsLifeFlow = combine(
+                entryPoint.habitsDao().observeActiveHabits(),
+                entryPoint.habitsDao().observeCompletionsSince(todayEpoch),
+                entryPoint.habitsDao().observeHealthLog(todayEpoch),
+                entryPoint.lifeAdminDao().observeExpiries(),
+                entryPoint.lifeAdminDao().observeMaintenanceLogs()
+            ) { habits, completions, healthLog, expiries, maintenanceLogs ->
+                val completedIds = completions.filter { it.epochDay == todayEpoch }.map { it.habitId }.toSet()
+                val expiringCount = expiries
+                    .map { it.toDomain() }
+                    .count { LifeAdminCalculations.needsAttention(it, todayEpoch) }
+                val dueMaintenanceCount = LifeAdminCalculations.activeDueMaintenanceLogs(
+                    logs = maintenanceLogs.map { it.toDomain() },
+                    todayEpochDay = todayEpoch,
+                    withinDays = 14
+                ).size
+                HabitsLifeSnapshot(
+                    habitsDone = habits.count { completedIds.contains(it.id) },
+                    habitsTotal = habits.size,
+                    waterMl = healthLog?.waterMl ?: 0,
+                    expiringCount = expiringCount,
+                    dueMaintenanceCount = dueMaintenanceCount
+                )
+            }
+
+            combine(
+                entryPoint.preferencesRepository().preferences,
+                moneyFlow,
+                habitsLifeFlow
+            ) { prefs, money, hl ->
+                val safeToSpend = SmartCoachCalculations.computeSafeToSpend(
+                    targetMonth = currentMonth,
+                    today = today,
+                    monthlyBudgetCents = prefs.overallMonthlyBudgetCents,
+                    monthIncomeCents = money.monthIncomeCents,
+                    monthExpenseCents = money.monthExpenseCents,
+                    todayExpenseCents = money.todayExpenseCents,
+                    bills = money.bills
+                )
+                val hideAmounts = prefs.hideBalances || prefs.appLockEnabled
+                val moneySummary = WidgetSummaryFormatter.formatMoneySection(
+                    report = safeToSpend,
+                    currency = prefs.currency,
+                    hideAmounts = hideAmounts
+                )
+                WidgetDashboardData(
+                    dateLabel = today.format(DateTimeFormatter.ofPattern("EEE, d MMM", Locale.getDefault())),
+                    moneyLabel = moneySummary.label,
+                    moneyValue = moneySummary.value,
+                    moneySubtitle = moneySummary.subtitle,
+                    openTasksCount = money.openTasksCount,
+                    habitsDone = hl.habitsDone,
+                    habitsTotal = hl.habitsTotal,
+                    waterMl = hl.waterMl,
+                    waterGoalMl = prefs.waterGoalMl,
+                    dueBillsCount = money.dueBillsCount,
+                    expiringCount = hl.expiringCount,
+                    dueMaintenanceCount = hl.dueMaintenanceCount,
+                    dueSoonIousCount = money.dueSoonIousCount
+                )
+            }
         }
     }
 

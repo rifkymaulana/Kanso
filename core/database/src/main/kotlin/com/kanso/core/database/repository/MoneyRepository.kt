@@ -16,6 +16,7 @@ import com.kanso.core.model.TransactionType
 import com.kanso.core.model.WalletType
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneId
 import javax.inject.Inject
@@ -114,6 +115,10 @@ class MoneyRepository @Inject constructor(
         return moneyDao.observeBills().map { entities -> entities.map { it.toDomain() } }
     }
 
+    fun searchBills(query: String): Flow<List<RecurringBill>> {
+        return moneyDao.searchBills(query.trim()).map { entities -> entities.map { it.toDomain() } }
+    }
+
     suspend fun upsertBill(bill: RecurringBill): Long {
         return moneyDao.upsertBill(bill.toEntity())
     }
@@ -122,12 +127,17 @@ class MoneyRepository @Inject constructor(
         moneyDao.deleteBillById(id)
     }
 
+    data class BillPaymentRecord(
+        val transactionId: Long,
+        val previousBill: RecurringBill
+    )
+
     suspend fun payRecurringBill(
         bill: RecurringBill,
-        yearMonth: YearMonth = YearMonth.now(),
+        paidDate: LocalDate = LocalDate.now(),
         nowMillis: Long = System.currentTimeMillis()
-    ) {
-        database.withTransaction {
+    ): BillPaymentRecord {
+        return database.withTransaction {
             val tx = MoneyTransaction(
                 type = TransactionType.EXPENSE,
                 amountCents = bill.amountCents,
@@ -136,15 +146,27 @@ class MoneyRepository @Inject constructor(
                 note = "Bill: ${bill.name}",
                 timestampMillis = nowMillis
             )
-            moneyDao.upsertTransaction(tx.toEntity())
+            val txId = moneyDao.upsertTransaction(tx.toEntity())
             moneyDao.upsertBill(
-                bill.copy(lastPaidYearMonth = yearMonth.toString()).toEntity()
+                bill.copy(lastPaidYearMonth = paidDate.toString()).toEntity()
             )
+            BillPaymentRecord(transactionId = txId, previousBill = bill)
+        }
+    }
+
+    suspend fun undoPayRecurringBill(record: BillPaymentRecord) {
+        database.withTransaction {
+            moneyDao.deleteTransactionById(record.transactionId)
+            moneyDao.upsertBill(record.previousBill.toEntity())
         }
     }
 
     fun observeIous(): Flow<List<IouEntry>> {
         return moneyDao.observeIous().map { entities -> entities.map { it.toDomain() } }
+    }
+
+    fun searchIous(query: String): Flow<List<IouEntry>> {
+        return moneyDao.searchIous(query.trim()).map { entities -> entities.map { it.toDomain() } }
     }
 
     suspend fun upsertIou(iou: IouEntry): Long {

@@ -90,6 +90,22 @@ class OnboardingHelperTest {
                 stats = StorageStats(transactionCount = 1, noteCount = 0, openTaskCount = 0, snippetCount = 0)
             )
         )
+        assertTrue(
+            OnboardingHelper.shouldAutoCompleteForExistingInstall(
+                hasCompletedFlag = false,
+                prefs = UserPreferences(),
+                driveConfig = DriveSyncConfig(),
+                stats = StorageStats(0, 0, 0, 0, maintenanceCount = 1)
+            )
+        )
+        assertTrue(
+            OnboardingHelper.shouldAutoCompleteForExistingInstall(
+                hasCompletedFlag = false,
+                prefs = UserPreferences(),
+                driveConfig = DriveSyncConfig(),
+                stats = StorageStats(0, 0, 0, 0, countdownCount = 1)
+            )
+        )
     }
 
     @Test

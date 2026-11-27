@@ -5,6 +5,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneId
+import java.time.temporal.ChronoUnit
 
 @Serializable
 enum class TransactionType(val label: String) {
@@ -328,8 +329,62 @@ object MoneyCalculations {
             .sortedByDescending { it.ratio }
     }
 
+    fun parseLastPaidDate(raw: String?): LocalDate? {
+        val trimmed = raw?.trim().orEmpty()
+        return if (trimmed.length == 10) {
+            runCatching { LocalDate.parse(trimmed) }.getOrNull()
+        } else {
+            null
+        }
+    }
+
+    fun parseLastPaidYearMonth(raw: String?): YearMonth? {
+        val trimmed = raw?.trim().orEmpty()
+        if (trimmed.isEmpty()) return null
+        return parseLastPaidDate(trimmed)?.let { YearMonth.from(it) }
+            ?: runCatching { YearMonth.parse(trimmed) }.getOrNull()
+    }
+
+    fun isBillPaidForCycle(bill: RecurringBill, referenceDate: LocalDate): Boolean {
+        val targetMonth = YearMonth.from(referenceDate)
+        return when (bill.frequency) {
+            BillFrequency.MONTHLY -> parseLastPaidYearMonth(bill.lastPaidYearMonth) == targetMonth
+            BillFrequency.YEARLY -> {
+                val paidYm = parseLastPaidYearMonth(bill.lastPaidYearMonth) ?: return false
+                ChronoUnit.MONTHS.between(paidYm, targetMonth) in 0L..11L
+            }
+            BillFrequency.WEEKLY -> {
+                val paidDate = parseLastPaidDate(bill.lastPaidYearMonth)
+                if (paidDate != null) {
+                    ChronoUnit.DAYS.between(paidDate, referenceDate) in 0L..6L
+                } else {
+                    parseLastPaidYearMonth(bill.lastPaidYearMonth) == targetMonth
+                }
+            }
+        }
+    }
+
     fun isBillPaidForMonth(bill: RecurringBill, yearMonth: YearMonth): Boolean {
-        return bill.lastPaidYearMonth == yearMonth.toString()
+        return when (bill.frequency) {
+            BillFrequency.MONTHLY -> parseLastPaidYearMonth(bill.lastPaidYearMonth) == yearMonth
+            BillFrequency.YEARLY -> {
+                val paidYm = parseLastPaidYearMonth(bill.lastPaidYearMonth) ?: return false
+                ChronoUnit.MONTHS.between(paidYm, yearMonth) in 0L..11L
+            }
+            BillFrequency.WEEKLY -> {
+                val paidDate = parseLastPaidDate(bill.lastPaidYearMonth)
+                if (paidDate != null) {
+                    val today = LocalDate.now()
+                    if (YearMonth.from(today) == yearMonth) {
+                        ChronoUnit.DAYS.between(paidDate, today) in 0L..6L
+                    } else {
+                        YearMonth.from(paidDate) == yearMonth
+                    }
+                } else {
+                    parseLastPaidYearMonth(bill.lastPaidYearMonth) == yearMonth
+                }
+            }
+        }
     }
 
     fun dueDateForMonth(bill: RecurringBill, yearMonth: YearMonth): LocalDate {
@@ -343,10 +398,36 @@ object MoneyCalculations {
         withinDays: Int = 5
     ): Boolean {
         if (!bill.isActive) return false
+        if (isBillPaidForCycle(bill, today)) return false
         val currentMonth = YearMonth.from(today)
-        if (isBillPaidForMonth(bill, currentMonth)) return false
-        val dueDate = dueDateForMonth(bill, currentMonth)
-        return !dueDate.isAfter(today.plusDays(withinDays.toLong()))
+        val latestAlertDate = today.plusDays(withinDays.toLong())
+        return when (bill.frequency) {
+            BillFrequency.MONTHLY -> {
+                val dueDate = dueDateForMonth(bill, currentMonth)
+                !dueDate.isAfter(latestAlertDate)
+            }
+            BillFrequency.YEARLY -> {
+                val paidYm = parseLastPaidYearMonth(bill.lastPaidYearMonth)
+                val dueMonth = if (paidYm != null) {
+                    val monthsDiff = ChronoUnit.MONTHS.between(paidYm, currentMonth)
+                    val yearsElapsed = (monthsDiff / 12L).coerceAtLeast(1L)
+                    paidYm.plusYears(yearsElapsed)
+                } else {
+                    currentMonth
+                }
+                val dueDate = dueDateForMonth(bill, dueMonth)
+                !dueDate.isAfter(latestAlertDate)
+            }
+            BillFrequency.WEEKLY -> {
+                val paidDate = parseLastPaidDate(bill.lastPaidYearMonth)
+                val nextDueDate = if (paidDate != null) {
+                    paidDate.plusDays(7L)
+                } else {
+                    dueDateForMonth(bill, currentMonth)
+                }
+                !nextDueDate.isAfter(latestAlertDate)
+            }
+        }
     }
 
     fun isIouDueSoon(

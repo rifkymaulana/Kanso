@@ -78,13 +78,18 @@ fun HubRoute(
         onOpenUtilities,
         onOpenSettings
     ) {
+        val moneyExtras = stats.activeBillCount + stats.openIouCount + stats.activeGoalCount
         listOf(
             HubMiniAppItem(
                 title = "Money & Budgets",
                 subtitle = "Wallets, goals, caps, bills, IOUs",
                 icon = Icons.Outlined.AccountBalanceWallet,
                 accent = kansoColors.moneyAccent,
-                badgeText = "${stats.transactionCount} entries",
+                badgeText = if (stats.transactionCount > 0 && moneyExtras == 0) {
+                    "${stats.transactionCount} entries"
+                } else {
+                    "${stats.transactionCount + moneyExtras} items"
+                },
                 onClick = onOpenMoney
             ),
             HubMiniAppItem(
@@ -108,7 +113,7 @@ fun HubRoute(
                 subtitle = "Expiries, service & locked vault",
                 icon = Icons.Outlined.Lock,
                 accent = kansoColors.lifeAdminAccent,
-                badgeText = "${stats.expiryCount + stats.vaultCount} tracked",
+                badgeText = "${stats.expiryCount + stats.maintenanceCount + stats.vaultCount} tracked",
                 onClick = onOpenLifeAdmin
             ),
             HubMiniAppItem(
@@ -116,7 +121,7 @@ fun HubRoute(
                 subtitle = "QR tools, converters, Pomodoro",
                 icon = Icons.Outlined.Build,
                 accent = kansoColors.utilitiesAccent,
-                badgeText = "4 tools",
+                badgeText = if (stats.countdownCount > 0) "${stats.countdownCount} countdowns" else "4 tools",
                 onClick = onOpenUtilities
             ),
             HubMiniAppItem(

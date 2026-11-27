@@ -272,4 +272,55 @@ class SmartCoachCalculationsTest {
         assertTrue(warnInsight.body.contains("Rp ••••••"))
         assertFalse(warnInsight.body.contains("100.000"))
     }
+
+    @Test
+    fun `computeSafeToSpend accounts for weekly bill cycles and skips yearly bills paid earlier in the year`() {
+        val today = LocalDate.of(2026, 11, 17) // 14 days left in Nov -> 2 weekly slots remaining
+        val paidYearly = RecurringBill(
+            id = 10L,
+            name = "Annual Cloud",
+            amountCents = 1_200_000_00L,
+            category = ExpenseCategory.BILLS,
+            wallet = WalletType.CARD,
+            dueDayOfMonth = 10,
+            frequency = BillFrequency.YEARLY,
+            lastPaidYearMonth = "2026-03-10",
+            isActive = true
+        )
+        val unpaidWeekly = RecurringBill(
+            id = 11L,
+            name = "Weekly Groceries Box",
+            amountCents = 200_000_00L,
+            category = ExpenseCategory.GROCERIES,
+            wallet = WalletType.EWALLET,
+            dueDayOfMonth = 17,
+            frequency = BillFrequency.WEEKLY,
+            lastPaidYearMonth = null,
+            isActive = true
+        )
+
+        val beforePay = SmartCoachCalculations.computeSafeToSpend(
+            targetMonth = YearMonth.of(2026, 11),
+            today = today,
+            monthlyBudgetCents = 3_000_000_00L,
+            monthIncomeCents = 5_000_000_00L,
+            monthExpenseCents = 0L,
+            todayExpenseCents = 0L,
+            bills = listOf(paidYearly, unpaidWeekly)
+        )
+        assertEquals(1, beforePay.unpaidBillsCount)
+        assertEquals(400_000_00L, beforePay.unpaidBillsCents)
+
+        val afterPayToday = SmartCoachCalculations.computeSafeToSpend(
+            targetMonth = YearMonth.of(2026, 11),
+            today = today,
+            monthlyBudgetCents = 3_000_000_00L,
+            monthIncomeCents = 5_000_000_00L,
+            monthExpenseCents = 200_000_00L,
+            todayExpenseCents = 200_000_00L,
+            bills = listOf(paidYearly, unpaidWeekly.copy(lastPaidYearMonth = "2026-11-17"))
+        )
+        assertEquals(200_000_00L, afterPayToday.unpaidBillsCents)
+        assertEquals(beforePay.flexibleRemainingMonthCents, afterPayToday.flexibleRemainingMonthCents)
+    }
 }

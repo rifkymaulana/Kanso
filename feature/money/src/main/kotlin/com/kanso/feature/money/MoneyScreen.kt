@@ -128,6 +128,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.time.Instant
+import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -212,8 +213,11 @@ fun MoneyRoute(
         onAddBill = { showNewBillDialog = true },
         onEditBill = { editingBill = it },
         onPayBill = { bill ->
-            viewModel.payRecurringBill(bill)
-            onShowMessage("Paid ${bill.name} and logged expense")
+            viewModel.payRecurringBill(bill) { record ->
+                onShowUndoMessage("Paid ${bill.name} and logged expense") {
+                    viewModel.undoPayRecurringBill(record)
+                }
+            }
         },
         onAddIou = { showNewIouDialog = true },
         onEditIou = { editingIou = it },
@@ -2420,7 +2424,11 @@ private fun BillsTabContent(
             }
         } else {
             items(uiState.bills, key = { it.id }) { bill ->
-                val isPaid = MoneyCalculations.isBillPaidForMonth(bill, currentMonth)
+                val isPaid = if (currentMonth == YearMonth.now()) {
+                    MoneyCalculations.isBillPaidForCycle(bill, LocalDate.now())
+                } else {
+                    MoneyCalculations.isBillPaidForMonth(bill, currentMonth)
+                }
                 KansoBentoCard(
                     modifier = Modifier
                         .fillMaxWidth()

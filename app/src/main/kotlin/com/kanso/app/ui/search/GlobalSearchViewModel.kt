@@ -8,9 +8,11 @@ import com.kanso.core.database.repository.LifeAdminRepository
 import com.kanso.core.database.repository.MoneyRepository
 import com.kanso.core.model.AppCurrency
 import com.kanso.core.model.ExpiryItem
+import com.kanso.core.model.IouEntry
 import com.kanso.core.model.MaintenanceLog
 import com.kanso.core.model.MoneyTransaction
 import com.kanso.core.model.NoteItem
+import com.kanso.core.model.RecurringBill
 import com.kanso.core.model.SavingsGoal
 import com.kanso.core.model.SnippetItem
 import com.kanso.core.model.TaskItem
@@ -32,12 +34,22 @@ data class GlobalSearchUiState(
     val notes: List<NoteItem> = emptyList(),
     val tasks: List<TaskItem> = emptyList(),
     val transactions: List<MoneyTransaction> = emptyList(),
+    val recurringBills: List<RecurringBill> = emptyList(),
+    val ious: List<IouEntry> = emptyList(),
     val savingsGoals: List<SavingsGoal> = emptyList(),
     val expiries: List<ExpiryItem> = emptyList(),
     val maintenanceLogs: List<MaintenanceLog> = emptyList()
 ) {
     val totalMatches: Int
-        get() = snippets.size + notes.size + tasks.size + transactions.size + savingsGoals.size + expiries.size + maintenanceLogs.size
+        get() = snippets.size +
+            notes.size +
+            tasks.size +
+            transactions.size +
+            recurringBills.size +
+            ious.size +
+            savingsGoals.size +
+            expiries.size +
+            maintenanceLogs.size
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -62,20 +74,24 @@ class GlobalSearchViewModel @Inject constructor(
                 brainRepository.searchTasks(q),
                 moneyRepository.searchTransactions(q)
             ) { snippets, notes, tasks, txs ->
-                SearchBundle(snippets, notes, tasks, txs)
+                SearchBundle(snippets = snippets, notes = notes, tasks = tasks, transactions = txs)
             }
             val m2Flow = combine(
+                moneyRepository.searchBills(q),
+                moneyRepository.searchIous(q),
                 moneyRepository.searchSavingsGoals(q),
                 lifeAdminRepository.searchExpiries(q),
                 lifeAdminRepository.searchMaintenanceLogs(q)
-            ) { goals, expiries, maintenance ->
-                Triple(goals, expiries, maintenance)
+            ) { bills, ious, goals, expiries, maintenance ->
+                ExtraSearchBundle(bills, ious, goals, expiries, maintenance)
             }
             combine(m1Flow, m2Flow) { base, extra ->
                 base.copy(
-                    savingsGoals = extra.first,
-                    expiries = extra.second,
-                    maintenanceLogs = extra.third
+                    recurringBills = extra.bills,
+                    ious = extra.ious,
+                    savingsGoals = extra.goals,
+                    expiries = extra.expiries,
+                    maintenanceLogs = extra.maintenance
                 )
             }
         }
@@ -93,6 +109,8 @@ class GlobalSearchViewModel @Inject constructor(
             notes = results.notes,
             tasks = results.tasks,
             transactions = results.transactions,
+            recurringBills = results.recurringBills,
+            ious = results.ious,
             savingsGoals = results.savingsGoals,
             expiries = results.expiries,
             maintenanceLogs = results.maintenanceLogs
@@ -112,8 +130,18 @@ class GlobalSearchViewModel @Inject constructor(
         val notes: List<NoteItem> = emptyList(),
         val tasks: List<TaskItem> = emptyList(),
         val transactions: List<MoneyTransaction> = emptyList(),
+        val recurringBills: List<RecurringBill> = emptyList(),
+        val ious: List<IouEntry> = emptyList(),
         val savingsGoals: List<SavingsGoal> = emptyList(),
         val expiries: List<ExpiryItem> = emptyList(),
         val maintenanceLogs: List<MaintenanceLog> = emptyList()
+    )
+
+    private data class ExtraSearchBundle(
+        val bills: List<RecurringBill>,
+        val ious: List<IouEntry>,
+        val goals: List<SavingsGoal>,
+        val expiries: List<ExpiryItem>,
+        val maintenance: List<MaintenanceLog>
     )
 }

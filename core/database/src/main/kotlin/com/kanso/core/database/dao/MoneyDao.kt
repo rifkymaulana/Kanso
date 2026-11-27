@@ -95,8 +95,35 @@ interface MoneyDao {
     @Query("DELETE FROM recurring_bills")
     suspend fun deleteAllBills()
 
+    @Query("SELECT COUNT(*) FROM recurring_bills WHERE isActive = 1")
+    fun observeActiveBillCount(): Flow<Int>
+
+    @Query(
+        """
+        SELECT * FROM recurring_bills
+        WHERE name LIKE '%' || :query || '%'
+           OR category LIKE '%' || :query || '%'
+           OR wallet LIKE '%' || :query || '%'
+        ORDER BY isActive DESC, dueDayOfMonth ASC, name ASC
+        """
+    )
+    fun searchBills(query: String): Flow<List<RecurringBillEntity>>
+
     @Query("SELECT * FROM ious ORDER BY isSettled ASC, createdAtMillis DESC")
     fun observeIous(): Flow<List<IouEntity>>
+
+    @Query(
+        """
+        SELECT * FROM ious
+        WHERE personName LIKE '%' || :query || '%'
+           OR note LIKE '%' || :query || '%'
+        ORDER BY isSettled ASC, createdAtMillis DESC
+        """
+    )
+    fun searchIous(query: String): Flow<List<IouEntity>>
+
+    @Query("SELECT COUNT(*) FROM ious WHERE isSettled = 0")
+    fun observeOpenIouCount(): Flow<Int>
 
     @Query("SELECT * FROM ious")
     suspend fun getAllIous(): List<IouEntity>
@@ -115,6 +142,9 @@ interface MoneyDao {
 
     @Query("SELECT * FROM savings_goals ORDER BY isArchived ASC, updatedAtMillis DESC, id DESC")
     fun observeSavingsGoals(): Flow<List<SavingsGoalEntity>>
+
+    @Query("SELECT COUNT(*) FROM savings_goals WHERE isArchived = 0")
+    fun observeActiveGoalCount(): Flow<Int>
 
     @Query(
         """

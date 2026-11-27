@@ -27,4 +27,7 @@ interface UtilitiesDao {
 
     @Query("DELETE FROM countdowns")
     suspend fun deleteAllCountdowns()
+
+    @Query("SELECT COUNT(*) FROM countdowns")
+    fun observeCountdownCount(): Flow<Int>
 }

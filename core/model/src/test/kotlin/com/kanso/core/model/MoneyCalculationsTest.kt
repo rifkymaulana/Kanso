@@ -107,6 +107,30 @@ class MoneyCalculationsTest {
 
         val farFuture = dueInThreeDays.copy(dueDayOfMonth = 30)
         assertFalse(MoneyCalculations.isBillDueSoon(farFuture, today))
+
+        // Yearly bill stays paid for 12-month cycle and resets next year
+        val yearlyPaidJan = RecurringBill(
+            id = 2L, name = "Domain Renewal", amountCents = 250_000_00L,
+            category = ExpenseCategory.BILLS, wallet = WalletType.CARD,
+            dueDayOfMonth = 15, frequency = BillFrequency.YEARLY,
+            lastPaidYearMonth = "2026-01-15", isActive = true
+        )
+        assertTrue(MoneyCalculations.isBillPaidForMonth(yearlyPaidJan, YearMonth.of(2026, 11)))
+        assertFalse(MoneyCalculations.isBillDueSoon(yearlyPaidJan, today))
+        assertFalse(MoneyCalculations.isBillPaidForMonth(yearlyPaidJan, YearMonth.of(2027, 1)))
+        assertTrue(MoneyCalculations.isBillDueSoon(yearlyPaidJan, LocalDate.of(2027, 1, 12)))
+
+        // Weekly bill tracks 7-day cadence accurately using ISO date strings
+        val weeklyPaidNov20 = RecurringBill(
+            id = 3L, name = "Cleaner", amountCents = 100_000_00L,
+            category = ExpenseCategory.HOUSING, wallet = WalletType.CASH,
+            dueDayOfMonth = 20, frequency = BillFrequency.WEEKLY,
+            lastPaidYearMonth = "2026-11-20", isActive = true
+        )
+        assertTrue(MoneyCalculations.isBillPaidForCycle(weeklyPaidNov20, LocalDate.of(2026, 11, 22)))
+        assertFalse(MoneyCalculations.isBillDueSoon(weeklyPaidNov20, LocalDate.of(2026, 11, 21)))
+        assertFalse(MoneyCalculations.isBillPaidForCycle(weeklyPaidNov20, LocalDate.of(2026, 11, 27)))
+        assertTrue(MoneyCalculations.isBillDueSoon(weeklyPaidNov20, LocalDate.of(2026, 11, 27)))
     }
 
     @Test

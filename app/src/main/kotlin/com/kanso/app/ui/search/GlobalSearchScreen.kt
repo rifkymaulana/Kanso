@@ -19,6 +19,8 @@ import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.EventAvailable
+import androidx.compose.material.icons.outlined.Handshake
+import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material.icons.outlined.TaskAlt
@@ -45,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.kanso.core.model.CurrencyFormatter
+import com.kanso.core.model.IouDirection
 import com.kanso.core.model.SnippetMasker
 import com.kanso.core.ui.components.KansoAccentIconBadge
 import com.kanso.core.ui.components.KansoBentoCard
@@ -103,7 +106,7 @@ fun GlobalSearchRoute(
                 value = uiState.query,
                 onValueChange = viewModel::setQuery,
                 modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Search expenses, notes, tasks, expiries...") },
+                placeholder = { Text("Search expenses, bills, IOUs, notes, tasks...") },
                 leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
                 trailingIcon = {
                     if (uiState.query.isNotEmpty()) {
@@ -315,6 +318,96 @@ fun GlobalSearchRoute(
                                         amountCents = tx.amountCents,
                                         currency = uiState.currency,
                                         type = tx.type
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    if (uiState.recurringBills.isNotEmpty()) {
+                        item { SectionHeader(title = "Recurring Bills (${uiState.recurringBills.size})") }
+                        items(uiState.recurringBills, key = { "bill-${it.id}" }) { bill ->
+                            val hidden = LocalBalancesHidden.current
+                            KansoBentoCard(
+                                modifier = Modifier.fillMaxWidth(),
+                                onClick = onOpenMoney,
+                                cornerRadius = 18.dp,
+                                contentPadding = PaddingValues(14.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    KansoAccentIconBadge(
+                                        icon = Icons.Outlined.Payments,
+                                        accent = bill.category.accentColor(),
+                                        size = 38.dp,
+                                        iconSize = 19.dp
+                                    )
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(bill.name, style = MaterialTheme.typography.titleMedium)
+                                        Text(
+                                            text = "Day ${bill.dueDayOfMonth} · ${bill.frequency.label} · ${bill.wallet.label}",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    Text(
+                                        text = CurrencyFormatter.formatOrMask(bill.amountCents, uiState.currency, hidden = hidden),
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = kansoColors.moneyAccent
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    if (uiState.ious.isNotEmpty()) {
+                        item { SectionHeader(title = "IOUs (${uiState.ious.size})") }
+                        items(uiState.ious, key = { "iou-${it.id}" }) { iou ->
+                            val hidden = LocalBalancesHidden.current
+                            val iouAccent = if (iou.direction == IouDirection.OWES_ME) {
+                                kansoColors.income
+                            } else {
+                                kansoColors.expense
+                            }
+                            KansoBentoCard(
+                                modifier = Modifier.fillMaxWidth(),
+                                onClick = onOpenMoney,
+                                cornerRadius = 18.dp,
+                                contentPadding = PaddingValues(14.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    KansoAccentIconBadge(
+                                        icon = Icons.Outlined.Handshake,
+                                        accent = iouAccent,
+                                        size = 38.dp,
+                                        iconSize = 19.dp
+                                    )
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(iou.personName, style = MaterialTheme.typography.titleMedium)
+                                        val statusLabel = if (iou.isSettled) "Settled" else iou.direction.label
+                                        val sub = listOfNotNull(
+                                            statusLabel,
+                                            iou.note.takeIf { it.isNotBlank() }
+                                        ).joinToString(" · ")
+                                        Text(
+                                            text = sub,
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                    Text(
+                                        text = CurrencyFormatter.formatOrMask(iou.amountCents, uiState.currency, hidden = hidden),
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = iouAccent
                                     )
                                 }
                             }

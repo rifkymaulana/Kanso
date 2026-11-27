@@ -51,5 +51,11 @@ data class StorageStats(
     val snippetCount: Int,
     val habitCount: Int = 0,
     val expiryCount: Int = 0,
-    val vaultCount: Int = 0
+    val vaultCount: Int = 0,
+    val maintenanceCount: Int = 0,
+    val activeBillCount: Int = 0,
+    val openIouCount: Int = 0,
+    val activeGoalCount: Int = 0,
+    val totalTaskCount: Int = 0,
+    val countdownCount: Int = 0
 )

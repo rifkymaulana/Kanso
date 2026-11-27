@@ -61,10 +61,16 @@ object OnboardingHelper {
             stats.transactionCount +
                 stats.noteCount +
                 stats.openTaskCount +
+                stats.totalTaskCount +
                 stats.snippetCount +
                 stats.habitCount +
                 stats.expiryCount +
-                stats.vaultCount
+                stats.maintenanceCount +
+                stats.vaultCount +
+                stats.activeBillCount +
+                stats.openIouCount +
+                stats.activeGoalCount +
+                stats.countdownCount
             ) > 0
 
         return prefs.displayName.isNotBlank() ||
