@@ -56,6 +56,7 @@ class PreferencesRepository @Inject constructor(
         val EVENING_REMINDER_ENABLED = booleanPreferencesKey("evening_reminder_enabled")
         val EVENING_REMINDER_HOUR = intPreferencesKey("evening_reminder_hour")
         val EVENING_REMINDER_MINUTE = intPreferencesKey("evening_reminder_minute")
+        val ONBOARDING_COMPLETED = booleanPreferencesKey("onboarding_completed")
 
         val DRIVE_SYNC_CONNECTED = booleanPreferencesKey("drive_sync_connected")
         val DRIVE_AUTO_SYNC = booleanPreferencesKey("drive_auto_sync")
@@ -111,6 +112,10 @@ class PreferencesRepository @Inject constructor(
         !prefs[Keys.GITHUB_TOKEN_ENCRYPTED].isNullOrBlank()
     }
 
+    val hasCompletedOnboarding: Flow<Boolean> = context.kansoDataStore.data.map { prefs ->
+        prefs[Keys.ONBOARDING_COMPLETED] ?: false
+    }
+
     val driveSyncConfig: Flow<DriveSyncConfig> = context.kansoDataStore.data.map { prefs ->
         DriveSyncConfig(
             isConnected = prefs[Keys.DRIVE_SYNC_CONNECTED] ?: false,
@@ -155,6 +160,7 @@ class PreferencesRepository @Inject constructor(
             if (!accountEmail.isNullOrBlank()) {
                 prefs[Keys.DRIVE_ACCOUNT_EMAIL] = accountEmail.trim()
             }
+            prefs[Keys.ONBOARDING_COMPLETED] = true
         }
     }
 
@@ -180,6 +186,7 @@ class PreferencesRepository @Inject constructor(
             if (!accountEmail.isNullOrBlank()) {
                 prefs[Keys.DRIVE_ACCOUNT_EMAIL] = accountEmail.trim()
             }
+            prefs[Keys.ONBOARDING_COMPLETED] = true
         }
     }
 
@@ -325,6 +332,25 @@ class PreferencesRepository @Inject constructor(
         }
     }
 
+    suspend fun setOnboardingCompleted(completed: Boolean) {
+        context.kansoDataStore.edit { it[Keys.ONBOARDING_COMPLETED] = completed }
+    }
+
+    suspend fun completeOnboardingSetup(
+        displayName: String,
+        currency: AppCurrency,
+        monthlyBudgetCents: Long,
+        remindersEnabled: Boolean
+    ) {
+        context.kansoDataStore.edit { prefs ->
+            prefs[Keys.DISPLAY_NAME] = displayName.trim()
+            prefs[Keys.CURRENCY_CODE] = currency.code
+            prefs[Keys.OVERALL_MONTHLY_BUDGET_CENTS] = monthlyBudgetCents.coerceAtLeast(0L)
+            prefs[Keys.REMINDERS_ENABLED] = remindersEnabled
+            prefs[Keys.ONBOARDING_COMPLETED] = true
+        }
+    }
+
     suspend fun restorePreferences(userPreferences: UserPreferences) {
         context.kansoDataStore.edit { prefs ->
             prefs[Keys.DISPLAY_NAME] = userPreferences.displayName
@@ -358,6 +384,7 @@ class PreferencesRepository @Inject constructor(
             } else {
                 prefs.remove(Keys.LAST_BACKUP_MILLIS)
             }
+            prefs[Keys.ONBOARDING_COMPLETED] = true
         }
     }
 }

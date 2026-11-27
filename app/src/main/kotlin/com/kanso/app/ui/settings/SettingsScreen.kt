@@ -36,6 +36,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -78,6 +79,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -132,10 +134,12 @@ import java.time.format.DateTimeFormatter
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsRoute(
+    initialAction: String? = null,
     onBack: () -> Unit,
     onShowMessage: (String) -> Unit = {},
     onAppLockActivated: () -> Unit = {},
     onBiometricPromptActive: (Boolean) -> Unit = {},
+    onReopenOnboarding: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -143,6 +147,7 @@ fun SettingsRoute(
     val context = LocalContext.current
     val activity = remember(context) { context.findActivity() }
     val fragmentActivity = remember(context) { context.findFragmentActivity() }
+    val listState = rememberLazyListState()
 
     var showNameDialog by remember { mutableStateOf(false) }
     var showCurrencyDialog by remember { mutableStateOf(false) }
@@ -240,6 +245,24 @@ fun SettingsRoute(
         }
     }
 
+    var handledInitialAction by rememberSaveable(initialAction) { mutableStateOf(false) }
+    LaunchedEffect(initialAction, handledInitialAction) {
+        if (!handledInitialAction && !initialAction.isNullOrBlank()) {
+            handledInitialAction = true
+            when (initialAction) {
+                "drive" -> {
+                    listState.animateScrollToItem(3)
+                    viewModel.connectOrSyncDrive(activity)
+                }
+                "restore_file" -> {
+                    listState.animateScrollToItem(4)
+                    viewModel.clearBackupStatus()
+                    openBackupLauncher.launch(arrayOf("*/*"))
+                }
+            }
+        }
+    }
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -259,6 +282,7 @@ fun SettingsRoute(
         }
     ) { innerPadding ->
         LazyColumn(
+            state = listState,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding),
@@ -295,6 +319,12 @@ fun SettingsRoute(
                             title = "Daily Hydration Goal",
                             subtitle = "${prefs.waterGoalMl} ml",
                             onClick = { showWaterGoalDialog = true }
+                        )
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                        SettingsRow(
+                            title = "Quick Start Setup",
+                            subtitle = "Re-open the 30-second welcome & starter habits sheet",
+                            onClick = onReopenOnboarding
                         )
                     }
                 }

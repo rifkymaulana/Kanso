@@ -9,18 +9,24 @@ import com.kanso.app.update.AppUpdateState
 import com.kanso.core.backup.drive.GoogleDriveSyncManager
 import com.kanso.core.database.preferences.PreferencesRepository
 import com.kanso.core.database.repository.BrainRepository
+import com.kanso.core.database.repository.HabitsRepository
 import com.kanso.core.database.repository.LifeAdminRepository
 import com.kanso.core.database.repository.MoneyRepository
+import com.kanso.core.database.repository.StorageStatsRepository
+import com.kanso.core.model.AppCurrency
 import com.kanso.core.model.AppLockPolicy
 import com.kanso.core.model.AppLockSession
 import com.kanso.core.model.DriveSyncConfig
 import com.kanso.core.model.ExpenseCategory
 import com.kanso.core.model.ExpiryCategory
 import com.kanso.core.model.ExpiryItem
+import com.kanso.core.model.HabitItem
 import com.kanso.core.model.MoneyTransaction
 import com.kanso.core.model.NoteItem
+import com.kanso.core.model.OnboardingHelper
 import com.kanso.core.model.SnippetCategory
 import com.kanso.core.model.SnippetItem
+import com.kanso.core.model.StarterHabitPreset
 import com.kanso.core.model.TaskItem
 import com.kanso.core.model.TaskPriority
 import com.kanso.core.model.TaskRecurrence
@@ -31,6 +37,8 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -40,10 +48,12 @@ import javax.inject.Inject
 
 @HiltViewModel
 class MainViewModel @Inject constructor(
-    preferencesRepository: PreferencesRepository,
+    private val preferencesRepository: PreferencesRepository,
     private val moneyRepository: MoneyRepository,
     private val brainRepository: BrainRepository,
+    private val habitsRepository: HabitsRepository,
     private val lifeAdminRepository: LifeAdminRepository,
+    storageStatsRepository: StorageStatsRepository,
     private val appUpdateManager: AppUpdateManager,
     private val googleDriveSyncManager: GoogleDriveSyncManager
 ) : ViewModel() {
@@ -73,8 +83,93 @@ class MainViewModel @Inject constructor(
             initialValue = DriveSyncConfig()
         )
 
+    private val existingInstallAutoCompleteFlow = combine(
+        preferencesRepository.hasCompletedOnboarding,
+        preferencesRepository.preferences,
+        preferencesRepository.driveSyncConfig,
+        storageStatsRepository.observeStats()
+    ) { completed, prefs, driveConfig, stats ->
+        !completed && OnboardingHelper.shouldAutoCompleteForExistingInstall(
+            hasCompletedFlag = false,
+            prefs = prefs,
+            driveConfig = driveConfig,
+            stats = stats
+        )
+    }
+
+    val shouldShowFirstRunSetup: StateFlow<Boolean> = combine(
+        preferencesRepository.hasCompletedOnboarding,
+        preferencesRepository.preferences,
+        preferencesRepository.driveSyncConfig,
+        storageStatsRepository.observeStats()
+    ) { completed, prefs, driveConfig, stats ->
+        !completed && !OnboardingHelper.shouldAutoCompleteForExistingInstall(
+            hasCompletedFlag = false,
+            prefs = prefs,
+            driveConfig = driveConfig,
+            stats = stats
+        )
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = false
+    )
+
     val updateState: StateFlow<AppUpdateState> = appUpdateManager.state
     val dismissedUpdateTag: StateFlow<String?> = appUpdateManager.dismissedTag
+
+    init {
+        viewModelScope.launch {
+            existingInstallAutoCompleteFlow.first { it }
+            preferencesRepository.setOnboardingCompleted(true)
+        }
+    }
+
+    fun dismissFirstRunSetup() {
+        viewModelScope.launch {
+            preferencesRepository.setOnboardingCompleted(true)
+        }
+    }
+
+    fun saveFirstRunSetup(
+        displayName: String,
+        currency: AppCurrency,
+        monthlyBudgetCents: Long,
+        starterHabits: Set<StarterHabitPreset>,
+        remindersEnabled: Boolean,
+        onFinished: () -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            preferencesRepository.completeOnboardingSetup(
+                displayName = displayName,
+                currency = currency,
+                monthlyBudgetCents = monthlyBudgetCents,
+                remindersEnabled = remindersEnabled
+            )
+            if (starterHabits.isNotEmpty()) {
+                val existingNames = habitsRepository.observeActiveHabits()
+                    .first()
+                    .map { it.name.trim().lowercase() }
+                    .toMutableSet()
+                val now = System.currentTimeMillis()
+                starterHabits.forEachIndexed { idx, preset ->
+                    val normalized = preset.habitTitle.trim().lowercase()
+                    if (existingNames.add(normalized)) {
+                        habitsRepository.upsertHabit(
+                            HabitItem(
+                                name = preset.habitTitle,
+                                targetDaysPerWeek = preset.targetDaysPerWeek,
+                                reminderHour = preset.reminderHour,
+                                reminderMinute = if (preset.reminderHour != null) 0 else null,
+                                createdAtMillis = now + idx
+                            )
+                        )
+                    }
+                }
+            }
+            onFinished()
+        }
+    }
 
     fun onAppForegrounded(nowElapsedMillis: Long) {
         val currentPrefs = preferences.value

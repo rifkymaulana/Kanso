@@ -51,6 +51,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -74,7 +75,9 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.kanso.app.MainViewModel
+import com.kanso.app.notifications.KansoReminderScheduler
 import com.kanso.app.ui.hub.HubRoute
+import com.kanso.app.ui.onboarding.FirstRunSetupSheet
 import com.kanso.app.ui.search.GlobalSearchRoute
 import com.kanso.app.ui.settings.SettingsRoute
 import com.kanso.app.update.AppUpdateState
@@ -98,7 +101,7 @@ private object Routes {
     const val BRAIN_PATTERN = "brain?tab={tab}"
     const val HUB = "hub"
     const val SEARCH = "search"
-    const val SETTINGS = "settings"
+    const val SETTINGS_PATTERN = "settings?action={action}"
     const val HABITS = "habits"
     const val LIFEADMIN_PATTERN = "lifeadmin?tab={tab}"
     const val UTILITIES_PATTERN = "utilities?tab={tab}"
@@ -106,6 +109,7 @@ private object Routes {
     fun brain(tab: Int = 0): String = "brain?tab=$tab"
     fun lifeAdmin(tab: Int = 0): String = "lifeadmin?tab=$tab"
     fun utilities(tab: Int = 0): String = "utilities?tab=$tab"
+    fun settings(action: String = ""): String = if (action.isEmpty()) "settings" else "settings?action=$action"
 
     fun isTopLevel(route: String?): Boolean {
         return route == TODAY || route == MONEY || route == BRAIN_PATTERN || route == HUB
@@ -142,6 +146,7 @@ fun KansoAppRoot(
         currentRoute == Routes.HUB
 
     val prefs by mainViewModel.preferences.collectAsStateWithLifecycle()
+    val shouldShowFirstRunSetup by mainViewModel.shouldShowFirstRunSetup.collectAsStateWithLifecycle()
     val updateState by mainViewModel.updateState.collectAsStateWithLifecycle()
     val dismissedUpdateTag by mainViewModel.dismissedUpdateTag.collectAsStateWithLifecycle()
 
@@ -150,6 +155,7 @@ fun KansoAppRoot(
     val context = LocalContext.current
 
     var showQuickCapture by remember { mutableStateOf(false) }
+    var showManualOnboarding by rememberSaveable { mutableStateOf(false) }
     var quickCaptureInitialMode by remember { mutableStateOf(QuickCaptureMode.EXPENSE) }
     var autoLaunchInstallOnReady by remember { mutableStateOf(false) }
 
@@ -356,7 +362,7 @@ fun KansoAppRoot(
                     TodayRoute(
                         onOpenQuickCapture = openDefaultQuickCapture,
                         onOpenSearch = { navController.navigate(Routes.SEARCH) },
-                        onOpenSettings = { navController.navigate(Routes.SETTINGS) },
+                        onOpenSettings = { navController.navigate(Routes.settings()) },
                         onOpenMoney = { navigateTopTab(Routes.MONEY) },
                         onOpenBrainTab = openBrainTab,
                         onOpenHabits = { navController.navigate(Routes.HABITS) },
@@ -398,7 +404,7 @@ fun KansoAppRoot(
                         onOpenMoney = { navigateTopTab(Routes.MONEY) },
                         onOpenBrain = { navigateTopTab(Routes.brain(0)) },
                         onOpenSearch = { navController.navigate(Routes.SEARCH) },
-                        onOpenSettings = { navController.navigate(Routes.SETTINGS) },
+                        onOpenSettings = { navController.navigate(Routes.settings()) },
                         onOpenHabits = { navController.navigate(Routes.HABITS) },
                         onOpenLifeAdmin = { navController.navigate(Routes.lifeAdmin(0)) },
                         onOpenUtilities = { navController.navigate(Routes.utilities(0)) }
@@ -459,16 +465,68 @@ fun KansoAppRoot(
                     )
                 }
 
-                composable(Routes.SETTINGS) {
+                composable(
+                    route = Routes.SETTINGS_PATTERN,
+                    arguments = listOf(
+                        navArgument("action") {
+                            type = NavType.StringType
+                            defaultValue = ""
+                        }
+                    )
+                ) { entry ->
+                    val initialAction = entry.arguments?.getString("action")?.takeIf { it.isNotBlank() }
                     SettingsRoute(
+                        initialAction = initialAction,
                         onBack = { navController.popBackStack() },
                         onShowMessage = showMessage,
                         onAppLockActivated = mainViewModel::markSessionUnlocked,
-                        onBiometricPromptActive = mainViewModel::setBiometricPromptActive
+                        onBiometricPromptActive = mainViewModel::setBiometricPromptActive,
+                        onReopenOnboarding = { showManualOnboarding = true }
                     )
                 }
             }
         }
+    }
+
+    if ((shouldShowFirstRunSetup || showManualOnboarding) && !showQuickCapture) {
+        val isReopen = showManualOnboarding && !shouldShowFirstRunSetup
+        FirstRunSetupSheet(
+            currentPreferences = prefs,
+            isReopen = isReopen,
+            onSkip = {
+                showManualOnboarding = false
+                mainViewModel.dismissFirstRunSetup()
+            },
+            onRestoreFromDrive = {
+                showManualOnboarding = false
+                mainViewModel.dismissFirstRunSetup()
+                navController.navigate(Routes.settings("drive")) { launchSingleTop = true }
+            },
+            onImportBackupFile = {
+                showManualOnboarding = false
+                mainViewModel.dismissFirstRunSetup()
+                navController.navigate(Routes.settings("restore_file")) { launchSingleTop = true }
+            },
+            onComplete = { displayName, currency, monthlyBudgetCents, starterHabits, remindersEnabled ->
+                val wasReopen = isReopen
+                showManualOnboarding = false
+                mainViewModel.saveFirstRunSetup(
+                    displayName = displayName,
+                    currency = currency,
+                    monthlyBudgetCents = monthlyBudgetCents,
+                    starterHabits = starterHabits,
+                    remindersEnabled = remindersEnabled
+                ) {
+                    KansoReminderScheduler.syncSchedule(
+                        context = context,
+                        prefs = prefs.copy(remindersEnabled = remindersEnabled),
+                        replaceExisting = true
+                    )
+                    scope.launch { KansoWidgetUpdater.updateAll(context) }
+                    showMessage(if (wasReopen) "Setup updated" else "Welcome to Kanso!")
+                }
+            }
+        )
     }
 
     if (showQuickCapture) {
