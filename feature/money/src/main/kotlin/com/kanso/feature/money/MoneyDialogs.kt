@@ -14,12 +14,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -27,16 +29,21 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
+import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.ArrowDownward
 import androidx.compose.material.icons.outlined.ArrowUpward
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.EventAvailable
 import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material.icons.outlined.Handshake
+import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material.icons.outlined.Savings
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -47,6 +54,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -79,15 +87,27 @@ import com.kanso.core.model.MoneyCalculations
 import com.kanso.core.model.MoneyTransaction
 import com.kanso.core.model.RecurringBill
 import com.kanso.core.model.SavingsGoal
+import com.kanso.core.model.SnippetCategory
+import com.kanso.core.model.SnippetItem
+import com.kanso.core.model.SplitBillCalculations
+import com.kanso.core.model.SplitBillMode
+import com.kanso.core.model.SplitExpenseRecording
+import com.kanso.core.model.SplitParticipantInput
 import com.kanso.core.model.TransactionType
 import com.kanso.core.model.WalletBalanceSummary
 import com.kanso.core.model.WalletType
 import com.kanso.core.ui.components.CurrencyAmountVisualTransformation
+import com.kanso.core.ui.components.KansoBentoCard
+import com.kanso.core.ui.components.KansoButtonSize
 import com.kanso.core.ui.components.KansoDateFormatters
 import com.kanso.core.ui.components.KansoDatePickerDialog
 import com.kanso.core.ui.components.KansoFormBottomSheet
 import com.kanso.core.ui.components.KansoMotion
+import com.kanso.core.ui.components.KansoOutlinedButton
+import com.kanso.core.ui.components.KansoPillBadge
 import com.kanso.core.ui.components.KansoSegmentedRow
+import com.kanso.core.ui.components.KansoSmallIconButton
+import com.kanso.core.ui.components.KansoTonalButton
 import com.kanso.core.ui.components.KansoTransactionDateSelector
 import com.kanso.core.ui.components.accentColor
 import com.kanso.core.ui.components.expenseSemanticColor
@@ -1702,5 +1722,688 @@ fun CsvExportDialog(
                 }
             }
         }
+    }
+}
+
+private data class SplitFriendDraft(
+    val id: Long,
+    val name: String = "",
+    val itemAmountText: String = ""
+)
+
+private fun sanitizePercentInput(raw: String): String {
+    val sb = StringBuilder()
+    var hasDot = false
+    for (ch in raw) {
+        when {
+            ch.isDigit() -> sb.append(ch)
+            (ch == '.' || ch == ',') && !hasDot -> {
+                if (sb.isEmpty()) sb.append('0')
+                sb.append('.')
+                hasDot = true
+            }
+        }
+    }
+    return sb.toString().take(5)
+}
+
+@Composable
+fun SplitBillDialog(
+    currency: AppCurrency,
+    recentPeople: List<String>,
+    paymentSnippets: List<SnippetItem>,
+    onDismiss: () -> Unit,
+    onCopySummary: (String) -> Unit,
+    onShareSummary: (String) -> Unit,
+    onSave: (
+        title: String,
+        expenseAmountCents: Long,
+        category: ExpenseCategory,
+        wallet: WalletType,
+        friendShares: List<Pair<String, Long>>,
+        dueDateEpochDay: Long?,
+        timestampMillis: Long
+    ) -> Unit
+) {
+    val haptic = LocalHapticFeedback.current
+    val moneyAccent = MaterialTheme.kansoColors.moneyAccent
+
+    var mode by remember { mutableStateOf(SplitBillMode.EQUAL) }
+    var recordingMode by remember { mutableStateOf(SplitExpenseRecording.FULL_BILL) }
+    var title by remember { mutableStateOf("") }
+    var subtotalText by remember { mutableStateOf("") }
+    var serviceText by remember { mutableStateOf("") }
+    var taxText by remember { mutableStateOf("") }
+    var discountText by remember { mutableStateOf("") }
+    var payerItemText by remember { mutableStateOf("") }
+    var nextFriendId by remember { mutableLongStateOf(2L) }
+    val friends = remember { mutableStateListOf(SplitFriendDraft(id = 1L)) }
+
+    var selectedCategory by remember { mutableStateOf(ExpenseCategory.FOOD) }
+    var selectedWallet by remember { mutableStateOf(WalletType.EWALLET) }
+    var selectedEpochDay by remember { mutableLongStateOf(LocalDate.now().toEpochDay()) }
+    var dueDateEpochDay by remember { mutableStateOf<Long?>(null) }
+    var showDueDatePicker by remember { mutableStateOf(false) }
+    var selectedSnippetId by remember(paymentSnippets) {
+        mutableStateOf(
+            paymentSnippets.firstOrNull {
+                it.category == SnippetCategory.FINANCE && it.isPinned && !it.isSensitive
+            }?.id
+        )
+    }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    val amountVisualTransformation = remember(currency) { CurrencyAmountVisualTransformation(currency) }
+    val numberKeyboard = remember(currency) {
+        KeyboardOptions(
+            keyboardType = if (currency.decimalDigits == 0) KeyboardType.Number else KeyboardType.Decimal
+        )
+    }
+
+    val manualSubtotalCents = CurrencyFormatter.parseInputToCents(subtotalText, currency) ?: 0L
+    val servicePct = serviceText.toDoubleOrNull() ?: 0.0
+    val taxPct = taxText.toDoubleOrNull() ?: 0.0
+    val discountCents = CurrencyFormatter.parseInputToCents(discountText, currency) ?: 0L
+    val payerItemCents = CurrencyFormatter.parseInputToCents(payerItemText, currency) ?: 0L
+
+    val participantInputs = remember(mode, payerItemCents, friends.toList(), currency) {
+        buildList {
+            add(SplitParticipantInput(id = 0L, name = "Me", isPayer = true, itemAmountCents = payerItemCents))
+            friends.forEachIndexed { idx, draft ->
+                val itemCents = CurrencyFormatter.parseInputToCents(draft.itemAmountText, currency) ?: 0L
+                add(
+                    SplitParticipantInput(
+                        id = draft.id,
+                        name = draft.name.trim().ifBlank { "Friend ${idx + 1}" },
+                        isPayer = false,
+                        itemAmountCents = itemCents
+                    )
+                )
+            }
+        }
+    }
+
+    val splitResult = remember(
+        mode,
+        manualSubtotalCents,
+        servicePct,
+        taxPct,
+        discountCents,
+        participantInputs,
+        currency
+    ) {
+        SplitBillCalculations.calculate(
+            mode = mode,
+            manualSubtotalCents = manualSubtotalCents,
+            servicePercent = servicePct,
+            taxPercent = taxPct,
+            discountCents = discountCents,
+            participants = participantInputs,
+            currency = currency
+        )
+    }
+
+    val friendSharePairs = remember(splitResult, friends.toList()) {
+        splitResult.shares
+            .filter { !it.isPayer }
+            .mapIndexed { idx, share ->
+                val rawName = friends.getOrNull(idx)?.name?.trim().orEmpty()
+                rawName to share.finalShareCents
+            }
+    }
+    val selectedSnippet = remember(paymentSnippets, selectedSnippetId) {
+        paymentSnippets.firstOrNull { it.id == selectedSnippetId }
+    }
+    val dateLabel = remember(selectedEpochDay) { KansoDateFormatters.formatFullDate(selectedEpochDay) }
+    val shareSummaryText = remember(title, dateLabel, splitResult, currency, selectedSnippet) {
+        SplitBillCalculations.formatShareSummary(
+            title = title,
+            dateLabel = dateLabel,
+            result = splitResult,
+            currency = currency,
+            paymentSnippet = selectedSnippet
+        )
+    }
+
+    val expenseToRecordCents = if (recordingMode == SplitExpenseRecording.FULL_BILL) {
+        splitResult.grandTotalCents
+    } else {
+        splitResult.payerShareCents
+    }
+    val activeFriendCount = friendSharePairs.count { it.first.isNotBlank() && it.second > 0L }
+
+    MoneySheetScaffold(
+        title = "Split Bill",
+        badgeText = "${participantInputs.size} people",
+        badgeColor = moneyAccent,
+        badgeIcon = Icons.Outlined.Handshake,
+        primaryLabel = "Save Split & ${activeFriendCount.coerceAtLeast(friends.size)} IOU(s)",
+        primaryColor = moneyAccent,
+        errorText = error,
+        onDismiss = onDismiss,
+        onPrimaryClick = {
+            val missingNameIndex = friends.indexOfFirst { it.name.isBlank() }
+            val positiveFriendShares = friendSharePairs.filter { it.second > 0L }
+            when {
+                splitResult.grandTotalCents <= 0L ->
+                    error = if (mode == SplitBillMode.EQUAL) {
+                        "Enter a bill subtotal greater than 0."
+                    } else {
+                        "Enter at least one item amount greater than 0."
+                    }
+                missingNameIndex >= 0 ->
+                    error = "Enter a name for Friend ${missingNameIndex + 1}."
+                positiveFriendShares.isEmpty() ->
+                    error = "At least one friend must owe an amount greater than 0."
+                else -> {
+                    val timestampMillis = MoneyCalculations.resolveTransactionTimestampMillis(
+                        selectedEpochDay = selectedEpochDay,
+                        existingTimestampMillis = null,
+                        nowMillis = System.currentTimeMillis()
+                    )
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onSave(
+                        title,
+                        expenseToRecordCents,
+                        selectedCategory,
+                        selectedWallet,
+                        positiveFriendShares,
+                        dueDateEpochDay,
+                        timestampMillis
+                    )
+                }
+            }
+        }
+    ) {
+        KansoSegmentedRow(
+            options = SplitBillMode.entries.map { it.label },
+            selectedIndex = SplitBillMode.entries.indexOf(mode),
+            onSelect = { idx ->
+                mode = SplitBillMode.entries[idx]
+                error = null
+            }
+        )
+
+        OutlinedTextField(
+            value = title,
+            onValueChange = {
+                title = it
+                error = null
+            },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Place or occasion") },
+            placeholder = { Text("e.g. Ramen dinner, Coffee run") },
+            singleLine = true,
+            shape = RoundedCornerShape(14.dp),
+            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences)
+        )
+
+        AnimatedVisibility(
+            visible = mode == SplitBillMode.EQUAL,
+            enter = expandVertically(KansoMotion.SizeSpring) + fadeIn(tween(180)),
+            exit = shrinkVertically() + fadeOut(tween(140))
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                MoneyAmountHeroInput(
+                    label = "BILL SUBTOTAL",
+                    value = subtotalText,
+                    onValueChange = {
+                        subtotalText = it
+                        error = null
+                    },
+                    currency = currency,
+                    accentColor = moneyAccent,
+                    presets = currency.quickPresets
+                )
+            }
+        }
+
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Service, Tax & Discount (optional)", style = MaterialTheme.typography.labelLarge)
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                val hasService5 = serviceText == "5"
+                val hasTax10 = taxText == "10"
+                val hasTax11 = taxText == "11"
+                item(key = "svc5") {
+                    FilterChip(
+                        selected = hasService5,
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            serviceText = if (hasService5) "" else "5"
+                        },
+                        label = { Text("+5% Service") }
+                    )
+                }
+                item(key = "tax10") {
+                    FilterChip(
+                        selected = hasTax10,
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            taxText = if (hasTax10) "" else "10"
+                        },
+                        label = { Text("+10% Tax") }
+                    )
+                }
+                item(key = "tax11") {
+                    FilterChip(
+                        selected = hasTax11,
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            taxText = if (hasTax11) "" else "11"
+                        },
+                        label = { Text("+11% Tax") }
+                    )
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedTextField(
+                    value = serviceText,
+                    onValueChange = { serviceText = sanitizePercentInput(it) },
+                    modifier = Modifier.weight(1f),
+                    label = { Text("Service %") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(14.dp),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+                )
+                OutlinedTextField(
+                    value = taxText,
+                    onValueChange = { taxText = sanitizePercentInput(it) },
+                    modifier = Modifier.weight(1f),
+                    label = { Text("Tax %") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(14.dp),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+                )
+            }
+            OutlinedTextField(
+                value = discountText,
+                onValueChange = { discountText = CurrencyFormatter.sanitizeInput(it, currency) },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Discount / Promo (${currency.symbol})") },
+                singleLine = true,
+                shape = RoundedCornerShape(14.dp),
+                visualTransformation = amountVisualTransformation,
+                keyboardOptions = numberKeyboard
+            )
+        }
+
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("People (${participantInputs.size})", style = MaterialTheme.typography.labelLarge)
+                KansoTonalButton(
+                    text = "Add Friend",
+                    leadingIcon = Icons.Outlined.PersonAdd,
+                    size = KansoButtonSize.COMPACT,
+                    onClick = {
+                        friends.add(SplitFriendDraft(id = nextFriendId))
+                        nextFriendId += 1L
+                        error = null
+                    }
+                )
+            }
+
+            val existingNamesLower = friends.mapNotNull {
+                it.name.trim().lowercase().takeIf(String::isNotEmpty)
+            }.toSet()
+            val suggestedPeople = recentPeople.filter { !existingNamesLower.contains(it.lowercase()) }
+            if (suggestedPeople.isNotEmpty()) {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(suggestedPeople, key = { it }) { person ->
+                        AssistChip(
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                val emptyIdx = friends.indexOfFirst { it.name.isBlank() }
+                                if (emptyIdx >= 0) {
+                                    friends[emptyIdx] = friends[emptyIdx].copy(name = person)
+                                } else {
+                                    friends.add(SplitFriendDraft(id = nextFriendId, name = person))
+                                    nextFriendId += 1L
+                                }
+                                error = null
+                            },
+                            label = { Text("+ $person") },
+                            shape = RoundedCornerShape(50)
+                        )
+                    }
+                }
+            }
+
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = moneyAccent.copy(alpha = 0.08f),
+                border = BorderStroke(1.dp, moneyAccent.copy(alpha = 0.22f))
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Me (Paid)",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        KansoPillBadge(
+                            text = CurrencyFormatter.format(splitResult.payerShareCents, currency),
+                            color = moneyAccent
+                        )
+                    }
+                    if (mode == SplitBillMode.BY_ITEM) {
+                        OutlinedTextField(
+                            value = payerItemText,
+                            onValueChange = {
+                                payerItemText = CurrencyFormatter.sanitizeInput(it, currency)
+                                error = null
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("My items subtotal (${currency.symbol})") },
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
+                            visualTransformation = amountVisualTransformation,
+                            keyboardOptions = numberKeyboard
+                        )
+                    }
+                }
+            }
+
+            friends.forEachIndexed { index, friend ->
+                val computedShare = splitResult.shares.firstOrNull { it.id == friend.id }?.finalShareCents ?: 0L
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedTextField(
+                                value = friend.name,
+                                onValueChange = { updated ->
+                                    friends[index] = friend.copy(name = updated)
+                                    error = null
+                                },
+                                modifier = Modifier.weight(1f),
+                                label = { Text("Friend ${index + 1}") },
+                                placeholder = { Text("Name") },
+                                singleLine = true,
+                                shape = RoundedCornerShape(12.dp),
+                                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words)
+                            )
+                            KansoPillBadge(
+                                text = CurrencyFormatter.format(computedShare, currency),
+                                color = incomeSemanticColor()
+                            )
+                            if (friends.size > 1) {
+                                KansoSmallIconButton(
+                                    icon = Icons.Outlined.Close,
+                                    contentDescription = "Remove friend",
+                                    onClick = { friends.removeAt(index) }
+                                )
+                            }
+                        }
+                        if (mode == SplitBillMode.BY_ITEM) {
+                            OutlinedTextField(
+                                value = friend.itemAmountText,
+                                onValueChange = { raw ->
+                                    friends[index] = friend.copy(
+                                        itemAmountText = CurrencyFormatter.sanitizeInput(raw, currency)
+                                    )
+                                    error = null
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                label = { Text("Items subtotal (${currency.symbol})") },
+                                singleLine = true,
+                                shape = RoundedCornerShape(12.dp),
+                                visualTransformation = amountVisualTransformation,
+                                keyboardOptions = numberKeyboard
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Log Wallet Expense As", style = MaterialTheme.typography.labelLarge)
+            KansoSegmentedRow(
+                options = listOf(
+                    "Full (${CurrencyFormatter.format(splitResult.grandTotalCents, currency)})",
+                    "My Share (${CurrencyFormatter.format(splitResult.payerShareCents, currency)})"
+                ),
+                selectedIndex = SplitExpenseRecording.entries.indexOf(recordingMode),
+                onSelect = { idx -> recordingMode = SplitExpenseRecording.entries[idx] }
+            )
+            Text(
+                text = if (recordingMode == SplitExpenseRecording.FULL_BILL) {
+                    "Deducts the full receipt from your wallet now; settling IOUs later adds friend repayments back."
+                } else {
+                    "Logs only your personal share to your wallet while still creating IOUs for friends."
+                },
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        Text("Category", style = MaterialTheme.typography.labelLarge)
+        CategoryChipRow(
+            categories = ExpenseCategory.expenseCategories,
+            selected = selectedCategory,
+            onSelect = { selectedCategory = it }
+        )
+
+        Text("Paid Using Wallet", style = MaterialTheme.typography.labelLarge)
+        WalletTileRow(
+            selected = selectedWallet,
+            selectedColor = moneyAccent,
+            onSelect = { selectedWallet = it }
+        )
+
+        KansoTransactionDateSelector(
+            selectedEpochDay = selectedEpochDay,
+            onSelectEpochDay = { selectedEpochDay = it },
+            accentColor = moneyAccent
+        )
+
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("IOU Due Date (optional)", style = MaterialTheme.typography.labelLarge)
+            val todayEpoch = remember { LocalDate.now().toEpochDay() }
+            val plus3 = todayEpoch + 3L
+            val plus7 = todayEpoch + 7L
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                item(key = "due_none") {
+                    FilterChip(
+                        selected = dueDateEpochDay == null,
+                        onClick = { dueDateEpochDay = null },
+                        label = { Text("No due date") }
+                    )
+                }
+                item(key = "due_3d") {
+                    FilterChip(
+                        selected = dueDateEpochDay == plus3,
+                        onClick = { dueDateEpochDay = plus3 },
+                        label = { Text("+3 days") }
+                    )
+                }
+                item(key = "due_7d") {
+                    FilterChip(
+                        selected = dueDateEpochDay == plus7,
+                        onClick = { dueDateEpochDay = plus7 },
+                        label = { Text("+7 days") }
+                    )
+                }
+                item(key = "due_pick") {
+                    val isCustom = dueDateEpochDay != null && dueDateEpochDay != plus3 && dueDateEpochDay != plus7
+                    FilterChip(
+                        selected = isCustom,
+                        onClick = { showDueDatePicker = true },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Outlined.EventAvailable,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        },
+                        label = {
+                            Text(
+                                if (isCustom) KansoDateFormatters.formatFullDate(dueDateEpochDay!!) else "Pick Date"
+                            )
+                        }
+                    )
+                }
+            }
+        }
+
+        KansoBentoCard(
+            cornerRadius = 16.dp,
+            contentPadding = PaddingValues(14.dp)
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                SplitSummaryLine(
+                    label = "Total Bill",
+                    value = CurrencyFormatter.format(splitResult.grandTotalCents, currency),
+                    bold = true
+                )
+                if (splitResult.serviceCents > 0L || splitResult.taxCents > 0L || splitResult.discountCents > 0L) {
+                    val details = buildList {
+                        add("Sub ${CurrencyFormatter.format(splitResult.subtotalCents, currency)}")
+                        if (splitResult.serviceCents > 0L) {
+                            add("Svc ${CurrencyFormatter.format(splitResult.serviceCents, currency)}")
+                        }
+                        if (splitResult.taxCents > 0L) {
+                            add("Tax ${CurrencyFormatter.format(splitResult.taxCents, currency)}")
+                        }
+                        if (splitResult.discountCents > 0L) {
+                            add("Disc -${CurrencyFormatter.format(splitResult.discountCents, currency)}")
+                        }
+                    }.joinToString(" · ")
+                    Text(
+                        text = details,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                SplitSummaryLine(
+                    label = "Your Share",
+                    value = CurrencyFormatter.format(splitResult.payerShareCents, currency)
+                )
+                SplitSummaryLine(
+                    label = "Friends Owe You",
+                    value = CurrencyFormatter.format(splitResult.friendsTotalCents, currency),
+                    valueColor = incomeSemanticColor(),
+                    bold = true
+                )
+
+                if (paymentSnippets.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Include Payment Snippet in Summary",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        item(key = "snip_none") {
+                            FilterChip(
+                                selected = selectedSnippetId == null,
+                                onClick = { selectedSnippetId = null },
+                                label = { Text("None") }
+                            )
+                        }
+                        items(paymentSnippets, key = { it.id }) { snippet ->
+                            FilterChip(
+                                selected = selectedSnippetId == snippet.id,
+                                onClick = { selectedSnippetId = snippet.id },
+                                label = { Text(snippet.label) }
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    KansoOutlinedButton(
+                        text = "Copy Summary",
+                        leadingIcon = Icons.Outlined.ContentCopy,
+                        size = KansoButtonSize.COMPACT,
+                        enabled = splitResult.grandTotalCents > 0L,
+                        modifier = Modifier.weight(1f),
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onCopySummary(shareSummaryText)
+                        }
+                    )
+                    KansoTonalButton(
+                        text = "Share",
+                        leadingIcon = Icons.Outlined.Share,
+                        size = KansoButtonSize.COMPACT,
+                        enabled = splitResult.grandTotalCents > 0L,
+                        modifier = Modifier.weight(0.85f),
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onShareSummary(shareSummaryText)
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    if (showDueDatePicker) {
+        KansoDatePickerDialog(
+            initialEpochDay = dueDateEpochDay ?: LocalDate.now().plusDays(7).toEpochDay(),
+            onSelect = { dueDateEpochDay = it },
+            onDismiss = { showDueDatePicker = false }
+        )
+    }
+}
+
+@Composable
+private fun SplitSummaryLine(
+    label: String,
+    value: String,
+    valueColor: Color = MaterialTheme.colorScheme.onSurface,
+    bold: Boolean = false
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            style = if (bold) MaterialTheme.typography.titleSmall else MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.titleSmall.copy(
+                fontWeight = if (bold) FontWeight.Bold else FontWeight.SemiBold,
+                fontFeatureSettings = "tnum"
+            ),
+            color = valueColor
+        )
     }
 }

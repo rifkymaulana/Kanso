@@ -3,6 +3,7 @@ package com.kanso.feature.money
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.kanso.core.database.preferences.PreferencesRepository
+import com.kanso.core.database.repository.BrainRepository
 import com.kanso.core.database.repository.MoneyRepository
 import com.kanso.core.model.AppCurrency
 import com.kanso.core.model.BillFrequency
@@ -20,6 +21,8 @@ import com.kanso.core.model.RecurringBill
 import com.kanso.core.model.SafeToSpendReport
 import com.kanso.core.model.SavingsGoal
 import com.kanso.core.model.SmartCoachCalculations
+import com.kanso.core.model.SnippetCategory
+import com.kanso.core.model.SnippetItem
 import com.kanso.core.model.TransactionType
 import com.kanso.core.model.WalletBalanceSummary
 import com.kanso.core.model.WalletType
@@ -78,13 +81,16 @@ data class MoneyUiState(
     val coachInsights: List<CoachInsight> = emptyList(),
     val walletBalances: List<WalletBalanceSummary> = emptyList(),
     val totalWalletBalanceCents: Long = 0L,
-    val hideBalances: Boolean = false
+    val hideBalances: Boolean = false,
+    val paymentSnippets: List<SnippetItem> = emptyList(),
+    val recentIouPeople: List<String> = emptyList()
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class MoneyViewModel @Inject constructor(
     private val moneyRepository: MoneyRepository,
+    private val brainRepository: BrainRepository,
     private val preferencesRepository: PreferencesRepository
 ) : ViewModel() {
 
@@ -113,9 +119,10 @@ class MoneyViewModel @Inject constructor(
         moneyRepository.observeBills(),
         moneyRepository.observeIous(),
         moneyRepository.observeSavingsGoals(),
+        brainRepository.observeSnippets(),
         filterFlow
-    ) { bills, ious, goals, filter ->
-        MetaMoneyBundle(bills, ious, goals, filter)
+    ) { bills, ious, goals, snippets, filter ->
+        MetaMoneyBundle(bills, ious, goals, snippets, filter)
     }
 
     val uiState: StateFlow<MoneyUiState> = combine(
@@ -193,6 +200,16 @@ class MoneyViewModel @Inject constructor(
         )
         val openIous = ious.filter { !it.isSettled }
         val settledIous = ious.filter { it.isSettled }
+        val paymentSnippets = meta.snippets.sortedWith(
+            compareByDescending<SnippetItem> { it.category == SnippetCategory.FINANCE }
+                .thenByDescending { it.isPinned }
+        )
+        val recentIouPeople = ious
+            .sortedByDescending { it.createdAtMillis }
+            .map { it.personName.trim() }
+            .filter { it.isNotBlank() }
+            .distinctBy { it.lowercase() }
+            .take(8)
 
         MoneyUiState(
             selectedMonth = month,
@@ -221,7 +238,9 @@ class MoneyViewModel @Inject constructor(
             coachInsights = coachInsights,
             walletBalances = walletBalances,
             totalWalletBalanceCents = totalWalletBalanceCents,
-            hideBalances = prefs.hideBalances
+            hideBalances = prefs.hideBalances,
+            paymentSnippets = paymentSnippets,
+            recentIouPeople = recentIouPeople
         )
     }.stateIn(
         scope = viewModelScope,
@@ -288,6 +307,44 @@ class MoneyViewModel @Inject constructor(
     fun restoreIou(iou: IouEntry) {
         viewModelScope.launch {
             moneyRepository.upsertIou(iou)
+        }
+    }
+
+    fun saveSplitBill(
+        title: String,
+        expenseAmountCents: Long,
+        category: ExpenseCategory,
+        wallet: WalletType,
+        friendShares: List<Pair<String, Long>>,
+        dueDateEpochDay: Long?,
+        timestampMillis: Long,
+        onSaved: (MoneyRepository.SplitBillSavedRecord) -> Unit
+    ) {
+        viewModelScope.launch {
+            val label = title.trim().ifBlank { "Split bill" }
+            val activeFriendsCount = friendShares.count { it.first.isNotBlank() && it.second > 0L }
+            val txNote = if (activeFriendsCount > 0) {
+                "$label (split with $activeFriendsCount)"
+            } else {
+                label
+            }
+            val saved = moneyRepository.recordSplitBill(
+                expenseAmountCents = expenseAmountCents,
+                category = category,
+                wallet = wallet,
+                transactionNote = txNote,
+                friendShares = friendShares,
+                iouNote = label,
+                dueDateEpochDay = dueDateEpochDay,
+                timestampMillis = timestampMillis
+            )
+            onSaved(saved)
+        }
+    }
+
+    fun undoSplitBill(record: MoneyRepository.SplitBillSavedRecord) {
+        viewModelScope.launch {
+            moneyRepository.undoSplitBill(record)
         }
     }
 
@@ -541,6 +598,7 @@ class MoneyViewModel @Inject constructor(
         val bills: List<RecurringBill>,
         val ious: List<IouEntry>,
         val goals: List<SavingsGoal>,
+        val snippets: List<SnippetItem>,
         val filter: MoneyCalculations.TransactionFilter
     )
 }

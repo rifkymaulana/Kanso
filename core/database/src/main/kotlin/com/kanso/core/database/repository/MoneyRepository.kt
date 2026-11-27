@@ -155,6 +155,63 @@ class MoneyRepository @Inject constructor(
         moneyDao.deleteIouById(id)
     }
 
+    data class SplitBillSavedRecord(
+        val transactionId: Long?,
+        val iouIds: List<Long>
+    )
+
+    suspend fun recordSplitBill(
+        expenseAmountCents: Long,
+        category: ExpenseCategory,
+        wallet: WalletType,
+        transactionNote: String,
+        friendShares: List<Pair<String, Long>>,
+        iouNote: String,
+        dueDateEpochDay: Long?,
+        timestampMillis: Long = System.currentTimeMillis()
+    ): SplitBillSavedRecord {
+        return database.withTransaction {
+            val txId = if (expenseAmountCents > 0L) {
+                val tx = MoneyTransaction(
+                    type = TransactionType.EXPENSE,
+                    amountCents = expenseAmountCents,
+                    category = category,
+                    wallet = wallet,
+                    note = transactionNote.trim(),
+                    timestampMillis = timestampMillis
+                )
+                moneyDao.upsertTransaction(tx.toEntity())
+            } else {
+                null
+            }
+            val cleanIouNote = iouNote.trim()
+            val iouIds = friendShares.mapNotNull { (personName, shareCents) ->
+                val cleanName = personName.trim()
+                if (cleanName.isBlank() || shareCents <= 0L) {
+                    null
+                } else {
+                    val iou = IouEntry(
+                        personName = cleanName,
+                        amountCents = shareCents,
+                        direction = IouDirection.OWES_ME,
+                        note = cleanIouNote,
+                        createdAtMillis = timestampMillis,
+                        dueDateEpochDay = dueDateEpochDay
+                    )
+                    moneyDao.upsertIou(iou.toEntity())
+                }
+            }
+            SplitBillSavedRecord(transactionId = txId, iouIds = iouIds)
+        }
+    }
+
+    suspend fun undoSplitBill(record: SplitBillSavedRecord) {
+        database.withTransaction {
+            record.transactionId?.let { moneyDao.deleteTransactionById(it) }
+            record.iouIds.forEach { moneyDao.deleteIouById(it) }
+        }
+    }
+
     suspend fun settleIou(
         iou: IouEntry,
         recordTransaction: Boolean,

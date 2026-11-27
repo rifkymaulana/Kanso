@@ -61,8 +61,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -162,8 +164,10 @@ fun MoneyRoute(
 
     var showCsvExportDialog by remember { mutableStateOf(false) }
     var pendingCsvSaveScope by remember { mutableStateOf<CsvExportScope?>(null) }
+    var showSplitBillDialog by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
     val coroutineScope = rememberCoroutineScope()
     val createCsvLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("text/csv")
@@ -214,6 +218,7 @@ fun MoneyRoute(
         onAddIou = { showNewIouDialog = true },
         onEditIou = { editingIou = it },
         onRequestSettleIou = { settlingIou = it },
+        onOpenSplitBill = { showSplitBillDialog = true },
         onToggleTypeFilter = viewModel::toggleTypeFilter,
         onToggleWalletFilter = viewModel::toggleWalletFilter,
         onToggleCategoryFilter = viewModel::toggleCategoryFilter,
@@ -518,6 +523,44 @@ fun MoneyRoute(
             }
         )
     }
+
+    if (showSplitBillDialog) {
+        SplitBillDialog(
+            currency = uiState.currency,
+            recentPeople = uiState.recentIouPeople,
+            paymentSnippets = uiState.paymentSnippets,
+            onDismiss = { showSplitBillDialog = false },
+            onCopySummary = { summary ->
+                clipboard.setText(AnnotatedString(summary))
+                onShowMessage("Split summary copied")
+            },
+            onShareSummary = { summary ->
+                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_TEXT, summary)
+                }
+                context.startActivity(Intent.createChooser(shareIntent, "Share Split Bill"))
+            },
+            onSave = { title, expenseAmountCents, category, wallet, friendShares, dueDateEpochDay, timestampMillis ->
+                viewModel.saveSplitBill(
+                    title = title,
+                    expenseAmountCents = expenseAmountCents,
+                    category = category,
+                    wallet = wallet,
+                    friendShares = friendShares,
+                    dueDateEpochDay = dueDateEpochDay,
+                    timestampMillis = timestampMillis
+                ) { savedRecord ->
+                    showSplitBillDialog = false
+                    val count = savedRecord.iouIds.size
+                    val iouLabel = if (count == 1) "1 IOU" else "$count IOUs"
+                    onShowUndoMessage("Split saved · $iouLabel created") {
+                        viewModel.undoSplitBill(savedRecord)
+                    }
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -542,6 +585,7 @@ fun MoneyScreenContent(
     onAddIou: () -> Unit,
     onEditIou: (IouEntry) -> Unit,
     onRequestSettleIou: (IouEntry) -> Unit,
+    onOpenSplitBill: () -> Unit = {},
     onToggleTypeFilter: (TransactionType) -> Unit = {},
     onToggleWalletFilter: (WalletType) -> Unit = {},
     onToggleCategoryFilter: (ExpenseCategory) -> Unit = {},
@@ -605,6 +649,7 @@ fun MoneyScreenContent(
                     onEditOverallBudget = onEditOverallBudget,
                     onAddTransaction = onAddTransaction,
                     onEditTransaction = onEditTransaction,
+                    onOpenSplitBill = onOpenSplitBill,
                     onOpenCsvExport = onOpenCsvExport,
                     onToggleTypeFilter = onToggleTypeFilter,
                     onToggleWalletFilter = onToggleWalletFilter,
@@ -640,6 +685,7 @@ fun MoneyScreenContent(
                     showSettled = iouFilterSettled,
                     onToggleShowSettled = { iouFilterSettled = it },
                     onAddIou = onAddIou,
+                    onOpenSplitBill = onOpenSplitBill,
                     onEditIou = onEditIou,
                     onRequestSettleIou = onRequestSettleIou
                 )
@@ -712,6 +758,7 @@ private fun LogTabContent(
     onEditOverallBudget: () -> Unit,
     onAddTransaction: () -> Unit,
     onEditTransaction: (MoneyTransaction) -> Unit,
+    onOpenSplitBill: () -> Unit,
     onOpenCsvExport: () -> Unit,
     onToggleTypeFilter: (TransactionType) -> Unit,
     onToggleWalletFilter: (WalletType) -> Unit,
@@ -972,17 +1019,28 @@ private fun LogTabContent(
             ) {
                 Text(
                     text = "Transactions",
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
                 )
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    KansoOutlinedButton(
+                        text = "Split",
+                        leadingIcon = Icons.Outlined.Handshake,
+                        size = KansoButtonSize.COMPACT,
+                        contentPadding = PaddingValues(horizontal = 10.dp),
+                        onClick = onOpenSplitBill
+                    )
                     if (uiState.allTransactionsCount > 0) {
                         KansoOutlinedButton(
                             text = "CSV",
                             leadingIcon = Icons.Outlined.FileDownload,
                             size = KansoButtonSize.COMPACT,
+                            contentPadding = PaddingValues(horizontal = 10.dp),
                             onClick = onOpenCsvExport
                         )
                     }
@@ -990,6 +1048,7 @@ private fun LogTabContent(
                         text = "Add",
                         leadingIcon = Icons.Outlined.Add,
                         size = KansoButtonSize.COMPACT,
+                        contentPadding = PaddingValues(horizontal = 10.dp),
                         onClick = onAddTransaction
                     )
                 }
@@ -2423,6 +2482,7 @@ private fun IousTabContent(
     showSettled: Boolean,
     onToggleShowSettled: (Boolean) -> Unit,
     onAddIou: () -> Unit,
+    onOpenSplitBill: () -> Unit,
     onEditIou: (IouEntry) -> Unit,
     onRequestSettleIou: (IouEntry) -> Unit
 ) {
@@ -2498,12 +2558,24 @@ private fun IousTabContent(
                         label = { Text("Settled (${uiState.settledIous.size})") }
                     )
                 }
-                KansoTonalButton(
-                    text = "Add",
-                    leadingIcon = Icons.Outlined.Add,
-                    size = KansoButtonSize.COMPACT,
-                    onClick = onAddIou
-                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    KansoOutlinedButton(
+                        text = "Split",
+                        leadingIcon = Icons.Outlined.Handshake,
+                        size = KansoButtonSize.COMPACT,
+                        contentPadding = PaddingValues(horizontal = 10.dp),
+                        onClick = onOpenSplitBill
+                    )
+                    KansoTonalButton(
+                        text = "Add",
+                        leadingIcon = Icons.Outlined.Add,
+                        size = KansoButtonSize.COMPACT,
+                        onClick = onAddIou
+                    )
+                }
             }
         }
 
