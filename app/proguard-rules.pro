@@ -44,6 +44,7 @@
     public <init>(android.content.Context, androidx.work.WorkerParameters);
 }
 -keep class com.kanso.app.notifications.DailyReminderWorker { *; }
+-keep class com.kanso.app.notifications.PomodoroCompletionWorker { *; }
 -keep class com.kanso.app.notifications.NotificationActionReceiver { *; }
 -keep class com.kanso.app.sync.DriveSyncWorker { *; }
 -keep class com.kanso.app.tile.KansoQuickCaptureTileService { *; }

@@ -36,6 +36,9 @@ interface HabitsDao {
     @Query("SELECT * FROM habit_completions WHERE epochDay >= :minEpochDay")
     fun observeCompletionsSince(minEpochDay: Long): Flow<List<HabitCompletionEntity>>
 
+    @Query("SELECT * FROM habit_completions WHERE epochDay BETWEEN :startEpochDay AND :endEpochDay")
+    fun observeCompletionsInRange(startEpochDay: Long, endEpochDay: Long): Flow<List<HabitCompletionEntity>>
+
     @Query("SELECT * FROM habit_completions WHERE habitId = :habitId")
     suspend fun getCompletionsForHabit(habitId: Long): List<HabitCompletionEntity>
 
@@ -62,6 +65,9 @@ interface HabitsDao {
 
     @Query("SELECT * FROM daily_health_logs ORDER BY epochDay DESC LIMIT :limit")
     fun observeRecentHealthLogs(limit: Int): Flow<List<DailyHealthLogEntity>>
+
+    @Query("SELECT * FROM daily_health_logs WHERE epochDay BETWEEN :startEpochDay AND :endEpochDay ORDER BY epochDay ASC")
+    fun observeHealthLogsInRange(startEpochDay: Long, endEpochDay: Long): Flow<List<DailyHealthLogEntity>>
 
     @Query("SELECT * FROM daily_health_logs")
     suspend fun getAllHealthLogs(): List<DailyHealthLogEntity>

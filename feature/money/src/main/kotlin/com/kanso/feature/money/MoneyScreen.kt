@@ -49,6 +49,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -114,6 +115,7 @@ import com.kanso.core.ui.components.KansoProgressRing
 import com.kanso.core.ui.components.KansoSegmentedRow
 import com.kanso.core.ui.components.KansoTonalButton
 import com.kanso.core.ui.components.MoneyAmountBadge
+import com.kanso.core.ui.components.MonthlyReviewSheet
 import com.kanso.core.ui.components.SectionHeader
 import com.kanso.core.ui.components.SparklineItem
 import com.kanso.core.ui.components.accentColor
@@ -136,6 +138,9 @@ import java.util.Locale
 
 @Composable
 fun MoneyRoute(
+    initialTab: Int = 0,
+    focusItemType: String = "",
+    focusItemId: Long = 0L,
     onShowMessage: (String) -> Unit,
     onShowUndoMessage: (String, () -> Unit) -> Unit = { msg, _ -> onShowMessage(msg) },
     onBalancesVisibilityChanged: () -> Unit = {},
@@ -166,6 +171,54 @@ fun MoneyRoute(
     var showCsvExportDialog by remember { mutableStateOf(false) }
     var pendingCsvSaveScope by remember { mutableStateOf<CsvExportScope?>(null) }
     var showSplitBillDialog by remember { mutableStateOf(false) }
+    var showMonthlyReviewSheet by remember { mutableStateOf(false) }
+
+    var consumedFocusKey by rememberSaveable { mutableStateOf("") }
+    LaunchedEffect(
+        initialTab,
+        focusItemType,
+        focusItemId,
+        uiState.allTransactions,
+        uiState.bills,
+        uiState.goalStatuses,
+        uiState.archivedGoalStatuses,
+        uiState.openIous,
+        uiState.settledIous
+    ) {
+        val key = "$initialTab:$focusItemType:$focusItemId"
+        if (focusItemId > 0L && key != consumedFocusKey) {
+            when (focusItemType) {
+                "tx" -> uiState.allTransactions.firstOrNull { it.id == focusItemId }?.let { tx ->
+                    val txMonth = YearMonth.from(
+                        Instant.ofEpochMilli(tx.timestampMillis).atZone(ZoneId.systemDefault()).toLocalDate()
+                    )
+                    viewModel.selectMonth(txMonth)
+                    editingTransaction = tx
+                    consumedFocusKey = key
+                }
+
+                "goal" -> (uiState.goalStatuses + uiState.archivedGoalStatuses)
+                    .map { it.goal }
+                    .firstOrNull { it.id == focusItemId }
+                    ?.let { goal ->
+                        editingGoal = goal
+                        consumedFocusKey = key
+                    }
+
+                "bill" -> uiState.bills.firstOrNull { it.id == focusItemId }?.let { bill ->
+                    editingBill = bill
+                    consumedFocusKey = key
+                }
+
+                "iou" -> (uiState.openIous + uiState.settledIous)
+                    .firstOrNull { it.id == focusItemId }
+                    ?.let { iou ->
+                        editingIou = iou
+                        consumedFocusKey = key
+                    }
+            }
+        }
+    }
 
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
@@ -195,8 +248,10 @@ fun MoneyRoute(
 
     MoneyScreenContent(
         uiState = uiState,
+        initialTab = initialTab,
         onPreviousMonth = viewModel::previousMonth,
         onNextMonth = viewModel::nextMonth,
+        onOpenMonthlyReview = { showMonthlyReviewSheet = true },
         onAddTransaction = { showNewTransactionDialog = true },
         onEditTransaction = { editingTransaction = it },
         onStartTransfer = { showTransferDialog = true },
@@ -222,6 +277,15 @@ fun MoneyRoute(
         onAddIou = { showNewIouDialog = true },
         onEditIou = { editingIou = it },
         onRequestSettleIou = { settlingIou = it },
+        onReopenIou = { iou ->
+            viewModel.reopenIou(iou) { previous ->
+                onBalancesVisibilityChanged()
+                onShowUndoMessage("Reopened IOU with ${iou.personName}") {
+                    viewModel.restoreIou(previous)
+                    onBalancesVisibilityChanged()
+                }
+            }
+        },
         onOpenSplitBill = { showSplitBillDialog = true },
         onToggleTypeFilter = viewModel::toggleTypeFilter,
         onToggleWalletFilter = viewModel::toggleWalletFilter,
@@ -406,10 +470,20 @@ fun MoneyRoute(
             iou = target,
             currency = uiState.currency,
             onDismiss = { settlingIou = null },
-            onConfirm = { recordTx, wallet ->
-                viewModel.settleIou(target, recordTx, wallet)
+            onConfirm = { paidCents, recordTx, wallet, category ->
+                viewModel.settleIou(target, paidCents, recordTx, wallet, category) { record ->
+                    onBalancesVisibilityChanged()
+                    val msg = if (record.isPartial) {
+                        "Logged partial payment · ${target.personName}"
+                    } else {
+                        "Settled IOU with ${target.personName}"
+                    }
+                    onShowUndoMessage(msg) {
+                        viewModel.undoSettleIou(record)
+                        onBalancesVisibilityChanged()
+                    }
+                }
                 settlingIou = null
-                onShowMessage("Settled IOU with ${target.personName}")
             }
         )
     }
@@ -565,13 +639,34 @@ fun MoneyRoute(
             }
         )
     }
+
+    if (showMonthlyReviewSheet) {
+        uiState.monthlyReview?.let { report ->
+            MonthlyReviewSheet(
+                report = report,
+                currency = uiState.currency,
+                hideBalances = uiState.hideBalances,
+                onDismiss = { showMonthlyReviewSheet = false },
+                onCopySummary = { summary ->
+                    clipboard.setText(AnnotatedString(summary))
+                    onShowMessage("Monthly review copied")
+                },
+                onSaveToNotes = { title, content ->
+                    viewModel.saveMonthlyReviewToNotes(title, content)
+                    onShowMessage("Saved recap to Notes")
+                }
+            )
+        }
+    }
 }
 
 @Composable
 fun MoneyScreenContent(
     uiState: MoneyUiState,
+    initialTab: Int = 0,
     onPreviousMonth: () -> Unit,
     onNextMonth: () -> Unit,
+    onOpenMonthlyReview: () -> Unit = {},
     onAddTransaction: () -> Unit,
     onEditTransaction: (MoneyTransaction) -> Unit,
     onStartTransfer: () -> Unit = {},
@@ -589,6 +684,7 @@ fun MoneyScreenContent(
     onAddIou: () -> Unit,
     onEditIou: (IouEntry) -> Unit,
     onRequestSettleIou: (IouEntry) -> Unit,
+    onReopenIou: (IouEntry) -> Unit = {},
     onOpenSplitBill: () -> Unit = {},
     onToggleTypeFilter: (TransactionType) -> Unit = {},
     onToggleWalletFilter: (WalletType) -> Unit = {},
@@ -597,7 +693,12 @@ fun MoneyScreenContent(
     onToggleHideBalances: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+    var selectedTab by rememberSaveable { mutableIntStateOf(initialTab.coerceIn(0, 4)) }
+    LaunchedEffect(initialTab) {
+        if (initialTab in 0..4) {
+            selectedTab = initialTab
+        }
+    }
     var iouFilterSettled by rememberSaveable { mutableStateOf(false) }
     var showArchivedGoals by rememberSaveable { mutableStateOf(false) }
 
@@ -648,6 +749,7 @@ fun MoneyScreenContent(
             when (tab) {
                 0 -> LogTabContent(
                     uiState = uiState,
+                    onOpenMonthlyReview = onOpenMonthlyReview,
                     onStartTransfer = onStartTransfer,
                     onAdjustWallet = onAdjustWallet,
                     onEditOverallBudget = onEditOverallBudget,
@@ -691,7 +793,8 @@ fun MoneyScreenContent(
                     onAddIou = onAddIou,
                     onOpenSplitBill = onOpenSplitBill,
                     onEditIou = onEditIou,
-                    onRequestSettleIou = onRequestSettleIou
+                    onRequestSettleIou = onRequestSettleIou,
+                    onReopenIou = onReopenIou
                 )
             }
         }
@@ -757,6 +860,7 @@ private fun MonthPillSelector(
 @Composable
 private fun LogTabContent(
     uiState: MoneyUiState,
+    onOpenMonthlyReview: () -> Unit,
     onStartTransfer: () -> Unit,
     onAdjustWallet: (WalletBalanceSummary) -> Unit,
     onEditOverallBudget: () -> Unit,
@@ -825,16 +929,35 @@ private fun LogTabContent(
                             style = MaterialTheme.typography.labelSmall,
                             color = kansoColors.heroOnSurfaceMuted
                         )
-                        Surface(
-                            shape = RoundedCornerShape(50),
-                            color = statusBg
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = if (isPositive) "Positive" else "Deficit",
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = statusFg
-                            )
+                            Surface(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(50))
+                                    .clickable(onClick = onOpenMonthlyReview),
+                                shape = RoundedCornerShape(50),
+                                color = Color.White.copy(alpha = 0.14f)
+                            ) {
+                                Text(
+                                    text = "Review →",
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = kansoColors.heroOnSurface
+                                )
+                            }
+                            Surface(
+                                shape = RoundedCornerShape(50),
+                                color = statusBg
+                            ) {
+                                Text(
+                                    text = if (isPositive) "Positive" else "Deficit",
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = statusFg
+                                )
+                            }
                         }
                     }
 
@@ -2492,7 +2615,8 @@ private fun IousTabContent(
     onAddIou: () -> Unit,
     onOpenSplitBill: () -> Unit,
     onEditIou: (IouEntry) -> Unit,
-    onRequestSettleIou: (IouEntry) -> Unit
+    onRequestSettleIou: (IouEntry) -> Unit,
+    onReopenIou: (IouEntry) -> Unit
 ) {
     val displayed = if (showSettled) uiState.settledIous else uiState.openIous
     val haptic = LocalHapticFeedback.current
@@ -2656,7 +2780,14 @@ private fun IousTabContent(
                                 }
                             )
                         } else {
-                            KansoPillBadge(text = "Settled", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            KansoOutlinedButton(
+                                text = "Reopen",
+                                size = KansoButtonSize.COMPACT,
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    onReopenIou(iou)
+                                }
+                            )
                         }
                     }
                 }

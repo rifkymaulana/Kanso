@@ -1,5 +1,11 @@
 package com.kanso.app.navigation
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -64,6 +70,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hierarchy
@@ -76,6 +84,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.kanso.app.MainViewModel
 import com.kanso.app.notifications.KansoReminderScheduler
+import com.kanso.app.share.ReceiptShareProcessor
 import com.kanso.app.ui.hub.HubRoute
 import com.kanso.app.ui.onboarding.FirstRunSetupSheet
 import com.kanso.app.ui.search.GlobalSearchRoute
@@ -84,7 +93,6 @@ import com.kanso.app.update.AppUpdateState
 import com.kanso.app.update.KansoUpdateBanner
 import com.kanso.app.update.launchApkInstall
 import com.kanso.app.widget.KansoWidgetUpdater
-import com.kanso.core.model.ParsedShareDraft
 import com.kanso.core.model.SharedTextParser
 import com.kanso.core.ui.components.KansoMotion
 import com.kanso.core.ui.components.QuickCaptureMode
@@ -96,25 +104,28 @@ import com.kanso.feature.money.MoneyRoute
 import com.kanso.feature.today.TodayRoute
 import com.kanso.feature.utilities.UtilitiesRoute
 import kotlinx.coroutines.launch
+import java.io.File
 
 private object Routes {
     const val TODAY = "today"
-    const val MONEY = "money"
-    const val BRAIN_PATTERN = "brain?tab={tab}"
+    const val MONEY_PATTERN = "money?tab={tab}&itemType={itemType}&itemId={itemId}"
+    const val BRAIN_PATTERN = "brain?tab={tab}&itemId={itemId}"
     const val HUB = "hub"
     const val SEARCH = "search"
     const val SETTINGS_PATTERN = "settings?action={action}"
     const val HABITS = "habits"
-    const val LIFEADMIN_PATTERN = "lifeadmin?tab={tab}"
-    const val UTILITIES_PATTERN = "utilities?tab={tab}"
+    const val LIFEADMIN_PATTERN = "lifeadmin?tab={tab}&itemId={itemId}"
+    const val UTILITIES_PATTERN = "utilities?tab={tab}&itemId={itemId}"
 
-    fun brain(tab: Int = 0): String = "brain?tab=$tab"
-    fun lifeAdmin(tab: Int = 0): String = "lifeadmin?tab=$tab"
-    fun utilities(tab: Int = 0): String = "utilities?tab=$tab"
+    fun money(tab: Int = 0, itemType: String = "", itemId: Long = 0L): String =
+        "money?tab=$tab&itemType=$itemType&itemId=$itemId"
+    fun brain(tab: Int = 0, itemId: Long = 0L): String = "brain?tab=$tab&itemId=$itemId"
+    fun lifeAdmin(tab: Int = 0, itemId: Long = 0L): String = "lifeadmin?tab=$tab&itemId=$itemId"
+    fun utilities(tab: Int = 0, itemId: Long = 0L): String = "utilities?tab=$tab&itemId=$itemId"
     fun settings(action: String = ""): String = if (action.isEmpty()) "settings" else "settings?action=$action"
 
     fun isTopLevel(route: String?): Boolean {
-        return route == TODAY || route == MONEY || route == BRAIN_PATTERN || route == HUB
+        return route == TODAY || route == MONEY_PATTERN || route == BRAIN_PATTERN || route == HUB
     }
 }
 
@@ -128,7 +139,7 @@ private data class TopLevelTab(
 
 private val TopLevelTabs = listOf(
     TopLevelTab(Routes.TODAY, Routes.TODAY, "Today", Icons.Filled.Today, Icons.Outlined.Today),
-    TopLevelTab(Routes.MONEY, Routes.MONEY, "Money", Icons.Filled.AccountBalanceWallet, Icons.Outlined.AccountBalanceWallet),
+    TopLevelTab(Routes.money(0), "money", "Money", Icons.Filled.AccountBalanceWallet, Icons.Outlined.AccountBalanceWallet),
     TopLevelTab(Routes.brain(0), "brain", "Brain", Icons.Filled.Psychology, Icons.Outlined.Psychology),
     TopLevelTab(Routes.HUB, Routes.HUB, "Hub", Icons.Filled.GridView, Icons.Outlined.GridView)
 )
@@ -139,15 +150,13 @@ fun KansoAppRoot(
     pendingLaunchCommand: LaunchCommand? = null,
     sharedCapturePayload: SharedCapturePayload? = null,
     onConsumeLaunchCommand: () -> Unit = {},
+    onUpdateSharedCapture: (SharedCapturePayload) -> Unit = {},
     onClearSharedCapture: () -> Unit = {}
 ) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
-    val isTopLevel = currentRoute == Routes.TODAY ||
-        currentRoute == Routes.MONEY ||
-        currentRoute == Routes.BRAIN_PATTERN ||
-        currentRoute == Routes.HUB
+    val isTopLevel = Routes.isTopLevel(currentRoute)
 
     val prefs by mainViewModel.preferences.collectAsStateWithLifecycle()
     val shouldShowFirstRunSetup by mainViewModel.shouldShowFirstRunSetup.collectAsStateWithLifecycle()
@@ -256,13 +265,104 @@ fun KansoAppRoot(
         }
     }
 
-    val openBrainTab: (Int) -> Unit = { tab ->
-        navController.navigate(Routes.brain(tab)) {
+    val openBrainTab: (Int, Long) -> Unit = { tab, itemId ->
+        navController.navigate(Routes.brain(tab, itemId)) {
             popUpTo(navController.graph.findStartDestination().id) {
                 saveState = true
             }
             launchSingleTop = true
             restoreState = false
+        }
+    }
+
+    val openMoneyRoute: (Int, String, Long) -> Unit = { tab, itemType, itemId ->
+        if (tab == 0 && itemId == 0L && itemType.isEmpty()) {
+            navigateTopTab(Routes.money(0))
+        } else {
+            navController.navigate(Routes.money(tab, itemType, itemId)) {
+                popUpTo(navController.graph.findStartDestination().id) {
+                    saveState = true
+                }
+                launchSingleTop = true
+                restoreState = false
+            }
+        }
+    }
+
+    var pendingCameraUri by remember { mutableStateOf<Uri?>(null) }
+
+    val scanReceiptUri: (Uri) -> Unit = { uri ->
+        onUpdateSharedCapture(
+            SharedCapturePayload(
+                isReceiptMedia = true,
+                isScanning = true
+            )
+        )
+        showQuickCapture = true
+        scope.launch {
+            val processed = ReceiptShareProcessor.processUri(context, uri, null)
+            onUpdateSharedCapture(
+                SharedCapturePayload(
+                    text = processed.extractedText,
+                    subject = "",
+                    isReceiptMedia = true,
+                    isScanning = false,
+                    previewBitmap = processed.previewBitmap
+                )
+            )
+        }
+    }
+
+    val pickReceiptLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) {
+            scanReceiptUri(uri)
+        }
+    }
+
+    val takeReceiptPhotoLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture()
+    ) { saved ->
+        val uri = pendingCameraUri
+        pendingCameraUri = null
+        if (saved && uri != null) {
+            scanReceiptUri(uri)
+        }
+    }
+
+    val startCameraReceiptCapture: () -> Unit = {
+        runCatching {
+            val dir = File(context.cacheDir, "receipt_captures").apply { mkdirs() }
+            val file = File(dir, "receipt_${System.currentTimeMillis()}.jpg")
+            FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        }.onSuccess { uri ->
+            pendingCameraUri = uri
+            takeReceiptPhotoLauncher.launch(uri)
+        }.onFailure {
+            showMessage("Unable to open camera")
+        }
+    }
+
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            startCameraReceiptCapture()
+        } else {
+            showMessage("Camera permission required to capture paper receipts")
+        }
+    }
+
+    val launchCameraReceiptScan: () -> Unit = {
+        val granted = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.CAMERA
+        ) == PackageManager.PERMISSION_GRANTED
+        if (granted) {
+            startCameraReceiptCapture()
+        } else {
+            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
         }
     }
 
@@ -283,10 +383,16 @@ fun KansoAppRoot(
                 quickCaptureInitialMode = cmd.mode
                 showQuickCapture = true
             }
+            LaunchCommand.OpenReceiptScanner -> {
+                onClearSharedCapture()
+                quickCaptureInitialMode = QuickCaptureMode.EXPENSE
+                showQuickCapture = true
+                launchCameraReceiptScan()
+            }
             LaunchCommand.OpenSharedCapture -> {
                 showQuickCapture = true
             }
-            is LaunchCommand.OpenBrainTab -> openBrainTab(cmd.tab)
+            is LaunchCommand.OpenBrainTab -> openBrainTab(cmd.tab, 0L)
             is LaunchCommand.OpenUtilitiesTab -> {
                 navController.navigate(Routes.utilities(cmd.tab)) { launchSingleTop = true }
             }
@@ -296,7 +402,7 @@ fun KansoAppRoot(
             is LaunchCommand.OpenLifeAdminTab -> {
                 navController.navigate(Routes.lifeAdmin(cmd.tab)) { launchSingleTop = true }
             }
-            LaunchCommand.OpenMoney -> navigateTopTab(Routes.MONEY)
+            LaunchCommand.OpenMoney -> navigateTopTab(Routes.money(0))
         }
         onConsumeLaunchCommand()
     }
@@ -391,20 +497,49 @@ fun KansoAppRoot(
                         onOpenQuickCapture = openDefaultQuickCapture,
                         onOpenSearch = { navController.navigate(Routes.SEARCH) },
                         onOpenSettings = { navController.navigate(Routes.settings()) },
-                        onOpenMoney = { navigateTopTab(Routes.MONEY) },
-                        onOpenBrainTab = openBrainTab,
+                        onOpenMoney = { navigateTopTab(Routes.money(0)) },
+                        onOpenIousTab = { openMoneyRoute(4, "", 0L) },
+                        onOpenBrainTab = { tab -> openBrainTab(tab, 0L) },
+                        onOpenNoteItem = { id -> openBrainTab(0, id) },
+                        onOpenTaskItem = { id -> openBrainTab(1, id) },
                         onOpenHabits = { navController.navigate(Routes.HABITS) },
                         onOpenExpiries = { navController.navigate(Routes.lifeAdmin(0)) },
+                        onOpenExpiryItem = { id -> navController.navigate(Routes.lifeAdmin(0, id)) },
                         onOpenMaintenance = { navController.navigate(Routes.lifeAdmin(1)) },
+                        onOpenMaintenanceItem = { id -> navController.navigate(Routes.lifeAdmin(1, id)) },
                         onOpenCountdowns = { navController.navigate(Routes.utilities(3)) },
+                        onOpenCountdownItem = { id -> navController.navigate(Routes.utilities(3, id)) },
+                        onOpenFocusTimer = { navController.navigate(Routes.utilities(2)) },
                         onShowMessage = showMessage,
                         onShowUndoMessage = showUndoMessage,
                         onBalancesVisibilityChanged = refreshWidgets
                     )
                 }
 
-                composable(Routes.MONEY) {
+                composable(
+                    route = Routes.MONEY_PATTERN,
+                    arguments = listOf(
+                        navArgument("tab") {
+                            type = NavType.IntType
+                            defaultValue = 0
+                        },
+                        navArgument("itemType") {
+                            type = NavType.StringType
+                            defaultValue = ""
+                        },
+                        navArgument("itemId") {
+                            type = NavType.LongType
+                            defaultValue = 0L
+                        }
+                    )
+                ) { entry ->
+                    val initialTab = entry.arguments?.getInt("tab") ?: 0
+                    val itemType = entry.arguments?.getString("itemType").orEmpty()
+                    val itemId = entry.arguments?.getLong("itemId") ?: 0L
                     MoneyRoute(
+                        initialTab = initialTab,
+                        focusItemType = itemType,
+                        focusItemId = itemId,
                         onShowMessage = showMessage,
                         onShowUndoMessage = showUndoMessage,
                         onBalancesVisibilityChanged = refreshWidgets
@@ -417,12 +552,18 @@ fun KansoAppRoot(
                         navArgument("tab") {
                             type = NavType.IntType
                             defaultValue = 0
+                        },
+                        navArgument("itemId") {
+                            type = NavType.LongType
+                            defaultValue = 0L
                         }
                     )
                 ) { entry ->
                     val initialTab = entry.arguments?.getInt("tab") ?: 0
+                    val itemId = entry.arguments?.getLong("itemId") ?: 0L
                     BrainRoute(
                         initialTab = initialTab,
+                        focusItemId = itemId,
                         onShowMessage = showMessage,
                         onShowUndoMessage = showUndoMessage
                     )
@@ -430,7 +571,7 @@ fun KansoAppRoot(
 
                 composable(Routes.HUB) {
                     HubRoute(
-                        onOpenMoney = { navigateTopTab(Routes.MONEY) },
+                        onOpenMoney = { navigateTopTab(Routes.money(0)) },
                         onOpenBrain = { navigateTopTab(Routes.brain(0)) },
                         onOpenSearch = { navController.navigate(Routes.SEARCH) },
                         onOpenSettings = { navController.navigate(Routes.settings()) },
@@ -454,12 +595,18 @@ fun KansoAppRoot(
                         navArgument("tab") {
                             type = NavType.IntType
                             defaultValue = 0
+                        },
+                        navArgument("itemId") {
+                            type = NavType.LongType
+                            defaultValue = 0L
                         }
                     )
                 ) { entry ->
                     val initialTab = entry.arguments?.getInt("tab") ?: 0
+                    val itemId = entry.arguments?.getLong("itemId") ?: 0L
                     LifeAdminRoute(
                         initialTab = initialTab,
+                        focusItemId = itemId,
                         onBack = { navController.popBackStack() },
                         onShowMessage = showMessage,
                         onShowUndoMessage = showUndoMessage,
@@ -473,12 +620,18 @@ fun KansoAppRoot(
                         navArgument("tab") {
                             type = NavType.IntType
                             defaultValue = 0
+                        },
+                        navArgument("itemId") {
+                            type = NavType.LongType
+                            defaultValue = 0L
                         }
                     )
                 ) { entry ->
                     val initialTab = entry.arguments?.getInt("tab") ?: 0
+                    val itemId = entry.arguments?.getLong("itemId") ?: 0L
                     UtilitiesRoute(
                         initialTab = initialTab,
+                        focusItemId = itemId,
                         onBack = { navController.popBackStack() },
                         onShowMessage = showMessage,
                         onShowUndoMessage = showUndoMessage
@@ -488,10 +641,10 @@ fun KansoAppRoot(
                 composable(Routes.SEARCH) {
                     GlobalSearchRoute(
                         onBack = { navController.popBackStack() },
-                        onOpenMoney = { navigateTopTab(Routes.MONEY) },
-                        onOpenBrainTab = openBrainTab,
-                        onOpenLifeAdminTab = { tab -> navController.navigate(Routes.lifeAdmin(tab)) },
-                        onOpenUtilitiesTab = { tab -> navController.navigate(Routes.utilities(tab)) },
+                        onOpenMoneyItem = openMoneyRoute,
+                        onOpenBrainItem = openBrainTab,
+                        onOpenLifeAdminItem = { tab, itemId -> navController.navigate(Routes.lifeAdmin(tab, itemId)) },
+                        onOpenUtilitiesItem = { tab, itemId -> navController.navigate(Routes.utilities(tab, itemId)) },
                         onShowMessage = showMessage
                     )
                 }
@@ -567,6 +720,12 @@ fun KansoAppRoot(
             sharedDraft = activeSharedDraft,
             sharedReceiptPreview = sharedCapturePayload?.previewBitmap,
             isScanningSharedReceipt = sharedCapturePayload?.isScanning == true,
+            onScanReceiptCamera = launchCameraReceiptScan,
+            onScanReceiptGallery = {
+                pickReceiptLauncher.launch(
+                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                )
+            },
             onDismiss = {
                 showQuickCapture = false
                 onClearSharedCapture()

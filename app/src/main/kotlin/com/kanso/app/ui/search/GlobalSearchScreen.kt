@@ -69,10 +69,10 @@ import com.kanso.core.ui.theme.kansoColors
 @Composable
 fun GlobalSearchRoute(
     onBack: () -> Unit,
-    onOpenMoney: () -> Unit,
-    onOpenBrainTab: (Int) -> Unit,
-    onOpenLifeAdminTab: (Int) -> Unit,
-    onOpenUtilitiesTab: (Int) -> Unit = {},
+    onOpenMoneyItem: (tab: Int, itemType: String, itemId: Long) -> Unit,
+    onOpenBrainItem: (tab: Int, itemId: Long) -> Unit,
+    onOpenLifeAdminItem: (tab: Int, itemId: Long) -> Unit,
+    onOpenUtilitiesItem: (tab: Int, itemId: Long) -> Unit = { _, _ -> },
     onShowMessage: (String) -> Unit,
     viewModel: GlobalSearchViewModel = hiltViewModel()
 ) {
@@ -208,7 +208,7 @@ fun GlobalSearchRoute(
                         items(uiState.notes, key = { "note-${it.id}" }) { note ->
                             KansoBentoCard(
                                 modifier = Modifier.fillMaxWidth(),
-                                onClick = { onOpenBrainTab(0) },
+                                onClick = { onOpenBrainItem(0, note.id) },
                                 cornerRadius = 18.dp,
                                 contentPadding = PaddingValues(14.dp)
                             ) {
@@ -248,7 +248,7 @@ fun GlobalSearchRoute(
                         items(uiState.tasks, key = { "task-${it.id}" }) { task ->
                             KansoBentoCard(
                                 modifier = Modifier.fillMaxWidth(),
-                                onClick = { onOpenBrainTab(1) },
+                                onClick = { onOpenBrainItem(1, task.id) },
                                 cornerRadius = 18.dp,
                                 contentPadding = PaddingValues(14.dp)
                             ) {
@@ -282,7 +282,7 @@ fun GlobalSearchRoute(
                         items(uiState.transactions, key = { "tx-${it.id}" }) { tx ->
                             KansoBentoCard(
                                 modifier = Modifier.fillMaxWidth(),
-                                onClick = onOpenMoney,
+                                onClick = { onOpenMoneyItem(0, "tx", tx.id) },
                                 cornerRadius = 18.dp,
                                 contentPadding = PaddingValues(14.dp)
                             ) {
@@ -334,7 +334,7 @@ fun GlobalSearchRoute(
                             val hidden = LocalBalancesHidden.current
                             KansoBentoCard(
                                 modifier = Modifier.fillMaxWidth(),
-                                onClick = onOpenMoney,
+                                onClick = { onOpenMoneyItem(3, "bill", bill.id) },
                                 cornerRadius = 18.dp,
                                 contentPadding = PaddingValues(14.dp)
                             ) {
@@ -378,7 +378,7 @@ fun GlobalSearchRoute(
                             }
                             KansoBentoCard(
                                 modifier = Modifier.fillMaxWidth(),
-                                onClick = onOpenMoney,
+                                onClick = { onOpenMoneyItem(4, "iou", iou.id) },
                                 cornerRadius = 18.dp,
                                 contentPadding = PaddingValues(14.dp)
                             ) {
@@ -425,7 +425,7 @@ fun GlobalSearchRoute(
                             val catAccent = goal.category.accentColor()
                             KansoBentoCard(
                                 modifier = Modifier.fillMaxWidth(),
-                                onClick = onOpenMoney,
+                                onClick = { onOpenMoneyItem(1, "goal", goal.id) },
                                 cornerRadius = 18.dp,
                                 contentPadding = PaddingValues(14.dp)
                             ) {
@@ -473,7 +473,7 @@ fun GlobalSearchRoute(
                         items(uiState.expiries, key = { "exp-${it.id}" }) { expiry ->
                             KansoBentoCard(
                                 modifier = Modifier.fillMaxWidth(),
-                                onClick = { onOpenLifeAdminTab(0) },
+                                onClick = { onOpenLifeAdminItem(0, expiry.id) },
                                 cornerRadius = 18.dp,
                                 contentPadding = PaddingValues(14.dp)
                             ) {
@@ -507,7 +507,7 @@ fun GlobalSearchRoute(
                         items(uiState.maintenanceLogs, key = { "maint-${it.id}" }) { log ->
                             KansoBentoCard(
                                 modifier = Modifier.fillMaxWidth(),
-                                onClick = { onOpenLifeAdminTab(1) },
+                                onClick = { onOpenLifeAdminItem(1, log.id) },
                                 cornerRadius = 18.dp,
                                 contentPadding = PaddingValues(14.dp)
                             ) {
@@ -548,7 +548,7 @@ fun GlobalSearchRoute(
                             val delta = CountdownCalculations.daysRemaining(item.targetEpochDay, todayEpoch)
                             KansoBentoCard(
                                 modifier = Modifier.fillMaxWidth(),
-                                onClick = { onOpenUtilitiesTab(3) },
+                                onClick = { onOpenUtilitiesItem(3, item.id) },
                                 cornerRadius = 18.dp,
                                 contentPadding = PaddingValues(14.dp)
                             ) {

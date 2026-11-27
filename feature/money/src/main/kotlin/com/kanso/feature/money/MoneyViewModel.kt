@@ -4,25 +4,33 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.kanso.core.database.preferences.PreferencesRepository
 import com.kanso.core.database.repository.BrainRepository
+import com.kanso.core.database.repository.HabitsRepository
 import com.kanso.core.database.repository.MoneyRepository
 import com.kanso.core.model.AppCurrency
 import com.kanso.core.model.BillFrequency
 import com.kanso.core.model.CategoryBudget
 import com.kanso.core.model.CoachInsight
 import com.kanso.core.model.CsvExportScope
+import com.kanso.core.model.DailyHealthLog
 import com.kanso.core.model.ExpenseCategory
 import com.kanso.core.model.GoalCategory
+import com.kanso.core.model.HabitCompletion
+import com.kanso.core.model.HabitItem
 import com.kanso.core.model.IouDirection
 import com.kanso.core.model.IouEntry
 import com.kanso.core.model.MoneyCalculations
 import com.kanso.core.model.MoneyCsvExporter
 import com.kanso.core.model.MoneyTransaction
+import com.kanso.core.model.MonthlyReviewCalculations
+import com.kanso.core.model.MonthlyReviewReport
+import com.kanso.core.model.NoteItem
 import com.kanso.core.model.RecurringBill
 import com.kanso.core.model.SafeToSpendReport
 import com.kanso.core.model.SavingsGoal
 import com.kanso.core.model.SmartCoachCalculations
 import com.kanso.core.model.SnippetCategory
 import com.kanso.core.model.SnippetItem
+import com.kanso.core.model.TaskItem
 import com.kanso.core.model.TransactionType
 import com.kanso.core.model.WalletBalanceSummary
 import com.kanso.core.model.WalletType
@@ -53,6 +61,7 @@ data class MoneyUiState(
     val overallMonthlyBudgetCents: Long = 0L,
     val summary: MoneyCalculations.MonthlySummary = MoneyCalculations.MonthlySummary(0L, 0L, 0L, emptyMap()),
     val transactions: List<MoneyTransaction> = emptyList(),
+    val allTransactions: List<MoneyTransaction> = emptyList(),
     val allTransactionsCount: Int = 0,
     val transactionFilter: MoneyCalculations.TransactionFilter = MoneyCalculations.TransactionFilter(),
     val filteredTransactions: List<MoneyTransaction> = emptyList(),
@@ -83,7 +92,8 @@ data class MoneyUiState(
     val totalWalletBalanceCents: Long = 0L,
     val hideBalances: Boolean = false,
     val paymentSnippets: List<SnippetItem> = emptyList(),
-    val recentIouPeople: List<String> = emptyList()
+    val recentIouPeople: List<String> = emptyList(),
+    val monthlyReview: MonthlyReviewReport? = null
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -91,6 +101,7 @@ data class MoneyUiState(
 class MoneyViewModel @Inject constructor(
     private val moneyRepository: MoneyRepository,
     private val brainRepository: BrainRepository,
+    private val habitsRepository: HabitsRepository,
     private val preferencesRepository: PreferencesRepository
 ) : ViewModel() {
 
@@ -125,11 +136,25 @@ class MoneyViewModel @Inject constructor(
         MetaMoneyBundle(bills, ious, goals, snippets, filter)
     }
 
+    private val monthlyReviewSourceFlow = selectedMonthFlow.flatMapLatest { month ->
+        val startEpoch = month.atDay(1).toEpochDay()
+        val endEpoch = month.atEndOfMonth().toEpochDay()
+        combine(
+            habitsRepository.observeActiveHabits(),
+            habitsRepository.observeCompletionsInRange(startEpoch, endEpoch),
+            habitsRepository.observeHealthLogsInRange(startEpoch, endEpoch),
+            brainRepository.observeTasks()
+        ) { habits, completions, healthLogs, tasks ->
+            MonthlyReviewSourceBundle(habits, completions, healthLogs, tasks)
+        }
+    }
+
     val uiState: StateFlow<MoneyUiState> = combine(
         coreMoneyFlow,
         metaMoneyFlow,
+        monthlyReviewSourceFlow,
         preferencesRepository.preferences
-    ) { bundle, meta, prefs ->
+    ) { bundle, meta, reviewSource, prefs ->
         val month = bundle.month
         val transactions = bundle.transactions
         val budgets = bundle.budgets
@@ -211,13 +236,29 @@ class MoneyViewModel @Inject constructor(
             .distinctBy { it.lowercase() }
             .take(8)
 
+        val selectedMonthLabel = month.format(monthFormatter)
+        val monthlyReview = MonthlyReviewCalculations.buildReport(
+            targetMonth = month,
+            today = today,
+            monthLabel = selectedMonthLabel,
+            transactions = transactions,
+            previousMonthTransactions = bundle.previousTransactions,
+            activeHabits = reviewSource.habits,
+            monthCompletions = reviewSource.completions,
+            monthHealthLogs = reviewSource.healthLogs,
+            waterGoalMl = prefs.waterGoalMl,
+            allTasks = reviewSource.tasks,
+            zone = zone
+        )
+
         MoneyUiState(
             selectedMonth = month,
-            selectedMonthLabel = month.format(monthFormatter),
+            selectedMonthLabel = selectedMonthLabel,
             currency = prefs.currency,
             overallMonthlyBudgetCents = prefs.overallMonthlyBudgetCents,
             summary = summary,
             transactions = transactions,
+            allTransactions = bundle.allTransactions,
             allTransactionsCount = bundle.allTransactions.size,
             transactionFilter = filter,
             filteredTransactions = filteredTransactions,
@@ -240,7 +281,8 @@ class MoneyViewModel @Inject constructor(
             totalWalletBalanceCents = totalWalletBalanceCents,
             hideBalances = prefs.hideBalances,
             paymentSnippets = paymentSnippets,
-            recentIouPeople = recentIouPeople
+            recentIouPeople = recentIouPeople,
+            monthlyReview = monthlyReview
         )
     }.stateIn(
         scope = viewModelScope,
@@ -256,6 +298,26 @@ class MoneyViewModel @Inject constructor(
 
     fun nextMonth() {
         selectedMonthFlow.update { it.plusMonths(1) }
+    }
+
+    fun selectMonth(yearMonth: YearMonth) {
+        selectedMonthFlow.value = yearMonth
+    }
+
+    fun saveMonthlyReviewToNotes(title: String, content: String) {
+        val now = System.currentTimeMillis()
+        viewModelScope.launch {
+            brainRepository.upsertNote(
+                NoteItem(
+                    title = title.trim(),
+                    content = content.trim(),
+                    tags = listOf("monthly-review"),
+                    isPinned = false,
+                    createdAtMillis = now,
+                    updatedAtMillis = now
+                )
+            )
+        }
     }
 
     fun toggleTypeFilter(type: TransactionType) {
@@ -505,9 +567,39 @@ class MoneyViewModel @Inject constructor(
         }
     }
 
-    fun settleIou(iou: IouEntry, recordTransaction: Boolean, wallet: WalletType) {
+    fun settleIou(
+        iou: IouEntry,
+        paidAmountCents: Long,
+        recordTransaction: Boolean,
+        wallet: WalletType,
+        category: ExpenseCategory = ExpenseCategory.OTHER,
+        onSettled: (MoneyRepository.IouSettlementRecord) -> Unit = {}
+    ) {
         viewModelScope.launch {
-            moneyRepository.settleIou(iou, recordTransaction, wallet)
+            val record = moneyRepository.settleIou(
+                iou = iou,
+                paidAmountCents = paidAmountCents,
+                recordTransaction = recordTransaction,
+                wallet = wallet,
+                category = category
+            )
+            onSettled(record)
+        }
+    }
+
+    fun undoSettleIou(record: MoneyRepository.IouSettlementRecord) {
+        viewModelScope.launch {
+            moneyRepository.undoSettleIou(record)
+        }
+    }
+
+    fun reopenIou(
+        iou: IouEntry,
+        onReopened: (IouEntry) -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            val previous = moneyRepository.reopenIou(iou)
+            onReopened(previous)
         }
     }
 
@@ -613,5 +705,12 @@ class MoneyViewModel @Inject constructor(
         val goals: List<SavingsGoal>,
         val snippets: List<SnippetItem>,
         val filter: MoneyCalculations.TransactionFilter
+    )
+
+    private data class MonthlyReviewSourceBundle(
+        val habits: List<HabitItem>,
+        val completions: List<HabitCompletion>,
+        val healthLogs: List<DailyHealthLog>,
+        val tasks: List<TaskItem>
     )
 }

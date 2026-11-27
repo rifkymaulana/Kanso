@@ -18,6 +18,7 @@ data class SharedCapturePayload(
 
 sealed interface LaunchCommand {
     data class OpenQuickCapture(val mode: QuickCaptureMode) : LaunchCommand
+    data object OpenReceiptScanner : LaunchCommand
     data object OpenSharedCapture : LaunchCommand
     data class OpenBrainTab(val tab: Int) : LaunchCommand
     data class OpenUtilitiesTab(val tab: Int) : LaunchCommand
@@ -33,6 +34,7 @@ object KansoUris {
     const val QUICK_CAPTURE_TASK = "kanso://quick-capture/task"
     const val QUICK_CAPTURE_SNIPPET = "kanso://quick-capture/snippet"
     const val QUICK_CAPTURE_EXPIRY = "kanso://quick-capture/expiry"
+    const val QUICK_CAPTURE_SCAN_RECEIPT = "kanso://quick-capture/scan-receipt"
     const val BRAIN_NOTES = "kanso://brain/notes"
     const val BRAIN_TASKS = "kanso://brain/tasks"
     const val BRAIN_SNIPPETS = "kanso://brain/snippets"
@@ -59,6 +61,9 @@ object LaunchCommandParser {
 
         return when (host) {
             "quick-capture" -> {
+                if (path == "scan-receipt") {
+                    return LaunchCommand.OpenReceiptScanner
+                }
                 val mode = when (path) {
                     "income" -> QuickCaptureMode.INCOME
                     "note" -> QuickCaptureMode.NOTE

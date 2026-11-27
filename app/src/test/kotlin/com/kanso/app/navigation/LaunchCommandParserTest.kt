@@ -33,6 +33,10 @@ class LaunchCommandParserTest {
             LaunchCommand.OpenQuickCapture(QuickCaptureMode.EXPIRY),
             LaunchCommandParser.parseUri(KansoUris.QUICK_CAPTURE_EXPIRY)
         )
+        assertEquals(
+            LaunchCommand.OpenReceiptScanner,
+            LaunchCommandParser.parseUri(KansoUris.QUICK_CAPTURE_SCAN_RECEIPT)
+        )
     }
 
     @Test

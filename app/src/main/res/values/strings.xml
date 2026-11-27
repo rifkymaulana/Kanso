@@ -11,4 +11,6 @@
     <string name="shortcut_qr_long">Open QR Scanner &amp; Generator</string>
     <string name="shortcut_snippets_short">Snippets</string>
     <string name="shortcut_snippets_long">Open 1-Tap Copy Snippets</string>
+    <string name="shortcut_scan_receipt_short">Scan Receipt</string>
+    <string name="shortcut_scan_receipt_long">Scan Paper or Image Receipt</string>
 </resources>

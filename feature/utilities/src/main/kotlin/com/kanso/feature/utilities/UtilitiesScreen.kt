@@ -90,6 +90,8 @@ import com.kanso.core.model.CountdownCalculations
 import com.kanso.core.model.CountdownItem
 import com.kanso.core.model.CurrencyFormatter
 import com.kanso.core.model.OfflineCurrencyConverter
+import com.kanso.core.model.PomodoroMode
+import com.kanso.core.model.PomodoroState
 import com.kanso.core.model.UnitConverter
 import com.kanso.core.model.UnitDomain
 import com.kanso.core.ui.components.CurrencyAmountVisualTransformation
@@ -117,6 +119,7 @@ import java.util.Locale
 @Composable
 fun UtilitiesRoute(
     initialTab: Int = 0,
+    focusItemId: Long = 0L,
     onBack: () -> Unit,
     onShowMessage: (String) -> Unit,
     onShowUndoMessage: (String, () -> Unit) -> Unit = { msg, _ -> onShowMessage(msg) },
@@ -128,6 +131,17 @@ fun UtilitiesRoute(
     var showNewCountdown by remember { mutableStateOf(false) }
     var editingCountdown by remember { mutableStateOf<CountdownItem?>(null) }
     var showRatesDialog by remember { mutableStateOf(false) }
+
+    var consumedFocusKey by rememberSaveable { mutableStateOf("") }
+    LaunchedEffect(initialTab, focusItemId, uiState.countdowns) {
+        val key = "$initialTab:$focusItemId"
+        if (initialTab == 3 && focusItemId > 0L && key != consumedFocusKey) {
+            uiState.countdowns.firstOrNull { it.id == focusItemId }?.let { countdown ->
+                editingCountdown = countdown
+                consumedFocusKey = key
+            }
+        }
+    }
 
     UtilitiesScreenContent(
         uiState = uiState,

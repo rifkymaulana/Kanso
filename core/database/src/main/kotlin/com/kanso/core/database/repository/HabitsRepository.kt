@@ -53,6 +53,10 @@ class HabitsRepository @Inject constructor(
         return habitsDao.observeCompletionsSince(minEpochDay).map { list -> list.map { it.toDomain() } }
     }
 
+    fun observeCompletionsInRange(startEpochDay: Long, endEpochDay: Long): Flow<List<HabitCompletion>> {
+        return habitsDao.observeCompletionsInRange(startEpochDay, endEpochDay).map { list -> list.map { it.toDomain() } }
+    }
+
     suspend fun toggleCompletion(habitId: Long, epochDay: Long) {
         database.withTransaction {
             if (habitsDao.hasCompletion(habitId, epochDay)) {
@@ -69,6 +73,10 @@ class HabitsRepository @Inject constructor(
 
     fun observeRecentHealthLogs(limit: Int = 14): Flow<List<DailyHealthLog>> {
         return habitsDao.observeRecentHealthLogs(limit).map { list -> list.map { it.toDomain() } }
+    }
+
+    fun observeHealthLogsInRange(startEpochDay: Long, endEpochDay: Long): Flow<List<DailyHealthLog>> {
+        return habitsDao.observeHealthLogsInRange(startEpochDay, endEpochDay).map { list -> list.map { it.toDomain() } }
     }
 
     suspend fun adjustWater(epochDay: Long, deltaMl: Int) {

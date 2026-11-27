@@ -98,6 +98,7 @@ import java.time.LocalDate
 @Composable
 fun BrainRoute(
     initialTab: Int = 0,
+    focusItemId: Long = 0L,
     onShowMessage: (String) -> Unit,
     onShowUndoMessage: (String, () -> Unit) -> Unit = { msg, _ -> onShowMessage(msg) },
     viewModel: BrainViewModel = hiltViewModel()
@@ -113,6 +114,24 @@ fun BrainRoute(
 
     var editingSnippet by remember { mutableStateOf<SnippetItem?>(null) }
     var showNewSnippetDialog by remember { mutableStateOf(false) }
+
+    var consumedFocusKey by rememberSaveable { mutableStateOf("") }
+    LaunchedEffect(initialTab, focusItemId, uiState.allNotes, uiState.allTasks) {
+        val key = "$initialTab:$focusItemId"
+        if (focusItemId > 0L && key != consumedFocusKey) {
+            when (initialTab) {
+                0 -> uiState.allNotes.firstOrNull { it.id == focusItemId }?.let { note ->
+                    editingNote = note
+                    consumedFocusKey = key
+                }
+
+                1 -> uiState.allTasks.firstOrNull { it.id == focusItemId }?.let { task ->
+                    editingTask = task
+                    consumedFocusKey = key
+                }
+            }
+        }
+    }
 
     BrainScreenContent(
         uiState = uiState,

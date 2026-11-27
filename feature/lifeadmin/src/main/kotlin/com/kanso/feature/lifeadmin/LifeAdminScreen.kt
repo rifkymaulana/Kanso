@@ -124,6 +124,7 @@ private tailrec fun Context.findFragmentActivity(): FragmentActivity? = when (th
 @Composable
 fun LifeAdminRoute(
     initialTab: Int = 0,
+    focusItemId: Long = 0L,
     onBack: () -> Unit,
     onShowMessage: (String) -> Unit,
     onShowUndoMessage: (String, () -> Unit) -> Unit = { msg, _ -> onShowMessage(msg) },
@@ -180,6 +181,24 @@ fun LifeAdminRoute(
 
     var showNewVault by remember { mutableStateOf(false) }
     var editingVault by remember { mutableStateOf<VaultItem?>(null) }
+
+    var consumedFocusKey by rememberSaveable { mutableStateOf("") }
+    LaunchedEffect(initialTab, focusItemId, uiState.expiries, uiState.maintenanceLogs) {
+        val key = "$initialTab:$focusItemId"
+        if (focusItemId > 0L && key != consumedFocusKey) {
+            when (initialTab) {
+                0 -> uiState.expiries.firstOrNull { it.id == focusItemId }?.let { expiry ->
+                    editingExpiry = expiry
+                    consumedFocusKey = key
+                }
+
+                1 -> uiState.maintenanceLogs.firstOrNull { it.id == focusItemId }?.let { log ->
+                    editingMaintenance = log
+                    consumedFocusKey = key
+                }
+            }
+        }
+    }
 
     LifeAdminScreenContent(
         uiState = uiState,

@@ -2,6 +2,7 @@ package com.kanso.feature.today
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.kanso.core.database.preferences.PomodoroTimerManager
 import com.kanso.core.database.preferences.PreferencesRepository
 import com.kanso.core.database.repository.BrainRepository
 import com.kanso.core.database.repository.HabitsRepository
@@ -14,7 +15,9 @@ import com.kanso.core.model.CategoryBudget
 import com.kanso.core.model.CoachInsight
 import com.kanso.core.model.CountdownCalculations
 import com.kanso.core.model.CountdownItem
+import com.kanso.core.model.DailyHealthLog
 import com.kanso.core.model.ExpiryItem
+import com.kanso.core.model.HabitCompletion
 import com.kanso.core.model.HabitItem
 import com.kanso.core.model.IouDirection
 import com.kanso.core.model.IouEntry
@@ -22,7 +25,10 @@ import com.kanso.core.model.LifeAdminCalculations
 import com.kanso.core.model.MaintenanceLog
 import com.kanso.core.model.MoneyCalculations
 import com.kanso.core.model.MoneyTransaction
+import com.kanso.core.model.MonthlyReviewCalculations
+import com.kanso.core.model.MonthlyReviewReport
 import com.kanso.core.model.NoteItem
+import com.kanso.core.model.PomodoroState
 import com.kanso.core.model.RecurringBill
 import com.kanso.core.model.SafeToSpendReport
 import com.kanso.core.model.SmartCoachCalculations
@@ -84,6 +90,8 @@ data class TodayUiState(
     val recentNotes: List<NoteItem> = emptyList(),
     val safeToSpend: SafeToSpendReport? = null,
     val coachInsights: List<CoachInsight> = emptyList(),
+    val activePomodoro: PomodoroState? = null,
+    val monthlyReview: MonthlyReviewReport? = null,
     val hideBalances: Boolean = false
 ) {
     val hasAttentionItems: Boolean
@@ -103,7 +111,8 @@ class TodayViewModel @Inject constructor(
     private val brainRepository: BrainRepository,
     private val habitsRepository: HabitsRepository,
     lifeAdminRepository: LifeAdminRepository,
-    utilitiesRepository: UtilitiesRepository
+    utilitiesRepository: UtilitiesRepository,
+    private val pomodoroTimerManager: PomodoroTimerManager
 ) : ViewModel() {
 
     private val todayFlow: Flow<LocalDate> = flow {
@@ -144,33 +153,39 @@ class TodayViewModel @Inject constructor(
         brainRepository.observeTasks(),
         brainRepository.observeNotes(),
         brainRepository.observeSnippets(),
-        utilitiesRepository.observeCountdowns()
-    ) { tasks, notes, snippets, countdowns ->
+        utilitiesRepository.observeCountdowns(),
+        pomodoroTimerManager.state
+    ) { tasks, notes, snippets, countdowns, pomodoro ->
         BrainBundle(
             tasks = tasks,
             notes = notes,
             snippets = snippets,
-            countdowns = countdowns
+            countdowns = countdowns,
+            pomodoro = pomodoro
         )
     }
 
     private val lifeHabitsFlow = todayFlow.flatMapLatest { today ->
         val todayEpoch = today.toEpochDay()
+        val monthStartEpoch = today.withDayOfMonth(1).toEpochDay()
         combine(
             habitsRepository.observeActiveHabits(),
-            habitsRepository.observeCompletionsSince(todayEpoch),
-            habitsRepository.observeHealthLog(todayEpoch),
+            habitsRepository.observeCompletionsInRange(monthStartEpoch, todayEpoch),
+            habitsRepository.observeHealthLogsInRange(monthStartEpoch, todayEpoch),
             lifeAdminRepository.observeExpiries(),
             lifeAdminRepository.observeMaintenanceLogs()
-        ) { habits, todayCompletions, healthLog, expiries, maintenanceLogs ->
+        ) { habits, monthCompletions, monthHealthLogs, expiries, maintenanceLogs ->
+            val todayWaterMl = monthHealthLogs.firstOrNull { it.epochDay == todayEpoch }?.waterMl ?: 0
             LifeHabitsBundle(
                 today = today,
                 habits = habits,
-                completedTodayIds = todayCompletions
+                completedTodayIds = monthCompletions
                     .filter { it.epochDay == todayEpoch }
                     .map { it.habitId }
                     .toSet(),
-                todayWaterMl = healthLog?.waterMl ?: 0,
+                monthCompletions = monthCompletions,
+                monthHealthLogs = monthHealthLogs,
+                todayWaterMl = todayWaterMl,
                 expiries = expiries,
                 maintenanceLogs = maintenanceLogs
             )
@@ -286,6 +301,22 @@ class TodayViewModel @Inject constructor(
             hideAmounts = prefs.hideBalances
         )
 
+        val targetMonth = YearMonth.from(today)
+        val monthLabel = targetMonth.format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.getDefault()))
+        val monthlyReview = MonthlyReviewCalculations.buildReport(
+            targetMonth = targetMonth,
+            today = today,
+            monthLabel = monthLabel,
+            transactions = transactions,
+            previousMonthTransactions = moneyBundle.previousTransactions,
+            activeHabits = lifeHabits.habits,
+            monthCompletions = lifeHabits.monthCompletions,
+            monthHealthLogs = lifeHabits.monthHealthLogs,
+            waterGoalMl = prefs.waterGoalMl,
+            allTasks = tasks,
+            zone = zone
+        )
+
         TodayUiState(
             greeting = greeting,
             formattedDate = dateLabel,
@@ -316,6 +347,8 @@ class TodayViewModel @Inject constructor(
             recentNotes = topNotes,
             safeToSpend = safeToSpend,
             coachInsights = coachInsights,
+            activePomodoro = brainBundle.pomodoro.takeIf { it.isActiveOrPausedSession },
+            monthlyReview = monthlyReview,
             hideBalances = prefs.hideBalances
         )
     }.stateIn(
@@ -388,6 +421,26 @@ class TodayViewModel @Inject constructor(
         }
     }
 
+    fun togglePomodoro() {
+        pomodoroTimerManager.toggle()
+    }
+
+    fun saveMonthlyReviewToNotes(title: String, content: String) {
+        val now = System.currentTimeMillis()
+        viewModelScope.launch {
+            brainRepository.upsertNote(
+                NoteItem(
+                    title = title.trim(),
+                    content = content.trim(),
+                    tags = listOf("monthly-review"),
+                    isPinned = false,
+                    createdAtMillis = now,
+                    updatedAtMillis = now
+                )
+            )
+        }
+    }
+
     private data class MoneyBundle(
         val transactions: List<MoneyTransaction>,
         val previousTransactions: List<MoneyTransaction>,
@@ -400,13 +453,16 @@ class TodayViewModel @Inject constructor(
         val tasks: List<TaskItem>,
         val notes: List<NoteItem>,
         val snippets: List<SnippetItem>,
-        val countdowns: List<CountdownItem>
+        val countdowns: List<CountdownItem>,
+        val pomodoro: PomodoroState
     )
 
     private data class LifeHabitsBundle(
         val today: LocalDate,
         val habits: List<HabitItem>,
         val completedTodayIds: Set<Long>,
+        val monthCompletions: List<HabitCompletion>,
+        val monthHealthLogs: List<DailyHealthLog>,
         val todayWaterMl: Int,
         val expiries: List<ExpiryItem>,
         val maintenanceLogs: List<MaintenanceLog>

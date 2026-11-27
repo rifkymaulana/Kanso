@@ -234,24 +234,41 @@ class MoneyRepository @Inject constructor(
         }
     }
 
+    data class IouSettlementRecord(
+        val previousIou: IouEntry,
+        val transactionId: Long?,
+        val paidAmountCents: Long,
+        val isPartial: Boolean
+    )
+
     suspend fun settleIou(
         iou: IouEntry,
+        paidAmountCents: Long = iou.amountCents,
         recordTransaction: Boolean,
         wallet: WalletType,
+        category: ExpenseCategory = ExpenseCategory.OTHER,
         nowMillis: Long = System.currentTimeMillis()
-    ) {
-        database.withTransaction {
-            moneyDao.upsertIou(
-                iou.copy(isSettled = true, settledAtMillis = nowMillis).toEntity()
-            )
-            if (recordTransaction) {
+    ): IouSettlementRecord {
+        return database.withTransaction {
+            val effectivePaid = paidAmountCents.coerceIn(1L, iou.amountCents.coerceAtLeast(1L))
+            val isPartial = effectivePaid < iou.amountCents
+            val updatedIou = if (isPartial) {
+                iou.copy(amountCents = iou.amountCents - effectivePaid)
+            } else {
+                iou.copy(isSettled = true, settledAtMillis = nowMillis)
+            }
+            moneyDao.upsertIou(updatedIou.toEntity())
+
+            val txId = if (recordTransaction) {
                 val txType = when (iou.direction) {
                     IouDirection.OWES_ME -> TransactionType.INCOME
                     IouDirection.I_OWE -> TransactionType.EXPENSE
                 }
-                val prefix = when (iou.direction) {
-                    IouDirection.OWES_ME -> "IOU Repaid by"
-                    IouDirection.I_OWE -> "IOU Paid to"
+                val prefix = when {
+                    iou.direction == IouDirection.OWES_ME && isPartial -> "IOU Partial Repaid by"
+                    iou.direction == IouDirection.OWES_ME -> "IOU Repaid by"
+                    isPartial -> "IOU Partial Paid to"
+                    else -> "IOU Paid to"
                 }
                 val note = if (iou.note.isNotBlank()) {
                     "$prefix ${iou.personName} (${iou.note})"
@@ -260,15 +277,35 @@ class MoneyRepository @Inject constructor(
                 }
                 val tx = MoneyTransaction(
                     type = txType,
-                    amountCents = iou.amountCents,
-                    category = com.kanso.core.model.ExpenseCategory.OTHER,
+                    amountCents = effectivePaid,
+                    category = category,
                     wallet = wallet,
                     note = note,
                     timestampMillis = nowMillis
                 )
                 moneyDao.upsertTransaction(tx.toEntity())
+            } else {
+                null
             }
+            IouSettlementRecord(
+                previousIou = iou,
+                transactionId = txId,
+                paidAmountCents = effectivePaid,
+                isPartial = isPartial
+            )
         }
+    }
+
+    suspend fun undoSettleIou(record: IouSettlementRecord) {
+        database.withTransaction {
+            moneyDao.upsertIou(record.previousIou.toEntity())
+            record.transactionId?.let { moneyDao.deleteTransactionById(it) }
+        }
+    }
+
+    suspend fun reopenIou(iou: IouEntry): IouEntry {
+        moneyDao.upsertIou(iou.copy(isSettled = false, settledAtMillis = null).toEntity())
+        return iou
     }
 
     fun observeSavingsGoals(): Flow<List<SavingsGoal>> {

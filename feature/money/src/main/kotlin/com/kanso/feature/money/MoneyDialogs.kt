@@ -809,11 +809,21 @@ fun SettleIouDialog(
     iou: IouEntry,
     currency: AppCurrency,
     onDismiss: () -> Unit,
-    onConfirm: (recordTransaction: Boolean, wallet: WalletType) -> Unit
+    onConfirm: (
+        paidAmountCents: Long,
+        recordTransaction: Boolean,
+        wallet: WalletType,
+        category: ExpenseCategory
+    ) -> Unit
 ) {
     val haptic = LocalHapticFeedback.current
+    var paidAmountText by remember(iou.id) {
+        mutableStateOf(CurrencyFormatter.formatCompactInput(iou.amountCents, currency))
+    }
     var recordTx by remember { mutableStateOf(true) }
-    var wallet by remember { mutableStateOf(WalletType.BANK) }
+    var wallet by remember { mutableStateOf(WalletType.EWALLET) }
+    var category by remember(iou.id) { mutableStateOf(ExpenseCategory.OTHER) }
+    var error by remember { mutableStateOf<String?>(null) }
 
     val directionColor = if (iou.direction == IouDirection.OWES_ME) {
         incomeSemanticColor()
@@ -825,19 +835,45 @@ fun SettleIouDialog(
     } else {
         "You paid ${iou.personName}"
     }
+    val parsedPaidCents = CurrencyFormatter.parseInputToCents(paidAmountText, currency)
+    val remainingCents = parsedPaidCents?.let { (iou.amountCents - it).coerceAtLeast(0L) }
+    val presets = remember(iou.amountCents) {
+        buildList {
+            if (iou.amountCents >= 200L) add(iou.amountCents / 2L)
+            add(iou.amountCents)
+        }.distinct()
+    }
+    val categoryPool = remember(iou.direction) {
+        if (iou.direction == IouDirection.OWES_ME) {
+            ExpenseCategory.incomeCategories
+        } else {
+            ExpenseCategory.expenseCategories
+        }
+    }
 
     MoneySheetScaffold(
         title = "Settle IOU",
         badgeText = iou.direction.label,
         badgeColor = directionColor,
         badgeIcon = Icons.Outlined.Handshake,
-        primaryLabel = "Mark Settled",
+        primaryLabel = if (remainingCents != null && remainingCents > 0L && parsedPaidCents > 0L) {
+            "Record Partial"
+        } else {
+            "Mark Settled"
+        },
         primaryColor = directionColor,
-        errorText = null,
+        errorText = error,
         onDismiss = onDismiss,
         onPrimaryClick = {
-            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-            onConfirm(recordTx, wallet)
+            val paid = CurrencyFormatter.parseInputToCents(paidAmountText, currency)
+            when {
+                paid == null || paid <= 0L -> error = "Enter an amount greater than 0."
+                paid > iou.amountCents -> error = "Cannot exceed ${CurrencyFormatter.format(iou.amountCents, currency)}."
+                else -> {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onConfirm(paid, recordTx, wallet, category)
+                }
+            }
         }
     ) {
         Surface(
@@ -849,21 +885,13 @@ fun SettleIouDialog(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(3.dp)
             ) {
                 Text(
-                    text = actionDesc,
+                    text = "$actionDesc · Total ${CurrencyFormatter.format(iou.amountCents, currency)}",
                     style = MaterialTheme.typography.labelLarge,
                     color = directionColor
-                )
-                Text(
-                    text = CurrencyFormatter.format(iou.amountCents, currency),
-                    style = MaterialTheme.typography.headlineSmall.copy(
-                        fontWeight = FontWeight.Bold,
-                        fontFeatureSettings = "tnum"
-                    ),
-                    color = MaterialTheme.colorScheme.onSurface
                 )
                 if (iou.note.isNotBlank()) {
                     Text(
@@ -872,8 +900,27 @@ fun SettleIouDialog(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+                if (remainingCents != null && parsedPaidCents in 1L until iou.amountCents) {
+                    Text(
+                        text = "Remaining IOU after payment: ${CurrencyFormatter.format(remainingCents, currency)}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
+
+        MoneyAmountHeroInput(
+            label = "AMOUNT PAID NOW",
+            value = paidAmountText,
+            onValueChange = {
+                paidAmountText = it
+                error = null
+            },
+            currency = currency,
+            accentColor = directionColor,
+            presets = presets
+        )
 
         Surface(
             shape = RoundedCornerShape(14.dp),
@@ -888,9 +935,9 @@ fun SettleIouDialog(
             ) {
                 Text(
                     text = if (iou.direction == IouDirection.OWES_ME) {
-                        "Also log as Income transaction"
+                        "Also log as Income in Money"
                     } else {
-                        "Also log as Expense transaction"
+                        "Also log as Expense in Money"
                     },
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.weight(1f)
@@ -904,12 +951,19 @@ fun SettleIouDialog(
             enter = expandVertically(KansoMotion.SizeSpring) + fadeIn(tween(180)),
             exit = shrinkVertically() + fadeOut(tween(140))
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Wallet", style = MaterialTheme.typography.labelLarge)
                 WalletTileRow(
                     selected = wallet,
                     selectedColor = MaterialTheme.colorScheme.primary,
                     onSelect = { wallet = it }
+                )
+                Text("Category", style = MaterialTheme.typography.labelLarge)
+                CategoryChipRow(
+                    categories = categoryPool,
+                    selected = category,
+                    enabled = true,
+                    onSelect = { category = it }
                 )
             }
         }

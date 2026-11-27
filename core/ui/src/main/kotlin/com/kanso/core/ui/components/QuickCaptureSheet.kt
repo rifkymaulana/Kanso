@@ -39,6 +39,8 @@ import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.EventAvailable
+import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -134,6 +136,8 @@ fun QuickCaptureSheet(
     sharedDraft: ParsedShareDraft? = null,
     sharedReceiptPreview: ImageBitmap? = null,
     isScanningSharedReceipt: Boolean = false,
+    onScanReceiptCamera: (() -> Unit)? = null,
+    onScanReceiptGallery: (() -> Unit)? = null,
     onDismiss: () -> Unit,
     onSaveTransaction: (
         type: TransactionType,
@@ -558,6 +562,34 @@ fun QuickCaptureSheet(
                                 label = { Text(CurrencyFormatter.format(presetCents, currency)) },
                                 shape = RoundedCornerShape(50)
                             )
+                        }
+                    }
+
+                    if (!isScanningSharedReceipt &&
+                        (onScanReceiptCamera != null || onScanReceiptGallery != null)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            if (onScanReceiptCamera != null) {
+                                KansoOutlinedButton(
+                                    text = "Scan Camera",
+                                    leadingIcon = Icons.Outlined.PhotoCamera,
+                                    size = KansoButtonSize.COMPACT,
+                                    modifier = Modifier.weight(1f),
+                                    onClick = onScanReceiptCamera
+                                )
+                            }
+                            if (onScanReceiptGallery != null) {
+                                KansoOutlinedButton(
+                                    text = "Pick Receipt",
+                                    leadingIcon = Icons.Outlined.Image,
+                                    size = KansoButtonSize.COMPACT,
+                                    modifier = Modifier.weight(1f),
+                                    onClick = onScanReceiptGallery
+                                )
+                            }
                         }
                     }
 

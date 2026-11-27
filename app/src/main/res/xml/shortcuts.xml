@@ -14,6 +14,19 @@
     </shortcut>
 
     <shortcut
+        android:shortcutId="shortcut_scan_receipt"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_scan_receipt"
+        android:shortcutShortLabel="@string/shortcut_scan_receipt_short"
+        android:shortcutLongLabel="@string/shortcut_scan_receipt_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="kanso://quick-capture/scan-receipt"
+            android:targetPackage="com.kanso.app"
+            android:targetClass="com.kanso.app.MainActivity" />
+    </shortcut>
+
+    <shortcut
         android:shortcutId="shortcut_note"
         android:enabled="true"
         android:icon="@drawable/ic_shortcut_note"
@@ -35,19 +48,6 @@
         <intent
             android:action="android.intent.action.VIEW"
             android:data="kanso://utilities/qr"
-            android:targetPackage="com.kanso.app"
-            android:targetClass="com.kanso.app.MainActivity" />
-    </shortcut>
-
-    <shortcut
-        android:shortcutId="shortcut_snippets"
-        android:enabled="true"
-        android:icon="@drawable/ic_shortcut_snippet"
-        android:shortcutShortLabel="@string/shortcut_snippets_short"
-        android:shortcutLongLabel="@string/shortcut_snippets_long">
-        <intent
-            android:action="android.intent.action.VIEW"
-            android:data="kanso://brain/snippets"
             android:targetPackage="com.kanso.app"
             android:targetClass="com.kanso.app.MainActivity" />
     </shortcut>

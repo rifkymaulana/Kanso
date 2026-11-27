@@ -30,10 +30,13 @@ import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.LocalFireDepartment
 import androidx.compose.material.icons.outlined.NotificationsActive
+import androidx.compose.material.icons.outlined.Pause
+import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.TaskAlt
+import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.WaterDrop
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -41,6 +44,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -56,8 +63,6 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import com.kanso.core.model.AppCurrency
 import com.kanso.core.model.BudgetAnchorSource
 import com.kanso.core.model.CoachActionTarget
@@ -70,6 +75,9 @@ import com.kanso.core.model.HabitItem
 import com.kanso.core.model.LifeAdminCalculations
 import com.kanso.core.model.NoteChecklistParser
 import com.kanso.core.model.NoteItem
+import com.kanso.core.model.PomodoroCalculations
+import com.kanso.core.model.PomodoroMode
+import com.kanso.core.model.PomodoroState
 import com.kanso.core.model.RecurringBill
 import com.kanso.core.model.SafeToSpendReport
 import com.kanso.core.model.SmartCoachCalculations
@@ -100,6 +108,7 @@ import com.kanso.core.ui.components.KansoPrivacyEyeButton
 import com.kanso.core.ui.components.KansoProgressRing
 import com.kanso.core.ui.components.KansoStaggeredEntrance
 import com.kanso.core.ui.components.KansoTonalButton
+import com.kanso.core.ui.components.MonthlyReviewSheet
 import com.kanso.core.ui.components.SectionHeader
 import com.kanso.core.ui.components.expenseSemanticColor
 import com.kanso.core.ui.components.incomeSemanticColor
@@ -114,11 +123,18 @@ fun TodayRoute(
     onOpenSearch: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenMoney: () -> Unit,
+    onOpenIousTab: () -> Unit = onOpenMoney,
     onOpenBrainTab: (Int) -> Unit,
+    onOpenNoteItem: (Long) -> Unit = { onOpenBrainTab(0) },
+    onOpenTaskItem: (Long) -> Unit = { onOpenBrainTab(1) },
     onOpenHabits: () -> Unit = {},
     onOpenExpiries: () -> Unit = {},
+    onOpenExpiryItem: (Long) -> Unit = { onOpenExpiries() },
     onOpenMaintenance: () -> Unit = {},
+    onOpenMaintenanceItem: (Long) -> Unit = { onOpenMaintenance() },
     onOpenCountdowns: () -> Unit = {},
+    onOpenCountdownItem: (Long) -> Unit = { onOpenCountdowns() },
+    onOpenFocusTimer: () -> Unit = {},
     onShowMessage: (String) -> Unit,
     onShowUndoMessage: (String, () -> Unit) -> Unit = { msg, _ -> onShowMessage(msg) },
     onBalancesVisibilityChanged: () -> Unit = {},
@@ -126,6 +142,7 @@ fun TodayRoute(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    var showMonthlyReviewSheet by remember { mutableStateOf(false) }
 
     TodayScreenContent(
         uiState = uiState,
@@ -133,11 +150,20 @@ fun TodayRoute(
         onOpenSearch = onOpenSearch,
         onOpenSettings = onOpenSettings,
         onOpenMoney = onOpenMoney,
+        onOpenIousTab = onOpenIousTab,
+        onOpenMonthlyReview = { showMonthlyReviewSheet = true },
         onOpenBrainTab = onOpenBrainTab,
+        onOpenNoteItem = onOpenNoteItem,
+        onOpenTaskItem = onOpenTaskItem,
         onOpenHabits = onOpenHabits,
         onOpenExpiries = onOpenExpiries,
+        onOpenExpiryItem = onOpenExpiryItem,
         onOpenMaintenance = onOpenMaintenance,
+        onOpenMaintenanceItem = onOpenMaintenanceItem,
         onOpenCountdowns = onOpenCountdowns,
+        onOpenCountdownItem = onOpenCountdownItem,
+        onOpenFocusTimer = onOpenFocusTimer,
+        onTogglePomodoro = viewModel::togglePomodoro,
         onToggleHideBalances = {
             viewModel.toggleHideBalances()
             onBalancesVisibilityChanged()
@@ -177,6 +203,30 @@ fun TodayRoute(
             onShowMessage("Copied ${snippet.label}")
         }
     )
+
+    if (showMonthlyReviewSheet) {
+        uiState.monthlyReview?.let { report ->
+            MonthlyReviewSheet(
+                report = report,
+                currency = uiState.currency,
+                hideBalances = uiState.hideBalances,
+                onDismiss = { showMonthlyReviewSheet = false },
+                onCopySummary = { summary ->
+                    KansoClipboard.copyText(
+                        context = context,
+                        label = "Monthly Review",
+                        text = summary,
+                        isSensitive = uiState.hideBalances
+                    )
+                    onShowMessage("Monthly review copied")
+                },
+                onSaveToNotes = { title, content ->
+                    viewModel.saveMonthlyReviewToNotes(title, content)
+                    onShowMessage("Saved recap to Notes")
+                }
+            )
+        }
+    }
 }
 
 @Composable
@@ -186,11 +236,20 @@ fun TodayScreenContent(
     onOpenSearch: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenMoney: () -> Unit,
+    onOpenIousTab: () -> Unit = onOpenMoney,
+    onOpenMonthlyReview: () -> Unit = {},
     onOpenBrainTab: (Int) -> Unit,
+    onOpenNoteItem: (Long) -> Unit = { onOpenBrainTab(0) },
+    onOpenTaskItem: (Long) -> Unit = { onOpenBrainTab(1) },
     onOpenHabits: () -> Unit = {},
     onOpenExpiries: () -> Unit = {},
+    onOpenExpiryItem: (Long) -> Unit = { onOpenExpiries() },
     onOpenMaintenance: () -> Unit = {},
+    onOpenMaintenanceItem: (Long) -> Unit = { onOpenMaintenance() },
     onOpenCountdowns: () -> Unit = {},
+    onOpenCountdownItem: (Long) -> Unit = { onOpenCountdowns() },
+    onOpenFocusTimer: () -> Unit = {},
+    onTogglePomodoro: () -> Unit = {},
     onToggleHideBalances: () -> Unit = {},
     onToggleTask: (TaskItem) -> Unit,
     onToggleNoteChecklistLine: (NoteItem, Int) -> Unit = { _, _ -> },
@@ -281,7 +340,8 @@ fun TodayScreenContent(
             KansoStaggeredEntrance(index = 1) {
                 MoneyHeroPulseCard(
                     uiState = uiState,
-                    onClick = onOpenMoney
+                    onClick = onOpenMoney,
+                    onOpenMonthlyReview = onOpenMonthlyReview
                 )
             }
         }
@@ -295,11 +355,14 @@ fun TodayScreenContent(
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             onPayBill(it)
                         },
-                        onOpenMoney = onOpenMoney,
+                        onOpenIousTab = onOpenIousTab,
                         onOpenTasks = { onOpenBrainTab(1) },
                         onOpenExpiries = onOpenExpiries,
+                        onOpenExpiryItem = onOpenExpiryItem,
                         onOpenMaintenance = onOpenMaintenance,
-                        onOpenCountdowns = onOpenCountdowns
+                        onOpenMaintenanceItem = onOpenMaintenanceItem,
+                        onOpenCountdowns = onOpenCountdowns,
+                        onOpenCountdownItem = onOpenCountdownItem
                     )
                 }
             }
@@ -381,6 +444,21 @@ fun TodayScreenContent(
             }
         }
 
+        uiState.activePomodoro?.let { pomodoro ->
+            item {
+                KansoStaggeredEntrance(index = 4) {
+                    ActiveFocusTimerCard(
+                        pomodoro = pomodoro,
+                        onClick = onOpenFocusTimer,
+                        onToggle = {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onTogglePomodoro()
+                        }
+                    )
+                }
+            }
+        }
+
         item {
             KansoStaggeredEntrance(index = 5) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -408,7 +486,7 @@ fun TodayScreenContent(
                                         task = task,
                                         accentColor = kansoColors.brainAccent,
                                         onToggle = { onToggleTask(task) },
-                                        onOpenTasks = { onOpenBrainTab(1) }
+                                        onOpenTasks = { onOpenTaskItem(task.id) }
                                     )
                                     if (index < uiState.focusTasks.lastIndex) {
                                         HorizontalDivider(
@@ -474,7 +552,7 @@ fun TodayScreenContent(
                         uiState.recentNotes.forEach { note ->
                             KansoBentoCard(
                                 modifier = Modifier.fillMaxWidth(),
-                                onClick = { onOpenBrainTab(0) },
+                                onClick = { onOpenNoteItem(note.id) },
                                 contentPadding = PaddingValues(14.dp)
                             ) {
                                 Row(
@@ -563,7 +641,8 @@ fun TodayScreenContent(
 @Composable
 private fun MoneyHeroPulseCard(
     uiState: TodayUiState,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onOpenMonthlyReview: () -> Unit = {}
 ) {
     val kansoColors = MaterialTheme.kansoColors
     val netCents = uiState.monthIncomeCents - uiState.monthExpenseCents
@@ -583,18 +662,37 @@ private fun MoneyHeroPulseCard(
                     style = MaterialTheme.typography.labelSmall,
                     color = kansoColors.heroOnSurfaceMuted
                 )
-                Surface(
-                    shape = RoundedCornerShape(50),
-                    color = Color.White.copy(alpha = 0.12f)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    KansoAnimatedCurrencyText(
-                        amountCents = uiState.todayExpenseCents,
-                        currency = uiState.currency,
-                        prefix = "Today · ",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = kansoColors.heroOnSurface,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                    )
+                    Surface(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .clickable(onClick = onOpenMonthlyReview),
+                        shape = RoundedCornerShape(50),
+                        color = Color.White.copy(alpha = 0.16f)
+                    ) {
+                        Text(
+                            text = "Review →",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = Color(0xFF5EEAD4),
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                        )
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(50),
+                        color = Color.White.copy(alpha = 0.12f)
+                    ) {
+                        KansoAnimatedCurrencyText(
+                            amountCents = uiState.todayExpenseCents,
+                            currency = uiState.currency,
+                            prefix = "Today · ",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = kansoColors.heroOnSurface,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                        )
+                    }
                 }
             }
 
@@ -902,11 +1000,14 @@ private fun BentoPulseRow(
 private fun AttentionBentoCard(
     uiState: TodayUiState,
     onPayBill: (RecurringBill) -> Unit,
-    onOpenMoney: () -> Unit,
+    onOpenIousTab: () -> Unit,
     onOpenTasks: () -> Unit,
     onOpenExpiries: () -> Unit,
+    onOpenExpiryItem: (Long) -> Unit,
     onOpenMaintenance: () -> Unit,
-    onOpenCountdowns: () -> Unit
+    onOpenMaintenanceItem: (Long) -> Unit,
+    onOpenCountdowns: () -> Unit,
+    onOpenCountdownItem: (Long) -> Unit
 ) {
     val warning = warningSemanticColor()
     val count = uiState.dueBills.size +
@@ -1011,7 +1112,7 @@ private fun AttentionBentoCard(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(10.dp))
-                            .clickable(onClick = onOpenExpiries)
+                            .clickable { onOpenExpiryItem(expiry.id) }
                             .padding(vertical = 4.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
@@ -1067,7 +1168,7 @@ private fun AttentionBentoCard(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(10.dp))
-                            .clickable(onClick = onOpenMaintenance)
+                            .clickable { onOpenMaintenanceItem(log.id) }
                             .padding(vertical = 4.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
@@ -1120,7 +1221,7 @@ private fun AttentionBentoCard(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(10.dp))
-                            .clickable(onClick = onOpenCountdowns)
+                            .clickable { onOpenCountdownItem(countdown.id) }
                             .padding(vertical = 4.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
@@ -1169,7 +1270,7 @@ private fun AttentionBentoCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(10.dp))
-                        .clickable(onClick = onOpenMoney)
+                        .clickable(onClick = onOpenIousTab)
                         .padding(vertical = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
@@ -1192,12 +1293,91 @@ private fun AttentionBentoCard(
                         modifier = Modifier.weight(1f)
                     )
                     Text(
-                        text = "Money →",
+                        text = "IOUs →",
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.primary
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ActiveFocusTimerCard(
+    pomodoro: PomodoroState,
+    onClick: () -> Unit,
+    onToggle: () -> Unit
+) {
+    val accent = if (pomodoro.mode == PomodoroMode.FOCUS) {
+        MaterialTheme.kansoColors.utilitiesAccent
+    } else {
+        incomeSemanticColor()
+    }
+    val progress = if (pomodoro.totalSeconds > 0) {
+        pomodoro.remainingSeconds.toFloat() / pomodoro.totalSeconds.toFloat()
+    } else {
+        0f
+    }
+
+    KansoBentoCard(
+        modifier = Modifier.fillMaxWidth(),
+        onClick = onClick,
+        containerColor = accent.copy(alpha = 0.08f),
+        borderColor = accent.copy(alpha = 0.28f),
+        contentPadding = PaddingValues(14.dp)
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    KansoAccentIconBadge(
+                        icon = Icons.Outlined.Timer,
+                        accent = accent,
+                        size = 36.dp,
+                        iconSize = 18.dp,
+                        cornerRadius = 10.dp
+                    )
+                    Column {
+                        Text(
+                            text = if (pomodoro.isRunning) {
+                                "${pomodoro.mode.label} · Running"
+                            } else {
+                                "${pomodoro.mode.label} · Paused"
+                            },
+                            style = MaterialTheme.typography.labelLarge,
+                            color = accent
+                        )
+                        Text(
+                            text = PomodoroCalculations.formatRemainingMmSs(pomodoro.remainingSeconds),
+                            style = MaterialTheme.typography.headlineSmall.copy(
+                                fontWeight = FontWeight.Bold,
+                                fontFeatureSettings = "tnum"
+                            ),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+                KansoTonalButton(
+                    text = if (pomodoro.isRunning) "Pause" else "Resume",
+                    leadingIcon = if (pomodoro.isRunning) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
+                    size = KansoButtonSize.COMPACT,
+                    containerColor = accent.copy(alpha = 0.16f),
+                    contentColor = accent,
+                    onClick = onToggle
+                )
+            }
+            KansoAnimatedProgressBar(
+                progress = progress.coerceIn(0f, 1f),
+                height = 5.dp,
+                color = accent
+            )
         }
     }
 }

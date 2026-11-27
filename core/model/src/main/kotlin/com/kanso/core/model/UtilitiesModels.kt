@@ -1,6 +1,7 @@
 package com.kanso.core.model
 
 import kotlinx.serialization.Serializable
+import java.util.Locale
 
 @Serializable
 data class CountdownItem(
@@ -150,5 +151,36 @@ object CountdownCalculations {
             daysRemaining == -1L -> "1 day ago"
             else -> "${-daysRemaining} days ago"
         }
+    }
+}
+
+enum class PomodoroMode(val label: String, val durationSeconds: Int) {
+    FOCUS("Focus 25m", 25 * 60),
+    SHORT_BREAK("Short 5m", 5 * 60),
+    LONG_BREAK("Long 15m", 15 * 60)
+}
+
+data class PomodoroState(
+    val mode: PomodoroMode = PomodoroMode.FOCUS,
+    val remainingSeconds: Int = PomodoroMode.FOCUS.durationSeconds,
+    val totalSeconds: Int = PomodoroMode.FOCUS.durationSeconds,
+    val isRunning: Boolean = false,
+    val completedFocusSessions: Int = 0,
+    val endEpochMillis: Long? = null
+) {
+    val isActiveOrPausedSession: Boolean
+        get() = isRunning || (remainingSeconds in 1 until totalSeconds)
+}
+
+object PomodoroCalculations {
+    fun computeRemainingSeconds(endEpochMillis: Long, nowEpochMillis: Long): Int {
+        val diff = endEpochMillis - nowEpochMillis
+        if (diff <= 0L) return 0
+        return ((diff + 999L) / 1000L).toInt()
+    }
+
+    fun formatRemainingMmSs(remainingSeconds: Int): String {
+        val safe = remainingSeconds.coerceAtLeast(0)
+        return String.format(Locale.US, "%02d:%02d", safe / 60, safe % 60)
     }
 }

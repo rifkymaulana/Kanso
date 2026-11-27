@@ -33,8 +33,10 @@ data class BrainUiState(
     val selectedTag: String? = null,
     val availableTags: List<String> = emptyList(),
     val notes: List<NoteItem> = emptyList(),
+    val allNotes: List<NoteItem> = emptyList(),
     val taskFilter: TaskFilter = TaskFilter.ACTIVE,
     val tasks: List<TaskItem> = emptyList(),
+    val allTasks: List<TaskItem> = emptyList(),
     val activeTaskCount: Int = 0,
     val snippetCategoryFilter: SnippetCategory? = null,
     val snippets: List<SnippetItem> = emptyList()
@@ -67,7 +69,7 @@ class BrainViewModel @Inject constructor(
         } else {
             matchedNotes.filter { note -> note.tags.any { it.equals(selectedTag, ignoreCase = true) } }
         }
-        Triple(query, selectedTag, Pair(tags, filtered))
+        NotesBundle(query = query, selectedTag = selectedTag, tags = tags, filtered = filtered, all = allNotes)
     }
 
     private val tasksCombinedFlow = combine(
@@ -84,7 +86,7 @@ class BrainViewModel @Inject constructor(
             }
             TaskFilter.COMPLETED -> allTasks.filter { it.isCompleted }
         }
-        Triple(filter, activeCount, filtered)
+        TasksBundle(filter = filter, activeCount = activeCount, filtered = filtered, all = allTasks)
     }
 
     private val snippetsCombinedFlow = combine(
@@ -103,20 +105,19 @@ class BrainViewModel @Inject constructor(
         notesCombinedFlow,
         tasksCombinedFlow,
         snippetsCombinedFlow
-    ) { notesTriple, tasksTriple, snippetsPair ->
-        val (query, selectedTag, tagAndNotes) = notesTriple
-        val (tags, notes) = tagAndNotes
-        val (taskFilter, activeCount, tasks) = tasksTriple
+    ) { notesBundle, tasksBundle, snippetsPair ->
         val (snippetCat, snippets) = snippetsPair
 
         BrainUiState(
-            noteSearchQuery = query,
-            selectedTag = selectedTag,
-            availableTags = tags,
-            notes = notes,
-            taskFilter = taskFilter,
-            tasks = tasks,
-            activeTaskCount = activeCount,
+            noteSearchQuery = notesBundle.query,
+            selectedTag = notesBundle.selectedTag,
+            availableTags = notesBundle.tags,
+            notes = notesBundle.filtered,
+            allNotes = notesBundle.all,
+            taskFilter = tasksBundle.filter,
+            tasks = tasksBundle.filtered,
+            allTasks = tasksBundle.all,
+            activeTaskCount = tasksBundle.activeCount,
             snippetCategoryFilter = snippetCat,
             snippets = snippets
         )
@@ -124,6 +125,21 @@ class BrainViewModel @Inject constructor(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = BrainUiState()
+    )
+
+    private data class NotesBundle(
+        val query: String,
+        val selectedTag: String?,
+        val tags: List<String>,
+        val filtered: List<NoteItem>,
+        val all: List<NoteItem>
+    )
+
+    private data class TasksBundle(
+        val filter: TaskFilter,
+        val activeCount: Int,
+        val filtered: List<TaskItem>,
+        val all: List<TaskItem>
     )
 
     fun setNoteSearchQuery(query: String) {

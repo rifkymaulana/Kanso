@@ -44,9 +44,11 @@ import com.kanso.app.navigation.LaunchCommand
 import com.kanso.app.navigation.LaunchCommandParser
 import com.kanso.app.navigation.SharedCapturePayload
 import com.kanso.app.notifications.KansoReminderScheduler
+import com.kanso.app.notifications.PomodoroCompletionWorker
 import com.kanso.app.share.ReceiptShareProcessor
 import com.kanso.app.sync.DriveSyncScheduler
 import com.kanso.app.widget.KansoWidgetUpdater
+import com.kanso.core.database.preferences.PomodoroTimerManager
 import com.kanso.core.database.preferences.PreferencesRepository
 import com.kanso.core.model.AppLockPolicy
 import com.kanso.core.security.BiometricAuthHelper
@@ -66,6 +68,9 @@ class MainActivity : FragmentActivity() {
 
     @Inject
     lateinit var preferencesRepository: PreferencesRepository
+
+    @Inject
+    lateinit var pomodoroTimerManager: PomodoroTimerManager
 
     private val pendingCommandFlow = MutableStateFlow<LaunchCommand?>(null)
     private val sharedCapturePayloadFlow = MutableStateFlow<SharedCapturePayload?>(null)
@@ -88,6 +93,7 @@ class MainActivity : FragmentActivity() {
             val driveConfig by mainViewModel.driveSyncConfig.collectAsStateWithLifecycle()
             val pendingCommand by pendingCommandFlow.collectAsStateWithLifecycle()
             val sharedCapturePayload by sharedCapturePayloadFlow.collectAsStateWithLifecycle()
+            val pomodoroState by pomodoroTimerManager.state.collectAsStateWithLifecycle()
 
             var lockAuthError by remember { mutableStateOf<String?>(null) }
             var autoPromptedThisLock by remember { mutableStateOf(false) }
@@ -167,6 +173,17 @@ class MainActivity : FragmentActivity() {
                 )
             }
 
+            LaunchedEffect(pomodoroState.isRunning, pomodoroState.endEpochMillis) {
+                PomodoroCompletionWorker.syncScheduledWork(this@MainActivity, pomodoroState)
+            }
+
+            LaunchedEffect(Unit) {
+                pomodoroTimerManager.completedEvents.collect { completedMode ->
+                    PomodoroCompletionWorker.cancelScheduledWork(this@MainActivity)
+                    PomodoroCompletionWorker.postCompletionNotification(this@MainActivity, completedMode)
+                }
+            }
+
             KansoTheme(
                 themeMode = prefs.themeMode,
                 useDynamicColor = prefs.useDynamicColor,
@@ -193,6 +210,7 @@ class MainActivity : FragmentActivity() {
                             pendingLaunchCommand = pendingCommand,
                             sharedCapturePayload = sharedCapturePayload,
                             onConsumeLaunchCommand = { pendingCommandFlow.value = null },
+                            onUpdateSharedCapture = { sharedCapturePayloadFlow.value = it },
                             onClearSharedCapture = { sharedCapturePayloadFlow.value = null }
                         )
                     }
@@ -204,6 +222,10 @@ class MainActivity : FragmentActivity() {
     override fun onStart() {
         super.onStart()
         activeMainViewModel?.onAppForegrounded(SystemClock.elapsedRealtime())
+        pomodoroTimerManager.reconcileWithClock()?.let { completedMode ->
+            PomodoroCompletionWorker.cancelScheduledWork(this)
+            PomodoroCompletionWorker.postCompletionNotification(this, completedMode)
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
