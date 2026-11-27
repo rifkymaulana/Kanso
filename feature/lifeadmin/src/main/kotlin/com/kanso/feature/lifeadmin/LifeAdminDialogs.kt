@@ -17,6 +17,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -27,6 +28,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -34,10 +36,12 @@ import com.kanso.core.model.AppCurrency
 import com.kanso.core.model.CurrencyFormatter
 import com.kanso.core.model.ExpiryCategory
 import com.kanso.core.model.ExpiryItem
+import com.kanso.core.model.LifeAdminCalculations
 import com.kanso.core.model.MaintenanceCategory
 import com.kanso.core.model.MaintenanceLog
 import com.kanso.core.model.VaultCategory
 import com.kanso.core.model.VaultItem
+import com.kanso.core.model.WalletType
 import com.kanso.core.ui.components.CurrencyAmountVisualTransformation
 import com.kanso.core.ui.components.KansoButtonSize
 import com.kanso.core.ui.components.KansoDateFormatters
@@ -185,6 +189,7 @@ fun ExpiryEditorDialog(
 fun MaintenanceEditorDialog(
     currency: AppCurrency,
     initial: MaintenanceLog?,
+    template: MaintenanceLog? = null,
     onDismiss: () -> Unit,
     onSave: (
         assetName: String,
@@ -195,24 +200,29 @@ fun MaintenanceEditorDialog(
         costCents: Long?,
         nextDueEpochDay: Long?,
         nextDueOdometerKm: Int?,
-        note: String
+        note: String,
+        recordAsExpense: Boolean,
+        expenseWallet: WalletType
     ) -> Unit,
     onDelete: (() -> Unit)? = null
 ) {
-    var assetName by remember { mutableStateOf(initial?.assetName.orEmpty()) }
-    var category by remember { mutableStateOf(initial?.category ?: MaintenanceCategory.CAR) }
-    var serviceDescription by remember { mutableStateOf(initial?.serviceDescription.orEmpty()) }
-    var serviceEpochDay by remember {
-        mutableLongStateOf(initial?.serviceEpochDay ?: LocalDate.now().toEpochDay())
+    val seed = initial ?: template
+    var assetName by remember(initial, template) { mutableStateOf(seed?.assetName.orEmpty()) }
+    var category by remember(initial, template) { mutableStateOf(seed?.category ?: MaintenanceCategory.CAR) }
+    var serviceDescription by remember(initial, template) { mutableStateOf(seed?.serviceDescription.orEmpty()) }
+    var serviceEpochDay by remember(initial, template) {
+        mutableLongStateOf(seed?.serviceEpochDay ?: LocalDate.now().toEpochDay())
     }
-    var odometerText by remember { mutableStateOf(initial?.odometerKm?.toString().orEmpty()) }
-    var costText by remember {
-        val existingCost = initial?.costCents
+    var odometerText by remember(initial, template) { mutableStateOf(seed?.odometerKm?.toString().orEmpty()) }
+    var costText by remember(initial, template) {
+        val existingCost = seed?.costCents
         mutableStateOf(if (existingCost != null) CurrencyFormatter.formatCompactInput(existingCost, currency) else "")
     }
-    var nextDueEpochDay by remember { mutableStateOf(initial?.nextDueEpochDay) }
-    var nextDueOdoText by remember { mutableStateOf(initial?.nextDueOdometerKm?.toString().orEmpty()) }
-    var note by remember { mutableStateOf(initial?.note.orEmpty()) }
+    var nextDueEpochDay by remember(initial, template) { mutableStateOf(seed?.nextDueEpochDay) }
+    var nextDueOdoText by remember(initial, template) { mutableStateOf(seed?.nextDueOdometerKm?.toString().orEmpty()) }
+    var note by remember(initial, template) { mutableStateOf(seed?.note.orEmpty()) }
+    var recordAsExpense by remember(initial, template) { mutableStateOf(initial == null) }
+    var expenseWallet by remember(initial, template) { mutableStateOf(WalletType.EWALLET) }
 
     var showServiceDatePicker by remember { mutableStateOf(false) }
     var showNextDueDatePicker by remember { mutableStateOf(false) }
@@ -249,7 +259,9 @@ fun MaintenanceEditorDialog(
                         costCents,
                         nextDueEpochDay,
                         nextDueOdoText.toIntOrNull(),
-                        note
+                        note,
+                        initial == null && recordAsExpense && (costCents ?: 0L) > 0L,
+                        expenseWallet
                     )
                 }
             }
@@ -336,6 +348,61 @@ fun MaintenanceEditorDialog(
                     keyboardType = if (currency.decimalDigits == 0) KeyboardType.Number else KeyboardType.Decimal
                 )
             )
+        }
+        val parsedCostCents = if (costText.isBlank()) {
+            null
+        } else {
+            CurrencyFormatter.parseInputToCents(costText, currency)
+        }
+        if (initial == null && parsedCostCents != null && parsedCostCents > 0L) {
+            val mappedCategory = LifeAdminCalculations.mapMaintenanceExpenseCategory(category)
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Text(
+                                text = "Also record Expense in Money",
+                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Medium)
+                            )
+                            Text(
+                                text = "Category: ${mappedCategory.label}",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = recordAsExpense,
+                            onCheckedChange = { recordAsExpense = it }
+                        )
+                    }
+                    if (recordAsExpense) {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            WalletType.entries.forEach { wallet ->
+                                FilterChip(
+                                    selected = expenseWallet == wallet,
+                                    onClick = { expenseWallet = wallet },
+                                    label = { Text(wallet.label) }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         }
         Surface(
             shape = RoundedCornerShape(14.dp),

@@ -81,6 +81,8 @@ import com.kanso.core.model.ExpenseCategory
 import com.kanso.core.model.ExpiryCategory
 import com.kanso.core.model.MoneyCalculations
 import com.kanso.core.model.NoteChecklistParser
+import com.kanso.core.model.ParsedShareDraft
+import com.kanso.core.model.SharedCaptureTarget
 import com.kanso.core.model.SnippetCategory
 import com.kanso.core.model.TaskPriority
 import com.kanso.core.model.TaskRecurrence
@@ -125,6 +127,7 @@ private fun QuickCaptureMode.icon(): ImageVector = when (this) {
 fun QuickCaptureSheet(
     currency: AppCurrency,
     initialMode: QuickCaptureMode = QuickCaptureMode.EXPENSE,
+    sharedDraft: ParsedShareDraft? = null,
     onDismiss: () -> Unit,
     onSaveTransaction: (
         type: TransactionType,
@@ -160,37 +163,68 @@ fun QuickCaptureSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val haptic = LocalHapticFeedback.current
-    var mode by remember(initialMode) { mutableStateOf(initialMode) }
+    val resolvedInitialMode = remember(initialMode, sharedDraft) {
+        when (sharedDraft?.target) {
+            SharedCaptureTarget.EXPENSE -> QuickCaptureMode.EXPENSE
+            SharedCaptureTarget.INCOME -> QuickCaptureMode.INCOME
+            SharedCaptureTarget.NOTE -> QuickCaptureMode.NOTE
+            SharedCaptureTarget.TASK -> QuickCaptureMode.TASK
+            SharedCaptureTarget.SNIPPET -> QuickCaptureMode.SNIPPET
+            null -> initialMode
+        }
+    }
+    var mode by remember(resolvedInitialMode, sharedDraft) { mutableStateOf(resolvedInitialMode) }
 
     // Transaction state
-    var amountText by remember { mutableStateOf("") }
-    var selectedCategory by remember(initialMode) {
+    var amountText by remember(sharedDraft, currency) {
+        val initialCents = sharedDraft?.amountCents
         mutableStateOf(
-            if (initialMode == QuickCaptureMode.INCOME) ExpenseCategory.SALARY else ExpenseCategory.FOOD
+            if (initialCents != null && initialCents > 0L) {
+                CurrencyFormatter.formatCompactInput(initialCents, currency)
+            } else {
+                ""
+            }
         )
     }
-    var selectedWallet by remember { mutableStateOf(WalletType.EWALLET) }
+    var selectedCategory by remember(resolvedInitialMode, sharedDraft) {
+        mutableStateOf(
+            sharedDraft?.suggestedCategory?.takeIf { cat ->
+                when (resolvedInitialMode) {
+                    QuickCaptureMode.INCOME -> cat.isIncomeDefault || cat == ExpenseCategory.OTHER
+                    QuickCaptureMode.EXPENSE -> !cat.isIncomeDefault
+                    else -> true
+                }
+            } ?: if (resolvedInitialMode == QuickCaptureMode.INCOME) {
+                ExpenseCategory.SALARY
+            } else {
+                ExpenseCategory.FOOD
+            }
+        )
+    }
+    var selectedWallet by remember(sharedDraft) {
+        mutableStateOf(sharedDraft?.suggestedWallet ?: WalletType.EWALLET)
+    }
     var transferFromWallet by remember { mutableStateOf(WalletType.BANK) }
     var transferToWallet by remember { mutableStateOf(WalletType.EWALLET) }
     var transferFeeText by remember { mutableStateOf("") }
     var txEpochDay by remember { mutableLongStateOf(LocalDate.now().toEpochDay()) }
-    var txNote by remember { mutableStateOf("") }
+    var txNote by remember(sharedDraft) { mutableStateOf(sharedDraft?.transactionNote.orEmpty()) }
 
     // Note state
-    var noteTitle by remember { mutableStateOf("") }
-    var noteContent by remember { mutableStateOf(TextFieldValue("")) }
+    var noteTitle by remember(sharedDraft) { mutableStateOf(sharedDraft?.noteTitle.orEmpty()) }
+    var noteContent by remember(sharedDraft) { mutableStateOf(TextFieldValue(sharedDraft?.noteContent.orEmpty())) }
     var noteTagsText by remember { mutableStateOf("") }
     var notePinned by remember { mutableStateOf(false) }
 
     // Task state
-    var taskTitle by remember { mutableStateOf("") }
+    var taskTitle by remember(sharedDraft) { mutableStateOf(sharedDraft?.taskTitle.orEmpty()) }
     var taskPriority by remember { mutableStateOf(TaskPriority.MEDIUM) }
     var taskDueOption by remember { mutableStateOf(0) } // 0=Today, 1=Tomorrow, 2=Next Week, 3=None
     var taskRecurrence by remember { mutableStateOf(TaskRecurrence.NONE) }
 
     // Snippet state
-    var snippetLabel by remember { mutableStateOf("") }
-    var snippetValue by remember { mutableStateOf("") }
+    var snippetLabel by remember(sharedDraft) { mutableStateOf(sharedDraft?.snippetLabel.orEmpty()) }
+    var snippetValue by remember(sharedDraft) { mutableStateOf(sharedDraft?.snippetValue.orEmpty()) }
     var snippetCategory by remember { mutableStateOf(SnippetCategory.OTHER) }
     var snippetSensitive by remember { mutableStateOf(false) }
     var snippetPinned by remember { mutableStateOf(true) }
@@ -298,6 +332,28 @@ fun QuickCaptureSheet(
                             )
                         }
                     }
+                }
+            }
+
+            if (sharedDraft != null) {
+                val detected = sharedDraft.detectedCurrency
+                val hintText = if (sharedDraft.wasConvertedCurrency && detected != null) {
+                    "Auto-converted from ${detected.code} offline · Editable"
+                } else {
+                    "Pre-filled from shared text · Tap any tab to switch"
+                }
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+                ) {
+                    Text(
+                        text = hintText,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
 

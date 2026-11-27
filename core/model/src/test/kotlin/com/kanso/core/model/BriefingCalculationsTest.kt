@@ -38,15 +38,17 @@ class BriefingCalculationsTest {
             expiringCount = 1,
             dueMaintenanceCount = 1,
             dueIousCount = 0,
-            morningHabitsCount = 3
+            morningHabitsCount = 3,
+            upcomingCountdownsCount = 2
         )
         assertNotNull(morning)
         assertEquals("Kanso Morning Briefing", morning!!.title)
         assertTrue(morning.body.contains("1 bill due"))
         assertTrue(morning.body.contains("2 tasks due"))
         assertTrue(morning.body.contains("1 service due"))
-        assertEquals(8, morning.totalAttentionCount)
-        assertEquals("8 items need your attention today", morning.publicRedactedBody)
+        assertTrue(morning.body.contains("2 countdowns soon"))
+        assertEquals(10, morning.totalAttentionCount)
+        assertEquals("10 items need your attention today", morning.publicRedactedBody)
 
         assertNull(BriefingCalculations.buildEveningCheckIn(0, 0, 0))
         val evening = BriefingCalculations.buildEveningCheckIn(

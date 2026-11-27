@@ -132,6 +132,16 @@ object CountdownCalculations {
         return targetEpochDay - todayEpochDay
     }
 
+    fun upcomingCountdowns(
+        items: List<CountdownItem>,
+        todayEpochDay: Long,
+        withinDays: Int = 7
+    ): List<CountdownItem> {
+        return items
+            .filter { daysRemaining(it.targetEpochDay, todayEpochDay) in 0L..withinDays.toLong() }
+            .sortedWith(compareBy<CountdownItem> { it.targetEpochDay }.thenBy { it.id })
+    }
+
     fun formatDelta(daysRemaining: Long): String {
         return when {
             daysRemaining == 0L -> "Today"

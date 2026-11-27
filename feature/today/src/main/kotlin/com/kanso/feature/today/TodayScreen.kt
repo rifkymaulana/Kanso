@@ -63,6 +63,7 @@ import com.kanso.core.model.BudgetAnchorSource
 import com.kanso.core.model.CoachActionTarget
 import com.kanso.core.model.CoachInsight
 import com.kanso.core.model.CoachInsightTone
+import com.kanso.core.model.CountdownCalculations
 import com.kanso.core.model.CurrencyFormatter
 import com.kanso.core.model.ExpenseCategory
 import com.kanso.core.model.HabitItem
@@ -117,6 +118,7 @@ fun TodayRoute(
     onOpenHabits: () -> Unit = {},
     onOpenExpiries: () -> Unit = {},
     onOpenMaintenance: () -> Unit = {},
+    onOpenCountdowns: () -> Unit = {},
     onShowMessage: (String) -> Unit,
     onShowUndoMessage: (String, () -> Unit) -> Unit = { msg, _ -> onShowMessage(msg) },
     onBalancesVisibilityChanged: () -> Unit = {},
@@ -135,6 +137,7 @@ fun TodayRoute(
         onOpenHabits = onOpenHabits,
         onOpenExpiries = onOpenExpiries,
         onOpenMaintenance = onOpenMaintenance,
+        onOpenCountdowns = onOpenCountdowns,
         onToggleHideBalances = {
             viewModel.toggleHideBalances()
             onBalancesVisibilityChanged()
@@ -187,6 +190,7 @@ fun TodayScreenContent(
     onOpenHabits: () -> Unit = {},
     onOpenExpiries: () -> Unit = {},
     onOpenMaintenance: () -> Unit = {},
+    onOpenCountdowns: () -> Unit = {},
     onToggleHideBalances: () -> Unit = {},
     onToggleTask: (TaskItem) -> Unit,
     onToggleNoteChecklistLine: (NoteItem, Int) -> Unit = { _, _ -> },
@@ -294,7 +298,8 @@ fun TodayScreenContent(
                         onOpenMoney = onOpenMoney,
                         onOpenTasks = { onOpenBrainTab(1) },
                         onOpenExpiries = onOpenExpiries,
-                        onOpenMaintenance = onOpenMaintenance
+                        onOpenMaintenance = onOpenMaintenance,
+                        onOpenCountdowns = onOpenCountdowns
                     )
                 }
             }
@@ -900,13 +905,15 @@ private fun AttentionBentoCard(
     onOpenMoney: () -> Unit,
     onOpenTasks: () -> Unit,
     onOpenExpiries: () -> Unit,
-    onOpenMaintenance: () -> Unit
+    onOpenMaintenance: () -> Unit,
+    onOpenCountdowns: () -> Unit
 ) {
     val warning = warningSemanticColor()
     val count = uiState.dueBills.size +
         uiState.dueOrOverdueTasksCount +
         uiState.totalExpiringCount +
         uiState.totalDueMaintenanceCount +
+        uiState.totalUpcomingCountdownsCount +
         uiState.dueSoonIousCount
 
     KansoBentoCard(
@@ -992,7 +999,7 @@ private fun AttentionBentoCard(
             }
 
             if (uiState.expiringItems.isNotEmpty()) {
-                val todayEpoch = LocalDate.now().toEpochDay()
+                val todayEpoch = uiState.todayEpochDay
                 uiState.expiringItems.forEach { expiry ->
                     val delta = LifeAdminCalculations.daysUntilExpiry(expiry.expiryEpochDay, todayEpoch)
                     val label = when {
@@ -1047,7 +1054,7 @@ private fun AttentionBentoCard(
             }
 
             if (uiState.dueMaintenanceLogs.isNotEmpty()) {
-                val todayEpoch = LocalDate.now().toEpochDay()
+                val todayEpoch = uiState.todayEpochDay
                 uiState.dueMaintenanceLogs.forEach { log ->
                     val dueDay = log.nextDueEpochDay ?: todayEpoch
                     val delta = LifeAdminCalculations.daysUntilExpiry(dueDay, todayEpoch)
@@ -1099,6 +1106,59 @@ private fun AttentionBentoCard(
                             text = "See all →",
                             style = MaterialTheme.typography.labelMedium,
                             color = warning
+                        )
+                    }
+                }
+            }
+
+            if (uiState.upcomingCountdowns.isNotEmpty()) {
+                val todayEpoch = uiState.todayEpochDay
+                uiState.upcomingCountdowns.forEach { countdown ->
+                    val delta = CountdownCalculations.daysRemaining(countdown.targetEpochDay, todayEpoch)
+                    val deltaLabel = CountdownCalculations.formatDelta(delta)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable(onClick = onOpenCountdowns)
+                            .padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "${countdown.title} · $deltaLabel",
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = "Dates →",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.kansoColors.utilitiesAccent
+                        )
+                    }
+                }
+                if (uiState.totalUpcomingCountdownsCount > uiState.upcomingCountdowns.size) {
+                    val remainingDates = uiState.totalUpcomingCountdownsCount - uiState.upcomingCountdowns.size
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable(onClick = onOpenCountdowns)
+                            .padding(vertical = 2.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "+$remainingDates more upcoming dates",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "See all →",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.kansoColors.utilitiesAccent
                         )
                     }
                 }

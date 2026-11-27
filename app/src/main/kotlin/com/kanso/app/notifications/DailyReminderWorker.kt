@@ -26,10 +26,12 @@ import com.kanso.core.database.dao.BrainDao
 import com.kanso.core.database.dao.HabitsDao
 import com.kanso.core.database.dao.LifeAdminDao
 import com.kanso.core.database.dao.MoneyDao
+import com.kanso.core.database.dao.UtilitiesDao
 import com.kanso.core.database.entity.toDomain
 import com.kanso.core.database.preferences.PreferencesRepository
 import com.kanso.core.model.BriefingCalculations
 import com.kanso.core.model.BriefingSlot
+import com.kanso.core.model.CountdownCalculations
 import com.kanso.core.model.LifeAdminCalculations
 import com.kanso.core.model.MoneyCalculations
 import com.kanso.core.model.UserPreferences
@@ -48,6 +50,7 @@ interface DailyReminderEntryPoint {
     fun brainDao(): BrainDao
     fun habitsDao(): HabitsDao
     fun lifeAdminDao(): LifeAdminDao
+    fun utilitiesDao(): UtilitiesDao
     fun preferencesRepository(): PreferencesRepository
 }
 
@@ -120,6 +123,12 @@ class DailyReminderWorker(
                         withinDays = 14
                     ).size
 
+                    val upcomingCountdowns = CountdownCalculations.upcomingCountdowns(
+                        items = entryPoint.utilitiesDao().getAllCountdowns().map { it.toDomain() },
+                        todayEpochDay = todayEpoch,
+                        withinDays = 7
+                    ).size
+
                     val morningHabits = activeHabits.count { habit ->
                         !completedIds.contains(habit.id) &&
                             habit.reminderHour != null &&
@@ -132,7 +141,8 @@ class DailyReminderWorker(
                         expiringCount = attentionExpiries,
                         dueMaintenanceCount = dueMaintenance,
                         dueIousCount = dueIous,
-                        morningHabitsCount = morningHabits
+                        morningHabitsCount = morningHabits,
+                        upcomingCountdownsCount = upcomingCountdowns
                     )
                 }
 

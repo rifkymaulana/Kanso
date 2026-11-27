@@ -4,14 +4,19 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.kanso.core.database.preferences.PreferencesRepository
 import com.kanso.core.database.repository.LifeAdminRepository
+import com.kanso.core.database.repository.MoneyRepository
 import com.kanso.core.model.AppCurrency
 import com.kanso.core.model.ExpiryCategory
 import com.kanso.core.model.ExpiryItem
 import com.kanso.core.model.LifeAdminCalculations
 import com.kanso.core.model.MaintenanceCategory
 import com.kanso.core.model.MaintenanceLog
+import com.kanso.core.model.MoneyCalculations
+import com.kanso.core.model.MoneyTransaction
+import com.kanso.core.model.TransactionType
 import com.kanso.core.model.VaultCategory
 import com.kanso.core.model.VaultItem
+import com.kanso.core.model.WalletType
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -35,8 +40,14 @@ data class LifeAdminUiState(
 @HiltViewModel
 class LifeAdminViewModel @Inject constructor(
     private val lifeAdminRepository: LifeAdminRepository,
+    private val moneyRepository: MoneyRepository,
     preferencesRepository: PreferencesRepository
 ) : ViewModel() {
+
+    data class MaintenanceSaveResult(
+        val logId: Long,
+        val expenseTransactionId: Long?
+    )
 
     private val isVaultUnlockedFlow = MutableStateFlow(false)
 
@@ -117,6 +128,26 @@ class LifeAdminViewModel @Inject constructor(
         }
     }
 
+    fun renewExpiryOneYear(
+        item: ExpiryItem,
+        onRenewed: (previous: ExpiryItem, newExpiryEpochDay: Long) -> Unit = { _, _ -> }
+    ) {
+        viewModelScope.launch {
+            val todayEpoch = LocalDate.now().toEpochDay()
+            val newExpiryEpochDay = LifeAdminCalculations.renewedExpiryEpochDay(
+                currentExpiryEpochDay = item.expiryEpochDay,
+                todayEpochDay = todayEpoch
+            )
+            lifeAdminRepository.upsertExpiry(
+                item.copy(
+                    expiryEpochDay = newExpiryEpochDay,
+                    updatedAtMillis = System.currentTimeMillis()
+                )
+            )
+            onRenewed(item, newExpiryEpochDay)
+        }
+    }
+
     fun saveMaintenanceLog(
         existing: MaintenanceLog?,
         assetName: String,
@@ -127,15 +158,20 @@ class LifeAdminViewModel @Inject constructor(
         costCents: Long?,
         nextDueEpochDay: Long?,
         nextDueOdometerKm: Int?,
-        note: String
+        note: String,
+        recordAsExpense: Boolean = false,
+        expenseWallet: WalletType = WalletType.EWALLET,
+        onSaved: (MaintenanceSaveResult) -> Unit = {}
     ) {
         viewModelScope.launch {
-            lifeAdminRepository.upsertMaintenanceLog(
+            val trimmedAsset = assetName.trim()
+            val trimmedDesc = serviceDescription.trim()
+            val logId = lifeAdminRepository.upsertMaintenanceLog(
                 MaintenanceLog(
                     id = existing?.id ?: 0L,
-                    assetName = assetName.trim(),
+                    assetName = trimmedAsset,
                     category = category,
-                    serviceDescription = serviceDescription.trim(),
+                    serviceDescription = trimmedDesc,
                     serviceEpochDay = serviceEpochDay,
                     odometerKm = odometerKm,
                     costCents = costCents,
@@ -144,6 +180,35 @@ class LifeAdminViewModel @Inject constructor(
                     note = note.trim()
                 )
             )
+            val txId = if (existing == null && recordAsExpense && costCents != null && costCents > 0L) {
+                val txTimestamp = MoneyCalculations.resolveTransactionTimestampMillis(
+                    selectedEpochDay = serviceEpochDay,
+                    existingTimestampMillis = null,
+                    nowMillis = System.currentTimeMillis()
+                )
+                moneyRepository.upsertTransaction(
+                    MoneyTransaction(
+                        type = TransactionType.EXPENSE,
+                        amountCents = costCents,
+                        category = LifeAdminCalculations.mapMaintenanceExpenseCategory(category),
+                        wallet = expenseWallet,
+                        note = "Service: $trimmedAsset — $trimmedDesc",
+                        timestampMillis = txTimestamp
+                    )
+                )
+            } else {
+                null
+            }
+            onSaved(MaintenanceSaveResult(logId = logId, expenseTransactionId = txId))
+        }
+    }
+
+    fun undoNewMaintenanceWithExpense(result: MaintenanceSaveResult) {
+        viewModelScope.launch {
+            lifeAdminRepository.deleteMaintenanceLog(result.logId)
+            if (result.expenseTransactionId != null) {
+                moneyRepository.deleteTransaction(result.expenseTransactionId)
+            }
         }
     }
 

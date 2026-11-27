@@ -1,6 +1,7 @@
 package com.kanso.core.model
 
 import kotlinx.serialization.Serializable
+import java.time.LocalDate
 
 @Serializable
 enum class ExpiryCategory(val label: String) {
@@ -122,5 +123,59 @@ object LifeAdminCalculations {
             }
             .filter { isMaintenanceDueSoon(it, todayEpochDay, withinDays) }
             .sortedBy { it.nextDueEpochDay ?: Long.MAX_VALUE }
+    }
+
+    fun renewedExpiryEpochDay(
+        currentExpiryEpochDay: Long,
+        todayEpochDay: Long,
+        years: Long = 1L
+    ): Long {
+        val stepYears = years.coerceAtLeast(1L)
+        var candidate = LocalDate.ofEpochDay(currentExpiryEpochDay).plusYears(stepYears)
+        while (candidate.toEpochDay() <= todayEpochDay) {
+            candidate = candidate.plusYears(stepYears)
+        }
+        return candidate.toEpochDay()
+    }
+
+    fun mapMaintenanceExpenseCategory(category: MaintenanceCategory): ExpenseCategory {
+        return when (category) {
+            MaintenanceCategory.CAR, MaintenanceCategory.MOTORCYCLE -> ExpenseCategory.TRANSPORT
+            MaintenanceCategory.HOME, MaintenanceCategory.APPLIANCE -> ExpenseCategory.HOUSING
+            MaintenanceCategory.OTHER -> ExpenseCategory.BILLS
+        }
+    }
+
+    fun buildRepeatMaintenanceTemplate(
+        previous: MaintenanceLog,
+        todayEpochDay: Long
+    ): MaintenanceLog {
+        val previousIntervalDays = previous.nextDueEpochDay
+            ?.let { it - previous.serviceEpochDay }
+            ?.takeIf { it > 0L }
+        val projectedNextDueEpochDay = previousIntervalDays?.let { todayEpochDay + it }
+
+        val prevOdo = previous.odometerKm
+        val prevNextOdo = previous.nextDueOdometerKm
+        val startingOdometerKm = prevNextOdo ?: prevOdo
+        val projectedNextOdometerKm = if (prevOdo != null && prevNextOdo != null && prevNextOdo > prevOdo) {
+            val intervalKm = prevNextOdo - prevOdo
+            prevNextOdo + intervalKm
+        } else {
+            null
+        }
+
+        return MaintenanceLog(
+            id = 0L,
+            assetName = previous.assetName,
+            category = previous.category,
+            serviceDescription = previous.serviceDescription,
+            serviceEpochDay = todayEpochDay,
+            odometerKm = startingOdometerKm,
+            costCents = previous.costCents,
+            nextDueEpochDay = projectedNextDueEpochDay,
+            nextDueOdometerKm = projectedNextOdometerKm,
+            note = previous.note
+        )
     }
 }

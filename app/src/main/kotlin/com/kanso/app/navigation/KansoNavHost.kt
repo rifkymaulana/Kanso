@@ -84,6 +84,8 @@ import com.kanso.app.update.AppUpdateState
 import com.kanso.app.update.KansoUpdateBanner
 import com.kanso.app.update.launchApkInstall
 import com.kanso.app.widget.KansoWidgetUpdater
+import com.kanso.core.model.ParsedShareDraft
+import com.kanso.core.model.SharedTextParser
 import com.kanso.core.ui.components.KansoMotion
 import com.kanso.core.ui.components.QuickCaptureMode
 import com.kanso.core.ui.components.QuickCaptureSheet
@@ -157,6 +159,7 @@ fun KansoAppRoot(
     var showQuickCapture by remember { mutableStateOf(false) }
     var showManualOnboarding by rememberSaveable { mutableStateOf(false) }
     var quickCaptureInitialMode by remember { mutableStateOf(QuickCaptureMode.EXPENSE) }
+    var activeSharedDraft by remember { mutableStateOf<ParsedShareDraft?>(null) }
     var autoLaunchInstallOnReady by remember { mutableStateOf(false) }
 
     val showMessage: (String) -> Unit = remember(scope, snackbarHostState) {
@@ -244,6 +247,7 @@ fun KansoAppRoot(
     }
 
     val openDefaultQuickCapture: () -> Unit = {
+        activeSharedDraft = null
         quickCaptureInitialMode = when (currentRoute) {
             Routes.BRAIN_PATTERN -> QuickCaptureMode.NOTE
             else -> QuickCaptureMode.EXPENSE
@@ -255,7 +259,17 @@ fun KansoAppRoot(
         val cmd = pendingLaunchCommand ?: return@LaunchedEffect
         when (cmd) {
             is LaunchCommand.OpenQuickCapture -> {
+                activeSharedDraft = null
                 quickCaptureInitialMode = cmd.mode
+                showQuickCapture = true
+            }
+            is LaunchCommand.OpenSharedCapture -> {
+                activeSharedDraft = SharedTextParser.parse(
+                    rawText = cmd.text,
+                    rawSubject = cmd.subject,
+                    userCurrency = prefs.currency,
+                    customRatesVsUsd = prefs.customRatesVsUsd
+                )
                 showQuickCapture = true
             }
             is LaunchCommand.OpenBrainTab -> openBrainTab(cmd.tab)
@@ -368,6 +382,7 @@ fun KansoAppRoot(
                         onOpenHabits = { navController.navigate(Routes.HABITS) },
                         onOpenExpiries = { navController.navigate(Routes.lifeAdmin(0)) },
                         onOpenMaintenance = { navController.navigate(Routes.lifeAdmin(1)) },
+                        onOpenCountdowns = { navController.navigate(Routes.utilities(3)) },
                         onShowMessage = showMessage,
                         onShowUndoMessage = showUndoMessage,
                         onBalancesVisibilityChanged = refreshWidgets
@@ -433,7 +448,8 @@ fun KansoAppRoot(
                         initialTab = initialTab,
                         onBack = { navController.popBackStack() },
                         onShowMessage = showMessage,
-                        onShowUndoMessage = showUndoMessage
+                        onShowUndoMessage = showUndoMessage,
+                        onDataChanged = refreshWidgets
                     )
                 }
 
@@ -461,6 +477,7 @@ fun KansoAppRoot(
                         onOpenMoney = { navigateTopTab(Routes.MONEY) },
                         onOpenBrainTab = openBrainTab,
                         onOpenLifeAdminTab = { tab -> navController.navigate(Routes.lifeAdmin(tab)) },
+                        onOpenUtilitiesTab = { tab -> navController.navigate(Routes.utilities(tab)) },
                         onShowMessage = showMessage
                     )
                 }
@@ -533,7 +550,11 @@ fun KansoAppRoot(
         QuickCaptureSheet(
             currency = prefs.currency,
             initialMode = quickCaptureInitialMode,
-            onDismiss = { showQuickCapture = false },
+            sharedDraft = activeSharedDraft,
+            onDismiss = {
+                showQuickCapture = false
+                activeSharedDraft = null
+            },
             onSaveTransaction = { type, amountCents, category, wallet, note, timestampMillis ->
                 mainViewModel.saveQuickTransaction(type, amountCents, category, wallet, note, timestampMillis)
                 showMessage("Saved ${if (type.name == "INCOME") "income" else "expense"}")

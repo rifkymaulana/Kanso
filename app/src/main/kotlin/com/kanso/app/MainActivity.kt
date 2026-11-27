@@ -220,9 +220,25 @@ class MainActivity : FragmentActivity() {
     }
 
     private fun handleIntent(intent: Intent?) {
-        val parsed = LaunchCommandParser.parseUri(intent?.dataString)
+        if (intent == null) return
+        if (intent.action == Intent.ACTION_SEND && intent.type?.startsWith("text/") == true) {
+            val sharedText = intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString().orEmpty()
+            val sharedSubject = intent.getStringExtra(Intent.EXTRA_SUBJECT).orEmpty()
+            intent.action = Intent.ACTION_MAIN
+            intent.removeExtra(Intent.EXTRA_TEXT)
+            intent.removeExtra(Intent.EXTRA_SUBJECT)
+            if (sharedText.isNotBlank() || sharedSubject.isNotBlank()) {
+                pendingCommandFlow.value = LaunchCommand.OpenSharedCapture(
+                    text = sharedText,
+                    subject = sharedSubject
+                )
+            }
+            return
+        }
+        val parsed = LaunchCommandParser.parseUri(intent.dataString)
         if (parsed != null) {
             pendingCommandFlow.value = parsed
+            intent.data = null
         }
     }
 }

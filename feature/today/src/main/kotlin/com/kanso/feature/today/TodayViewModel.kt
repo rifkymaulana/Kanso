@@ -8,9 +8,12 @@ import com.kanso.core.database.repository.HabitsRepository
 import com.kanso.core.database.repository.LifeAdminRepository
 import com.kanso.core.database.repository.MoneyRepository
 import com.kanso.core.database.repository.TaskToggleOutcome
+import com.kanso.core.database.repository.UtilitiesRepository
 import com.kanso.core.model.AppCurrency
 import com.kanso.core.model.CategoryBudget
 import com.kanso.core.model.CoachInsight
+import com.kanso.core.model.CountdownCalculations
+import com.kanso.core.model.CountdownItem
 import com.kanso.core.model.ExpiryItem
 import com.kanso.core.model.HabitItem
 import com.kanso.core.model.IouDirection
@@ -54,6 +57,7 @@ import javax.inject.Inject
 data class TodayUiState(
     val greeting: String = "Good day",
     val formattedDate: String = "",
+    val todayEpochDay: Long = LocalDate.now().toEpochDay(),
     val currency: AppCurrency = AppCurrency.IDR,
     val monthExpenseCents: Long = 0L,
     val monthIncomeCents: Long = 0L,
@@ -64,6 +68,8 @@ data class TodayUiState(
     val totalExpiringCount: Int = 0,
     val dueMaintenanceLogs: List<MaintenanceLog> = emptyList(),
     val totalDueMaintenanceCount: Int = 0,
+    val upcomingCountdowns: List<CountdownItem> = emptyList(),
+    val totalUpcomingCountdownsCount: Int = 0,
     val dueOrOverdueTasksCount: Int = 0,
     val openIouCount: Int = 0,
     val dueSoonIousCount: Int = 0,
@@ -84,6 +90,7 @@ data class TodayUiState(
         get() = dueBills.isNotEmpty() ||
             totalExpiringCount > 0 ||
             totalDueMaintenanceCount > 0 ||
+            totalUpcomingCountdownsCount > 0 ||
             dueOrOverdueTasksCount > 0 ||
             dueSoonIousCount > 0
 }
@@ -95,7 +102,8 @@ class TodayViewModel @Inject constructor(
     private val moneyRepository: MoneyRepository,
     private val brainRepository: BrainRepository,
     private val habitsRepository: HabitsRepository,
-    lifeAdminRepository: LifeAdminRepository
+    lifeAdminRepository: LifeAdminRepository,
+    utilitiesRepository: UtilitiesRepository
 ) : ViewModel() {
 
     private val todayFlow: Flow<LocalDate> = flow {
@@ -135,9 +143,15 @@ class TodayViewModel @Inject constructor(
     private val brainFlow = combine(
         brainRepository.observeTasks(),
         brainRepository.observeNotes(),
-        brainRepository.observeSnippets()
-    ) { tasks, notes, snippets ->
-        Triple(tasks, notes, snippets)
+        brainRepository.observeSnippets(),
+        utilitiesRepository.observeCountdowns()
+    ) { tasks, notes, snippets, countdowns ->
+        BrainBundle(
+            tasks = tasks,
+            notes = notes,
+            snippets = snippets,
+            countdowns = countdowns
+        )
     }
 
     private val lifeHabitsFlow = todayFlow.flatMapLatest { today ->
@@ -168,11 +182,13 @@ class TodayViewModel @Inject constructor(
         moneyFlow,
         brainFlow,
         lifeHabitsFlow
-    ) { prefs, moneyBundle, brainTriple, lifeHabits ->
+    ) { prefs, moneyBundle, brainBundle, lifeHabits ->
         val transactions = moneyBundle.transactions
         val bills = moneyBundle.bills
         val ious = moneyBundle.ious
-        val (tasks, notes, snippets) = brainTriple
+        val tasks = brainBundle.tasks
+        val notes = brainBundle.notes
+        val snippets = brainBundle.snippets
 
         val zone = ZoneId.systemDefault()
         val today = lifeHabits.today
@@ -197,6 +213,11 @@ class TodayViewModel @Inject constructor(
             logs = lifeHabits.maintenanceLogs,
             todayEpochDay = todayEpochDay,
             withinDays = 14
+        )
+        val allUpcomingCountdowns = CountdownCalculations.upcomingCountdowns(
+            items = brainBundle.countdowns,
+            todayEpochDay = todayEpochDay,
+            withinDays = 7
         )
 
         val openTasks = tasks.filter { !it.isCompleted }
@@ -268,6 +289,7 @@ class TodayViewModel @Inject constructor(
         TodayUiState(
             greeting = greeting,
             formattedDate = dateLabel,
+            todayEpochDay = todayEpochDay,
             currency = prefs.currency,
             monthExpenseCents = summary.expenseCents,
             monthIncomeCents = summary.incomeCents,
@@ -278,6 +300,8 @@ class TodayViewModel @Inject constructor(
             totalExpiringCount = allExpiring.size,
             dueMaintenanceLogs = allDueMaintenance.take(3),
             totalDueMaintenanceCount = allDueMaintenance.size,
+            upcomingCountdowns = allUpcomingCountdowns.take(3),
+            totalUpcomingCountdownsCount = allUpcomingCountdowns.size,
             dueOrOverdueTasksCount = dueOrOverdueCount,
             openIouCount = openIous.size,
             dueSoonIousCount = dueSoonIous.size,
@@ -370,6 +394,13 @@ class TodayViewModel @Inject constructor(
         val budgets: List<CategoryBudget>,
         val bills: List<RecurringBill>,
         val ious: List<IouEntry>
+    )
+
+    private data class BrainBundle(
+        val tasks: List<TaskItem>,
+        val notes: List<NoteItem>,
+        val snippets: List<SnippetItem>,
+        val countdowns: List<CountdownItem>
     )
 
     private data class LifeHabitsBundle(

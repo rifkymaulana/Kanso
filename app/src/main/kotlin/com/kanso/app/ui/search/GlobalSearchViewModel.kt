@@ -6,7 +6,9 @@ import com.kanso.core.database.preferences.PreferencesRepository
 import com.kanso.core.database.repository.BrainRepository
 import com.kanso.core.database.repository.LifeAdminRepository
 import com.kanso.core.database.repository.MoneyRepository
+import com.kanso.core.database.repository.UtilitiesRepository
 import com.kanso.core.model.AppCurrency
+import com.kanso.core.model.CountdownItem
 import com.kanso.core.model.ExpiryItem
 import com.kanso.core.model.IouEntry
 import com.kanso.core.model.MaintenanceLog
@@ -38,7 +40,8 @@ data class GlobalSearchUiState(
     val ious: List<IouEntry> = emptyList(),
     val savingsGoals: List<SavingsGoal> = emptyList(),
     val expiries: List<ExpiryItem> = emptyList(),
-    val maintenanceLogs: List<MaintenanceLog> = emptyList()
+    val maintenanceLogs: List<MaintenanceLog> = emptyList(),
+    val countdowns: List<CountdownItem> = emptyList()
 ) {
     val totalMatches: Int
         get() = snippets.size +
@@ -49,7 +52,8 @@ data class GlobalSearchUiState(
             ious.size +
             savingsGoals.size +
             expiries.size +
-            maintenanceLogs.size
+            maintenanceLogs.size +
+            countdowns.size
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -58,6 +62,7 @@ class GlobalSearchViewModel @Inject constructor(
     private val moneyRepository: MoneyRepository,
     private val brainRepository: BrainRepository,
     private val lifeAdminRepository: LifeAdminRepository,
+    private val utilitiesRepository: UtilitiesRepository,
     preferencesRepository: PreferencesRepository
 ) : ViewModel() {
 
@@ -72,9 +77,16 @@ class GlobalSearchViewModel @Inject constructor(
                 brainRepository.searchSnippets(q),
                 brainRepository.searchNotes(q),
                 brainRepository.searchTasks(q),
-                moneyRepository.searchTransactions(q)
-            ) { snippets, notes, tasks, txs ->
-                SearchBundle(snippets = snippets, notes = notes, tasks = tasks, transactions = txs)
+                moneyRepository.searchTransactions(q),
+                utilitiesRepository.searchCountdowns(q)
+            ) { snippets, notes, tasks, txs, countdowns ->
+                SearchBundle(
+                    snippets = snippets,
+                    notes = notes,
+                    tasks = tasks,
+                    transactions = txs,
+                    countdowns = countdowns
+                )
             }
             val m2Flow = combine(
                 moneyRepository.searchBills(q),
@@ -113,7 +125,8 @@ class GlobalSearchViewModel @Inject constructor(
             ious = results.ious,
             savingsGoals = results.savingsGoals,
             expiries = results.expiries,
-            maintenanceLogs = results.maintenanceLogs
+            maintenanceLogs = results.maintenanceLogs,
+            countdowns = results.countdowns
         )
     }.stateIn(
         scope = viewModelScope,
@@ -134,7 +147,8 @@ class GlobalSearchViewModel @Inject constructor(
         val ious: List<IouEntry> = emptyList(),
         val savingsGoals: List<SavingsGoal> = emptyList(),
         val expiries: List<ExpiryItem> = emptyList(),
-        val maintenanceLogs: List<MaintenanceLog> = emptyList()
+        val maintenanceLogs: List<MaintenanceLog> = emptyList(),
+        val countdowns: List<CountdownItem> = emptyList()
     )
 
     private data class ExtraSearchBundle(

@@ -13,6 +13,16 @@ interface UtilitiesDao {
     @Query("SELECT * FROM countdowns ORDER BY targetEpochDay ASC, id ASC")
     fun observeCountdowns(): Flow<List<CountdownEntity>>
 
+    @Query(
+        """
+        SELECT * FROM countdowns
+        WHERE title LIKE '%' || :query || '%'
+           OR note LIKE '%' || :query || '%'
+        ORDER BY targetEpochDay ASC, id ASC
+        """
+    )
+    fun searchCountdowns(query: String): Flow<List<CountdownEntity>>
+
     @Query("SELECT * FROM countdowns")
     suspend fun getAllCountdowns(): List<CountdownEntity>
 

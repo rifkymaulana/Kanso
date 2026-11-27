@@ -49,7 +49,8 @@ object BriefingCalculations {
         expiringCount: Int,
         dueMaintenanceCount: Int,
         dueIousCount: Int,
-        morningHabitsCount: Int
+        morningHabitsCount: Int,
+        upcomingCountdownsCount: Int = 0
     ): BriefingNotificationContent? {
         val parts = buildList {
             if (dueBillsCount > 0) add(if (dueBillsCount == 1) "1 bill due" else "$dueBillsCount bills due")
@@ -57,10 +58,11 @@ object BriefingCalculations {
             if (expiringCount > 0) add(if (expiringCount == 1) "1 expiry alert" else "$expiringCount expiry alerts")
             if (dueMaintenanceCount > 0) add(if (dueMaintenanceCount == 1) "1 service due" else "$dueMaintenanceCount services due")
             if (dueIousCount > 0) add(if (dueIousCount == 1) "1 IOU due" else "$dueIousCount IOUs due")
+            if (upcomingCountdownsCount > 0) add(if (upcomingCountdownsCount == 1) "1 countdown soon" else "$upcomingCountdownsCount countdowns soon")
             if (morningHabitsCount > 0) add(if (morningHabitsCount == 1) "1 morning habit" else "$morningHabitsCount morning habits")
         }
         if (parts.isEmpty()) return null
-        val total = dueBillsCount + dueTasksCount + expiringCount + dueMaintenanceCount + dueIousCount + morningHabitsCount
+        val total = dueBillsCount + dueTasksCount + expiringCount + dueMaintenanceCount + dueIousCount + upcomingCountdownsCount + morningHabitsCount
         return BriefingNotificationContent(
             title = "Kanso Morning Briefing",
             body = parts.joinToString(" • "),

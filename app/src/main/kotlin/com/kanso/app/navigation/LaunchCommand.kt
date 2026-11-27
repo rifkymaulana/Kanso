@@ -9,6 +9,7 @@ import java.net.URI
 
 sealed interface LaunchCommand {
     data class OpenQuickCapture(val mode: QuickCaptureMode) : LaunchCommand
+    data class OpenSharedCapture(val text: String, val subject: String = "") : LaunchCommand
     data class OpenBrainTab(val tab: Int) : LaunchCommand
     data class OpenUtilitiesTab(val tab: Int) : LaunchCommand
     data object OpenHabits : LaunchCommand

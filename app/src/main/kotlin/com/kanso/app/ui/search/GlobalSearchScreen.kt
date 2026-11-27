@@ -21,6 +21,7 @@ import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.EventAvailable
 import androidx.compose.material.icons.outlined.Handshake
 import androidx.compose.material.icons.outlined.Payments
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material.icons.outlined.TaskAlt
@@ -46,9 +47,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.kanso.core.model.CountdownCalculations
 import com.kanso.core.model.CurrencyFormatter
 import com.kanso.core.model.IouDirection
 import com.kanso.core.model.SnippetMasker
+import java.time.LocalDate
 import com.kanso.core.ui.components.KansoAccentIconBadge
 import com.kanso.core.ui.components.KansoBentoCard
 import com.kanso.core.ui.components.KansoClipboard
@@ -69,6 +72,7 @@ fun GlobalSearchRoute(
     onOpenMoney: () -> Unit,
     onOpenBrainTab: (Int) -> Unit,
     onOpenLifeAdminTab: (Int) -> Unit,
+    onOpenUtilitiesTab: (Int) -> Unit = {},
     onShowMessage: (String) -> Unit,
     viewModel: GlobalSearchViewModel = hiltViewModel()
 ) {
@@ -532,6 +536,54 @@ fun GlobalSearchRoute(
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
+                                }
+                            }
+                        }
+                    }
+
+                    if (uiState.countdowns.isNotEmpty()) {
+                        val todayEpoch = LocalDate.now().toEpochDay()
+                        item { SectionHeader(title = "Countdowns (${uiState.countdowns.size})") }
+                        items(uiState.countdowns, key = { "cd-${it.id}" }) { item ->
+                            val delta = CountdownCalculations.daysRemaining(item.targetEpochDay, todayEpoch)
+                            KansoBentoCard(
+                                modifier = Modifier.fillMaxWidth(),
+                                onClick = { onOpenUtilitiesTab(3) },
+                                cornerRadius = 18.dp,
+                                contentPadding = PaddingValues(14.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    KansoAccentIconBadge(
+                                        icon = Icons.Outlined.Schedule,
+                                        accent = kansoColors.utilitiesAccent,
+                                        size = 38.dp,
+                                        iconSize = 19.dp
+                                    )
+                                    Column(
+                                        modifier = Modifier.weight(1f),
+                                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                                    ) {
+                                        Text(item.title, style = MaterialTheme.typography.titleMedium)
+                                        val sub = listOfNotNull(
+                                            KansoDateFormatters.formatFullDate(item.targetEpochDay),
+                                            item.note.takeIf { it.isNotBlank() }
+                                        ).joinToString(" · ")
+                                        Text(
+                                            text = sub,
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                    KansoPillBadge(
+                                        text = CountdownCalculations.formatDelta(delta),
+                                        color = kansoColors.utilitiesAccent
+                                    )
                                 }
                             }
                         }

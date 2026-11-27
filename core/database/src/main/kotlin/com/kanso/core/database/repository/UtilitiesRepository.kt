@@ -17,6 +17,10 @@ class UtilitiesRepository @Inject constructor(
         return utilitiesDao.observeCountdowns().map { list -> list.map { it.toDomain() } }
     }
 
+    fun searchCountdowns(query: String): Flow<List<CountdownItem>> {
+        return utilitiesDao.searchCountdowns(query.trim()).map { list -> list.map { it.toDomain() } }
+    }
+
     suspend fun upsertCountdown(item: CountdownItem): Long {
         return utilitiesDao.upsertCountdown(item.toEntity())
     }

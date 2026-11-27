@@ -127,6 +127,7 @@ fun LifeAdminRoute(
     onBack: () -> Unit,
     onShowMessage: (String) -> Unit,
     onShowUndoMessage: (String, () -> Unit) -> Unit = { msg, _ -> onShowMessage(msg) },
+    onDataChanged: () -> Unit = {},
     viewModel: LifeAdminViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -175,6 +176,7 @@ fun LifeAdminRoute(
 
     var showNewMaintenance by remember { mutableStateOf(false) }
     var editingMaintenance by remember { mutableStateOf<MaintenanceLog?>(null) }
+    var repeatMaintenanceTemplate by remember { mutableStateOf<MaintenanceLog?>(null) }
 
     var showNewVault by remember { mutableStateOf(false) }
     var editingVault by remember { mutableStateOf<VaultItem?>(null) }
@@ -186,6 +188,15 @@ fun LifeAdminRoute(
         onBack = onBack,
         onAddExpiry = { showNewExpiry = true },
         onEditExpiry = { editingExpiry = it },
+        onRenewExpiry = { item ->
+            viewModel.renewExpiryOneYear(item) { previous, newEpochDay ->
+                onDataChanged()
+                val dateLabel = KansoDateFormatters.formatFullDate(newEpochDay)
+                onShowUndoMessage("Renewed ${item.title} to $dateLabel") {
+                    viewModel.restoreExpiry(previous)
+                }
+            }
+        },
         onCopyReference = { ref ->
             KansoClipboard.copyText(
                 context = context,
@@ -197,6 +208,12 @@ fun LifeAdminRoute(
         },
         onAddMaintenance = { showNewMaintenance = true },
         onEditMaintenance = { editingMaintenance = it },
+        onRepeatMaintenance = { log ->
+            repeatMaintenanceTemplate = LifeAdminCalculations.buildRepeatMaintenanceTemplate(
+                previous = log,
+                todayEpochDay = LocalDate.now().toEpochDay()
+            )
+        },
         onRequestUnlockVault = {
             val availability = BiometricAuthHelper.checkAvailability(context)
             when (availability) {
@@ -265,19 +282,44 @@ fun LifeAdminRoute(
         )
     }
 
-    if (showNewMaintenance || editingMaintenance != null) {
+    if (showNewMaintenance || editingMaintenance != null || repeatMaintenanceTemplate != null) {
         val current = editingMaintenance
         MaintenanceEditorDialog(
             currency = uiState.currency,
             initial = current,
+            template = if (current == null) repeatMaintenanceTemplate else null,
             onDismiss = {
                 showNewMaintenance = false
                 editingMaintenance = null
+                repeatMaintenanceTemplate = null
             },
-            onSave = { asset, cat, desc, serviceDay, odo, cost, nextDay, nextOdo, note ->
-                viewModel.saveMaintenanceLog(current, asset, cat, desc, serviceDay, odo, cost, nextDay, nextOdo, note)
+            onSave = { asset, cat, desc, serviceDay, odo, cost, nextDay, nextOdo, note, recordAsExpense, expenseWallet ->
+                viewModel.saveMaintenanceLog(
+                    existing = current,
+                    assetName = asset,
+                    category = cat,
+                    serviceDescription = desc,
+                    serviceEpochDay = serviceDay,
+                    odometerKm = odo,
+                    costCents = cost,
+                    nextDueEpochDay = nextDay,
+                    nextDueOdometerKm = nextOdo,
+                    note = note,
+                    recordAsExpense = recordAsExpense,
+                    expenseWallet = expenseWallet
+                ) { result ->
+                    onDataChanged()
+                    if (current == null && result.expenseTransactionId != null) {
+                        onShowUndoMessage("Service logged & expense saved") {
+                            viewModel.undoNewMaintenanceWithExpense(result)
+                        }
+                    } else if (current == null) {
+                        onShowMessage("Service log saved")
+                    }
+                }
                 showNewMaintenance = false
                 editingMaintenance = null
+                repeatMaintenanceTemplate = null
             },
             onDelete = current?.let { log ->
                 {
@@ -326,9 +368,11 @@ fun LifeAdminScreenContent(
     onBack: () -> Unit,
     onAddExpiry: () -> Unit,
     onEditExpiry: (ExpiryItem) -> Unit,
+    onRenewExpiry: (ExpiryItem) -> Unit = {},
     onCopyReference: (String) -> Unit,
     onAddMaintenance: () -> Unit,
     onEditMaintenance: (MaintenanceLog) -> Unit,
+    onRepeatMaintenance: (MaintenanceLog) -> Unit = {},
     onRequestUnlockVault: () -> Unit,
     onOpenSecuritySettings: () -> Unit,
     onLockVault: () -> Unit,
@@ -377,13 +421,15 @@ fun LifeAdminScreenContent(
                         uiState = uiState,
                         onAddExpiry = onAddExpiry,
                         onEditExpiry = onEditExpiry,
+                        onRenewExpiry = onRenewExpiry,
                         onCopyReference = onCopyReference
                     )
 
                     1 -> MaintenanceTabContent(
                         uiState = uiState,
                         onAddMaintenance = onAddMaintenance,
-                        onEditMaintenance = onEditMaintenance
+                        onEditMaintenance = onEditMaintenance,
+                        onRepeatMaintenance = onRepeatMaintenance
                     )
 
                     else -> VaultTabContent(
@@ -406,6 +452,7 @@ private fun ExpiriesTabContent(
     uiState: LifeAdminUiState,
     onAddExpiry: () -> Unit,
     onEditExpiry: (ExpiryItem) -> Unit,
+    onRenewExpiry: (ExpiryItem) -> Unit,
     onCopyReference: (String) -> Unit
 ) {
     val todayEpoch = LocalDate.now().toEpochDay()
@@ -516,6 +563,19 @@ private fun ExpiriesTabContent(
                                     )
                                 }
                             }
+                            if (urgency != ExpiryUrgency.SAFE) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                KansoTonalButton(
+                                    text = "Renew +1y",
+                                    size = KansoButtonSize.COMPACT,
+                                    containerColor = incomeSemanticColor().copy(alpha = 0.14f),
+                                    contentColor = incomeSemanticColor(),
+                                    onClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        onRenewExpiry(item)
+                                    }
+                                )
+                            }
                         }
 
                         KansoPillBadge(text = badgeText, color = badgeColor)
@@ -530,7 +590,8 @@ private fun ExpiriesTabContent(
 private fun MaintenanceTabContent(
     uiState: LifeAdminUiState,
     onAddMaintenance: () -> Unit,
-    onEditMaintenance: (MaintenanceLog) -> Unit
+    onEditMaintenance: (MaintenanceLog) -> Unit,
+    onRepeatMaintenance: (MaintenanceLog) -> Unit
 ) {
     var categoryFilter by remember { mutableStateOf<MaintenanceCategory?>(null) }
     val filtered = remember(uiState.maintenanceLogs, categoryFilter) {
@@ -655,6 +716,14 @@ private fun MaintenanceTabContent(
                                 }.joinToString(" ")
                                 KansoPillBadge(text = nextText, color = accent)
                             }
+                            Spacer(modifier = Modifier.height(2.dp))
+                            KansoTonalButton(
+                                text = "Log Again",
+                                size = KansoButtonSize.COMPACT,
+                                containerColor = accent.copy(alpha = 0.14f),
+                                contentColor = accent,
+                                onClick = { onRepeatMaintenance(log) }
+                            )
                         }
                     }
                 }
