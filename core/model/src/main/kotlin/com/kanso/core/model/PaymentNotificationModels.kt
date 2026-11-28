@@ -30,14 +30,20 @@ object KnownFinanceApps {
         KnownFinanceApp("com.btpn.dc", "Jenius", WalletType.BANK, "Banks"),
         KnownFinanceApp("id.co.cimbniaga.octomobile", "OCTO Mobile", WalletType.BANK, "Banks"),
         KnownFinanceApp("com.bsm.activity2", "BSI Mobile", WalletType.BANK, "Banks"),
+        KnownFinanceApp("co.id.bankbsi.superapp", "BYOND by BSI", WalletType.BANK, "Banks"),
         KnownFinanceApp("net.permatabank.permatamobilex", "PermataME", WalletType.BANK, "Banks"),
+        KnownFinanceApp("com.alloapp.yump", "Allo Bank", WalletType.BANK, "Banks"),
+        KnownFinanceApp("com.bnc.finance", "neobank (BNC)", WalletType.BANK, "Banks"),
+        KnownFinanceApp("id.superbank.app", "Superbank", WalletType.BANK, "Banks"),
         KnownFinanceApp("com.wise.android", "Wise", WalletType.BANK, "Banks"),
         // E-Wallets & Super-Apps
         KnownFinanceApp("com.gojek.gopay", "GoPay", WalletType.EWALLET, "E-Wallets & Apps"),
         KnownFinanceApp("com.gojek.app", "Gojek", WalletType.EWALLET, "E-Wallets & Apps"),
         KnownFinanceApp("ovo.id", "OVO", WalletType.EWALLET, "E-Wallets & Apps"),
         KnownFinanceApp("id.dana", "DANA", WalletType.EWALLET, "E-Wallets & Apps"),
-        KnownFinanceApp("com.shopee.id", "Shopee / ShopeePay", WalletType.EWALLET, "E-Wallets & Apps"),
+        KnownFinanceApp("com.shopeepay.id", "ShopeePay", WalletType.EWALLET, "E-Wallets & Apps"),
+        KnownFinanceApp("com.shopee.id", "Shopee", WalletType.EWALLET, "E-Wallets & Apps"),
+        KnownFinanceApp("id.flip", "Flip", WalletType.EWALLET, "E-Wallets & Apps"),
         KnownFinanceApp("com.grabtaxi.passenger", "Grab", WalletType.EWALLET, "E-Wallets & Apps"),
         KnownFinanceApp("com.telkom.mwallet", "LinkAja", WalletType.EWALLET, "E-Wallets & Apps"),
         KnownFinanceApp("com.tokopedia.tkpd", "Tokopedia", WalletType.EWALLET, "E-Wallets & Apps"),
@@ -59,6 +65,7 @@ enum class PaymentParseSkipReason(val label: String) {
     OTP("OTP / verification code"),
     PENDING_OR_FAILED("Unpaid, pending, or failed"),
     PROMO_OR_LOAN("Promo, voucher, or loan"),
+    WALLET_TOP_UP("Wallet top-up (transfer)"),
     NO_TRANSACTION_SIGNAL("Not a completed payment"),
     NO_CURRENCY_AMOUNT("No currency amount"),
     DUPLICATE("Duplicate within 90s"),
@@ -113,17 +120,27 @@ object PaymentNotificationParser {
     )
 
     private val pendingOrFailedKeywordsRegex = Regex(
-        """\b(menunggu pembayaran|belum dibayar|selesaikan pembayaran|bayar sebelum|jatuh tempo|segera bayar|segara bayar|transaksi gagal|pembayaran gagal|gagal diproses|dibatalkan|cancelled|canceled|declined|failed|saldo tidak cukup|insufficient|payment due|awaiting payment)\b""",
+        """\b(menunggu pembayaran|belum dibayar|selesaikan pembayaran|bayar sebelum|jatuh tempo|tagihan akan jatuh tempo|pengingat tagihan|bill reminder|segera bayar|segara bayar|belum lunas|harus dibayar|kedaluwarsa|kadaluarsa|expired|transaksi gagal|pembayaran gagal|gagal diproses|dibatalkan|cancelled|canceled|declined|failed|saldo tidak cukup|insufficient|payment due|awaiting payment)\b""",
         RegexOption.IGNORE_CASE
     )
 
     private val promoKeywordsRegex = Regex(
-        """\b(promo|voucher|kupon|klaim|claim|diskon s/d|diskon hingga|cashback s/d|cashback hingga|pinjaman|kredit tanpa agunan|limit hingga|ajukan sekarang|daftar sekarang|nikmati diskon|pakai kode|undang teman|referral|undian|hadiah hingga|cair hingga|bunga rendah|cicilan 0%)\b""",
+        """\b(promo|voucher|kupon|klaim|claim|diskon s/d|diskon hingga|cashback s/d|cashback hingga|dapatkan cashback|pinjaman|kredit tanpa agunan|limit hingga|paylater limit|ajukan sekarang|daftar sekarang|nikmati diskon|pakai kode|undang teman|referral|undian|menangkan|hadiah hingga|bonus hingga|poin hingga|gratis ongkir|flash sale|cair hingga|bunga rendah|cicilan 0%)\b""",
+        RegexOption.IGNORE_CASE
+    )
+
+    private val walletTopUpRegex = Regex(
+        """\b(top[\s\-]?up|isi\s+saldo|tambah\s+saldo|pengisian\s+saldo)\b""",
+        RegexOption.IGNORE_CASE
+    )
+
+    private val digitalGoodsOrTransitTopUpRegex = Regex(
+        """\b(pulsa|paket\s+data|token|pln|listrik|game|diamond|voucher|google\s+play|steam|mobile\s+legends|free\s+fire|valorant|genshin|e-?toll|e-?money|flazz|brizzi|tapcash|jakcard)\b""",
         RegexOption.IGNORE_CASE
     )
 
     private val completedTransactionSignalRegex = Regex(
-        """\b(berhasil|sukses|successful|succeeded|telah dibayar|dibayar ke|pembayaran ke|pembayaran di|pembayaran qris|transaksi qris|paid|sent to|you sent|charged|debited|purchase|spent|payment of|payment to|transaction of|pendebetan|terdebet|dana keluar|uang keluar|mutasi debet|kirim uang|dana masuk|uang masuk|terima uang|terima transfer|transfer masuk|menerima transfer|pengkreditan|mutasi kredit|received|credited|incoming transfer|refund|pengembalian dana|gaji|salary|payroll)\b""",
+        """\b(berhasil|sukses|successful|succeeded|telah dibayar|dibayar ke|pembayaran ke|pembayaran di|pembayaran qris|transaksi qris|paid|sent to|you sent|charged|debited|purchase|spent|payment of|payment to|transaction of|pendebetan|didebet|didebit|terdebit|terdebet|debet|berkurang|bertambah|dikredit|dikreditkan|dana keluar|uang keluar|mutasi debet|kirim uang|mentransfer|kamu mengirim|mengirim|kamu membayar|membayar|bayar|terbayar|pembelian|penarikan|tarik tunai|dana masuk|uang masuk|terima uang|terima transfer|transfer masuk|transfer in|transfer out|diterima|kamu menerima|anda menerima|menerima|pengkreditan|mutasi kredit|received|credited|incoming transfer|refund|pengembalian dana|gaji|salary|payroll)\b|\((?:cr|db)\)""",
         RegexOption.IGNORE_CASE
     )
 
@@ -133,27 +150,35 @@ object PaymentNotificationParser {
     )
 
     private val bankIndicatorRegex = Regex(
-        """\b(virtual account|transfer bank|bca|mandiri|bri|bni|jago|seabank|blu|livin|brimo|wondr|mybca)\b""",
+        """\b(virtual account|transfer bank|bi-fast|briva|bca|mandiri|bri|bni|jago|seabank|blu|livin|brimo|wondr|mybca|byond|bsi|allobank|allo bank|neobank|superbank|permata|octo|jenius)\b""",
         RegexOption.IGNORE_CASE
     )
 
     private val incomingTransactionSignalRegex = Regex(
-        """\b(dana masuk|uang masuk|terima uang|terima transfer|transfer masuk|menerima transfer|pengkreditan|mutasi kredit|pembayaran diterima|received from|credited|incoming transfer|refund|pengembalian dana|gaji|salary|payroll|bonus|dividend|reimbursement)\b""",
+        """\b(dana masuk|uang masuk|terima uang|terima transfer|transfer masuk|transfer in|bertambah|diterima|kamu menerima|anda menerima|menerima dana|menerima uang|menerima pembayaran|menerima transfer|pengkreditan|mutasi kredit|dikredit|dikreditkan|kredit masuk|pembayaran diterima|received from|credited|incoming transfer|refund|pengembalian dana|gaji|salary|payroll|bonus|dividend|reimbursement)\b|\(cr\)|\bmenerima\s+(?:rp\.?|idr|\$)""",
         RegexOption.IGNORE_CASE
     )
 
     private val outgoingOverrideRegex = Regex(
-        """\b(dibayar ke|pembayaran ke|pembayaran di|pembayaran qris|transaksi qris|kirim uang|sent to|you sent|paid to|charged|debited|pendebetan|terdebet|dana keluar|uang keluar|mutasi debet|spent)\b""",
+        """\b(dibayar ke|pembayaran ke|pembayaran di|pembayaran qris|pembayaran briva|pembayaran va|transaksi qris|kirim uang|mentransfer|kamu mengirim|mengirim|kamu membayar|membayar|transfer out|transfer ke|sent to|you sent|paid to|charged|debited|pendebetan|didebet|didebit|terdebit|terdebet|berkurang|dana keluar|uang keluar|mutasi debet|spent)\b|\(db\)""",
         RegexOption.IGNORE_CASE
     )
 
     private val merchantClausePatterns = listOf(
         Regex(
-            """\b(?:dibayar ke|bayar ke|pembayaran ke|transfer ke|kirim ke|dikirim ke|kepada|penerima|ke)\s+([A-Za-z0-9&.,'()/\-\s]{2,60})""",
+            """\b(?:a\.?\s*n\.?|atas\s+nama)\s+([A-Za-z0-9&.,'()/\-\s]{2,60})""",
             RegexOption.IGNORE_CASE
         ),
         Regex(
-            """\b(?:pembayaran di|transaksi di|belanja di|bayar di|di|at)\s+([A-Za-z0-9&.,'()/\-\s]{2,60})""",
+            """\b(?:pembayaran\s+tagihan|bayar\s+tagihan|tagihan)\s+([A-Za-z0-9&.,'()/\-\s]{2,60})""",
+            RegexOption.IGNORE_CASE
+        ),
+        Regex(
+            """\b(?:dibayar ke|bayar ke|pembayaran ke|transfer ke|mentransfer ke|kirim uang ke|kirim ke|dikirim ke|kepada|penerima|ke)\s+([A-Za-z0-9&.,'()/\-\s]{2,60})""",
+            RegexOption.IGNORE_CASE
+        ),
+        Regex(
+            """\b(?:pembayaran di|transaksi di|belanja di|bayar di|qris di|merchant|di|at)\s+([A-Za-z0-9&.,'()/\-\s]{2,60})""",
             RegexOption.IGNORE_CASE
         ),
         Regex(
@@ -171,7 +196,12 @@ object PaymentNotificationParser {
     )
 
     private val merchantTrailingNoiseRegex = Regex(
-        """\s*(?:[.,]\s*)?\b(?:berhasil|sukses|success|successful|succeeded|completed|selesai|senilai\b.*|sebesar\b.*|pada\b.*|on\s+\d.*|at\s+\d.*|ref\.?\b.*|id\s*transaksi\b.*|dengan\b.*|via\b.*|using\b.*|with\s+(?:card|visa|mastercard|gopay|ovo|dana|wallet).*|menggunakan\b.*|of\s+(?:Rp|IDR|USD|US\$|SGD|S\$|MYR|RM|EUR|GBP|JPY|\$).*)$""",
+        """\s*(?:[.,]\s*)?(?:\b(?:berhasil|sukses|success|successful|succeeded|completed|selesai|telah\s+(?:didebet|didebit|dikredit|dibayar).*|senilai\b.*|sebesar\b.*|saldo\b.*|sisa\b.*|biaya\s+admin\b.*|cashback\b.*|pada\b.*|on\s+\d.*|at\s+\d.*|ref\.?\b.*|id\s*transaksi\b.*|dengan\b.*|via\b.*|using\b.*|with\s+(?:card|visa|mastercard|gopay|ovo|dana|wallet).*|menggunakan\b.*|of\s+(?:Rp|IDR|USD|US\$|SGD|S\$|MYR|RM|EUR|GBP|JPY|\$).*)$|\((?:transfer\s+(?:in|out)|cr|db)\).*$)""",
+        RegexOption.IGNORE_CASE
+    )
+
+    private val genericMerchantPrefixRegex = Regex(
+        """^(?:rekening|rek\.?|account|tabungan|saldo|kartu|no\.?\s*rek)\b""",
         RegexOption.IGNORE_CASE
     )
 
@@ -246,6 +276,7 @@ object PaymentNotificationParser {
             .filter { it.isNotEmpty() }
             .joinToString("\n")
 
+        val preset = KnownFinanceApps.findByPackage(cleanPkg)
         if (otpKeywordsRegex.containsMatchIn(combined)) {
             return PaymentParseResult.Skipped(PaymentParseSkipReason.OTP)
         }
@@ -254,6 +285,12 @@ object PaymentNotificationParser {
         }
         if (promoKeywordsRegex.containsMatchIn(combined)) {
             return PaymentParseResult.Skipped(PaymentParseSkipReason.PROMO_OR_LOAN)
+        }
+        if (preset?.defaultWallet == WalletType.EWALLET &&
+            walletTopUpRegex.containsMatchIn(combined) &&
+            !digitalGoodsOrTransitTopUpRegex.containsMatchIn(combined)
+        ) {
+            return PaymentParseResult.Skipped(PaymentParseSkipReason.WALLET_TOP_UP)
         }
         if (!completedTransactionSignalRegex.containsMatchIn(combined)) {
             return PaymentParseResult.Skipped(PaymentParseSkipReason.NO_TRANSACTION_SIGNAL)
@@ -271,7 +308,6 @@ object PaymentNotificationParser {
         val detectedCurrency = baseDraft.detectedCurrency
             ?: return PaymentParseResult.Skipped(PaymentParseSkipReason.NO_CURRENCY_AMOUNT)
 
-        val preset = KnownFinanceApps.findByPackage(cleanPkg)
         val resolvedSourceLabel = appLabel.trim().ifEmpty { preset?.displayName ?: cleanPkg }
 
         val extractedMerchant = extractMerchant(combined)
@@ -350,6 +386,7 @@ object PaymentNotificationParser {
                 candidate = candidate.trimEnd('.', ',', '-', ':', ';', ' ')
                 if (candidate.length < 2) continue
                 if (startsWithAmountOrNumberRegex.containsMatchIn(candidate)) continue
+                if (genericMerchantPrefixRegex.containsMatchIn(candidate)) continue
                 if (candidate.lowercase() in genericMerchantStopWords) continue
                 if (genericStatusTitleRegex.matches(candidate)) continue
 
@@ -365,7 +402,11 @@ object PaymentNotificationParser {
         val isAllUpper = letters.all { it.isUpperCase() }
         if (!isAllUpper || letters.length <= 4) return raw
 
-        val keepUpperTokens = setOf("PT", "CV", "TBK", "ATM", "QRIS", "PLN", "PDAM", "BPJS", "KFC", "XXI", "CGV", "MRT", "KRL", "LRT", "KAI", "BCA", "BRI", "BNI", "BSI")
+        val keepUpperTokens = setOf(
+            "PT", "CV", "TBK", "ATM", "QRIS", "BRIVA", "VA", "PLN", "PDAM",
+            "BPJS", "KFC", "XXI", "CGV", "MRT", "KRL", "LRT", "KAI", "BCA",
+            "BRI", "BNI", "BSI", "OVO", "DANA", "GOPAY", "POS", "PBB"
+        )
         return raw.split(Regex("\\s+")).joinToString(" ") { token ->
             val clean = token.trim()
             if (clean.uppercase() in keepUpperTokens || clean.length <= 2) {

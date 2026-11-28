@@ -100,7 +100,7 @@ object SharedTextParser {
         val currency: AppCurrency,
         val majorUnits: Double,
         val score: Int,
-        val hasPositiveKeyword: Boolean,
+        val hasStrongPositiveKeyword: Boolean,
         val lineIndex: Int
     )
 
@@ -143,8 +143,12 @@ object SharedTextParser {
         """(?<!sub[\s\-]?)\b(total|grand total|total bayar|total transaksi|total pembayaran|total belanja|total tagihan|jumlah|nominal|amount|paid|charged|debited)\b""",
         RegexOption.IGNORE_CASE
     )
+    private val localPositiveAmountKeywords = Regex(
+        """\b(sebesar|senilai|bertambah|berkurang|didebet|didebit|terdebit|dikredit|dikreditkan|diterima|mentransfer|mengirim|membayar|bayar|transfer|pembayaran|transaksi|tagihan)\b""",
+        RegexOption.IGNORE_CASE
+    )
     private val negativeAmountKeywords = Regex(
-        """\b(saldo|balance|limit|sisa|cashback|diskon|discount|hemat|biaya admin|biaya transaksi|biaya layanan|admin fee|fee|subtotal|sub[\s\-]?total|kembali|kembalian|change)\b""",
+        """\b(saldo|balance|limit|sisa|tersisa|cashback|diskon|discount|hemat|biaya admin|biaya transaksi|biaya layanan|biaya transfer|biaya kliring|biaya penanganan|admin fee|service fee|fee|potongan|poin|points|subtotal|sub[\s\-]?total|kembali|kembalian|change)\b""",
         RegexOption.IGNORE_CASE
     )
     private val thermalTotalFallbackRegex = Regex(
@@ -316,14 +320,18 @@ object SharedTextParser {
         userCurrency: AppCurrency = AppCurrency.IDR,
         allowCurrencyLessFallback: Boolean = false
     ): AmountCandidate? {
+        data class RawLineMatch(
+            val currency: AppCurrency,
+            val majorUnits: Double,
+            val range: IntRange
+        )
+
         val candidates = mutableListOf<AmountCandidate>()
         text.lineSequence().forEachIndexed { lineIdx, line ->
             val trimmed = line.trim()
             if (trimmed.isEmpty()) return@forEachIndexed
             val usedRanges = mutableListOf<IntRange>()
-            val hasPos = positiveAmountKeywords.containsMatchIn(trimmed)
-            val hasNeg = negativeAmountKeywords.containsMatchIn(trimmed)
-            val score = (if (hasPos) 10 else 0) + (if (hasNeg) -5 else 0)
+            val lineMatches = mutableListOf<RawLineMatch>()
 
             for (spec in currencySpecs) {
                 for (match in spec.regex.findAll(trimmed)) {
@@ -335,17 +343,52 @@ object SharedTextParser {
                     val majorUnits = parseMajorUnits(rawNumber, spec.currency)
                     if (majorUnits != null && majorUnits > 0.0 && majorUnits.isFinite()) {
                         usedRanges.add(range)
-                        candidates.add(
-                            AmountCandidate(
-                                currency = spec.currency,
-                                majorUnits = majorUnits,
-                                score = score,
-                                hasPositiveKeyword = hasPos,
-                                lineIndex = lineIdx
-                            )
-                        )
+                        lineMatches.add(RawLineMatch(spec.currency, majorUnits, range))
                     }
                 }
+            }
+
+            lineMatches.sortBy { it.range.first }
+            var prevMatchEnd = 0
+            for (rawMatch in lineMatches) {
+                val precedingSegment = trimmed.substring(prevMatchEnd, rawMatch.range.first)
+                val immediateClause = precedingSegment
+                    .substringAfterLast(". ")
+                    .substringAfterLast("! ")
+                    .substringAfterLast("; ")
+                    .substringAfterLast(", ")
+                val trailingImmediate = trimmed.substring(rawMatch.range.last + 1)
+                    .take(24)
+                    .substringBefore('.')
+                    .substringBefore(',')
+                    .substringBefore('!')
+                    .substringBefore(';')
+
+                val hasImmediateStrongPos = positiveAmountKeywords.containsMatchIn(immediateClause)
+                val hasImmediateLocalPos = localPositiveAmountKeywords.containsMatchIn(immediateClause)
+                val hasNeg = negativeAmountKeywords.containsMatchIn(immediateClause) ||
+                    negativeAmountKeywords.containsMatchIn(trailingImmediate)
+
+                val hasStrongPos = hasImmediateStrongPos ||
+                    (!hasNeg && prevMatchEnd == 0 && positiveAmountKeywords.containsMatchIn(precedingSegment))
+                val hasLocalPos = hasImmediateLocalPos ||
+                    (!hasNeg && prevMatchEnd == 0 && localPositiveAmountKeywords.containsMatchIn(precedingSegment))
+
+                val score = when {
+                    hasNeg && !hasImmediateStrongPos -> -8
+                    else -> (if (hasStrongPos) 10 else if (hasLocalPos) 6 else 0) + (if (hasNeg) -8 else 0)
+                }
+
+                candidates.add(
+                    AmountCandidate(
+                        currency = rawMatch.currency,
+                        majorUnits = rawMatch.majorUnits,
+                        score = score,
+                        hasStrongPositiveKeyword = hasStrongPos,
+                        lineIndex = lineIdx
+                    )
+                )
+                prevMatchEnd = rawMatch.range.last + 1
             }
         }
         if (candidates.isEmpty() && allowCurrencyLessFallback) {
@@ -361,7 +404,7 @@ object SharedTextParser {
                             currency = userCurrency,
                             majorUnits = majorUnits,
                             score = 10,
-                            hasPositiveKeyword = true,
+                            hasStrongPositiveKeyword = true,
                             lineIndex = lineIdx
                         )
                     )
@@ -371,7 +414,7 @@ object SharedTextParser {
         if (candidates.isEmpty()) return null
         val maxScore = candidates.maxOf { it.score }
         val topCandidates = candidates.filter { it.score == maxScore }
-        return if (topCandidates.any { it.hasPositiveKeyword }) {
+        return if (topCandidates.any { it.hasStrongPositiveKeyword }) {
             topCandidates.last()
         } else {
             topCandidates.first()
@@ -447,11 +490,11 @@ object SharedTextParser {
         if (strongIncome.containsMatchIn(text)) return true
 
         val softIncome = Regex(
-            """\b(dana masuk|uang masuk|terima uang|terima transfer|received from|incoming transfer|bonus)\b""",
+            """\b(dana masuk|uang masuk|terima uang|terima transfer|transfer masuk|transfer in|bertambah|diterima|diterima transfer|kamu menerima|anda menerima|dikredit|dikreditkan|received from|incoming transfer|bonus)\b|\(cr\)""",
             RegexOption.IGNORE_CASE
         )
         val outgoingIndicators = Regex(
-            """\b(pembayaran|total bayar|paid to|purchase|belanja)\b""",
+            """\b(pembayaran|total bayar|paid to|purchase|belanja|didebet|didebit|terdebit|berkurang|mentransfer|mengirim|membayar)\b|\(db\)""",
             RegexOption.IGNORE_CASE
         )
         return softIncome.containsMatchIn(text) && !outgoingIndicators.containsMatchIn(text)
@@ -551,8 +594,9 @@ object SharedTextParser {
 
             containsAny(
                 lower,
-                "bca", "mandiri", "livin", "bri", "brimo", "bni", "wondr", "cimb",
-                "jenius", "jago", "seabank", "blu", "permata", "bsi", "bi-fast",
+                "bca", "mandiri", "livin", "bri", "brimo", "briva", "bni", "wondr", "cimb",
+                "jenius", "jago", "seabank", "blu", "permata", "bsi", "byond", "allobank",
+                "allo bank", "neobank", "superbank", "bi-fast",
                 "virtual account", "transfer bank", "m-banking",
                 "m-transfer", "mybca", "klikbca", "octo", "ocbc", "danamon", "btn"
             ) -> WalletType.BANK

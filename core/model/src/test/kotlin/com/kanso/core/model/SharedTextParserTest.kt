@@ -222,4 +222,28 @@ class SharedTextParserTest {
         assertEquals(SharedCaptureTarget.EXPENSE, unreadableImageDraft.target)
         assertNull(unreadableImageDraft.amountCents)
     }
+
+    @Test
+    fun `prefers transaction amount over same-line remaining balance fee or cashback`() {
+        val brimoSingleLine = SharedTextParser.parse(
+            rawText = "Pembayaran BRIVA berhasil! Tagihan PLN Prepaid sebesar IDR 100,000.00 telah didebet dari rekening *********1234. Saldo Anda tersisa Rp 2.450.000.",
+            userCurrency = AppCurrency.IDR
+        )
+        assertEquals(SharedCaptureTarget.EXPENSE, brimoSingleLine.target)
+        assertEquals(10_000_000L, brimoSingleLine.amountCents)
+        assertEquals(ExpenseCategory.BILLS, brimoSingleLine.suggestedCategory)
+        assertEquals(WalletType.BANK, brimoSingleLine.suggestedWallet)
+
+        val adminFeeSameLine = SharedTextParser.parse(
+            rawText = "Bayar Rp 50.000 berhasil, biaya admin Rp 2.500",
+            userCurrency = AppCurrency.IDR
+        )
+        assertEquals(5_000_000L, adminFeeSameLine.amountCents)
+
+        val cashbackSameLine = SharedTextParser.parse(
+            rawText = "Kamu membayar Rp 50.000 di Kopi Kenangan berhasil, cashback Rp 5.000",
+            userCurrency = AppCurrency.IDR
+        )
+        assertEquals(5_000_000L, cashbackSameLine.amountCents)
+    }
 }
